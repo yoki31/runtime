@@ -18,8 +18,8 @@
 // within the EE and recognized in Interop scenarios.
 
 //
-// Note: This file gets parsed by the Mono IL Linker (https://github.com/mono/linker/) which may throw an exception during parsing.
-// Specifically, this (https://github.com/mono/linker/blob/main/corebuild/integration/ILLink.Tasks/CreateRuntimeRootDescriptorFile.cs) will try to
+// Note: This file gets parsed by the Mono IL Linker (https://github.com/dotnet/runtime/tree/main/src/tools/illink) which may throw an exception during parsing.
+// Specifically, this (https://github.com/dotnet/runtime/blob/main/src/tools/illink/src/ILLink.Tasks/CreateRuntimeRootDescriptorFile.cs) will try to
 // parse this header, and it may throw an exception while doing that. If you edit this file and get a build failure on msbuild.exe D:\repos\coreclr\build.proj
 // you might want to check out the parser linked above.
 //
@@ -95,7 +95,7 @@ DEFINE_EXCEPTION(g_SystemNS,           ApplicationException,           false,  C
 DEFINE_EXCEPTION(g_SystemNS,           ArithmeticException,            false,  COR_E_ARITHMETIC)
 
 DEFINE_EXCEPTION(g_SystemNS,           ArgumentException,              false,
-                 COR_E_ARGUMENT, STD_CTL_SCODE(449), STD_CTL_SCODE(450), CLR_E_BIND_UNRECOGNIZED_IDENTITY_FORMAT)
+                 COR_E_ARGUMENT, STD_CTL_SCODE(449), STD_CTL_SCODE(450))
 
 DEFINE_EXCEPTION(g_SystemNS,           ArgumentOutOfRangeException,    false,  COR_E_ARGUMENTOUTOFRANGE, HRESULT_FROM_WIN32(ERROR_NO_UNICODE_TRANSLATION))
 DEFINE_EXCEPTION(g_SystemNS,           ArrayTypeMismatchException,     false,  COR_E_ARRAYTYPEMISMATCH)
@@ -116,9 +116,6 @@ DEFINE_EXCEPTION(g_SystemNS,       BadImageFormatException,        true,
                  IDS_CLASSLOAD_32BITCLRLOADING64BITASSEMBLY,
                  COR_E_LOADING_REFERENCE_ASSEMBLY,
                  META_E_BAD_SIGNATURE)
-
-// CannotUnloadAppDomainException is removed in CoreCLR
-#define kCannotUnloadAppDomainException kException
 
 DEFINE_EXCEPTION(g_CodeContractsNS,    ContractException,              false,  COR_E_CODECONTRACTFAILED)
 
@@ -145,19 +142,15 @@ DEFINE_EXCEPTION(g_SystemNS,           ExecutionEngineException,       false,  C
 DEFINE_EXCEPTION(g_SystemNS,           FieldAccessException,           false,  COR_E_FIELDACCESS)
 
 DEFINE_EXCEPTION(g_IONS,               FileLoadException,              true,
-                 COR_E_FILELOAD, FUSION_E_INVALID_PRIVATE_ASM_LOCATION,
-                 FUSION_E_SIGNATURE_CHECK_FAILED,
-                 FUSION_E_LOADFROM_BLOCKED, FUSION_E_CACHEFILE_FAILED,
-                 FUSION_E_ASM_MODULE_MISSING, FUSION_E_INVALID_NAME,
-                 FUSION_E_PRIVATE_ASM_DISALLOWED, FUSION_E_HOST_GAC_ASM_MISMATCH,
-                 COR_E_MODULE_HASH_CHECK_FAILED, FUSION_E_REF_DEF_MISMATCH,
-                 SECURITY_E_INCOMPATIBLE_SHARE, SECURITY_E_INCOMPATIBLE_EVIDENCE,
-                 SECURITY_E_UNVERIFIABLE, COR_E_FIXUPSINEXE, HRESULT_FROM_WIN32(ERROR_TOO_MANY_OPEN_FILES),
+                 COR_E_FILELOAD,
+                 FUSION_E_INVALID_NAME,
+                 FUSION_E_PRIVATE_ASM_DISALLOWED,
+                 FUSION_E_REF_DEF_MISMATCH,
+                 HRESULT_FROM_WIN32(ERROR_TOO_MANY_OPEN_FILES),
                  HRESULT_FROM_WIN32(ERROR_SHARING_VIOLATION), HRESULT_FROM_WIN32(ERROR_LOCK_VIOLATION),
                  HRESULT_FROM_WIN32(ERROR_OPEN_FAILED), HRESULT_FROM_WIN32(ERROR_DISK_CORRUPT),
                  HRESULT_FROM_WIN32(ERROR_UNRECOGNIZED_VOLUME),
                  HRESULT_FROM_WIN32(ERROR_DLL_INIT_FAILED),
-                 FUSION_E_CODE_DOWNLOAD_DISABLED, CORSEC_E_MISSING_STRONGNAME,
                  MSEE_E_ASSEMBLYLOADINPROGRESS,
                  HRESULT_FROM_WIN32(ERROR_FILE_INVALID))
 
@@ -169,9 +162,7 @@ DEFINE_EXCEPTION(g_IONS,               FileNotFoundException,           true,
                  HRESULT_FROM_WIN32(ERROR_WRONG_TARGET_NAME), INET_E_UNKNOWN_PROTOCOL,
                  INET_E_CONNECTION_TIMEOUT, INET_E_CANNOT_CONNECT, INET_E_RESOURCE_NOT_FOUND,
                  INET_E_OBJECT_NOT_FOUND, INET_E_DOWNLOAD_FAILURE, INET_E_DATA_NOT_AVAILABLE,
-                 HRESULT_FROM_WIN32(ERROR_DLL_NOT_FOUND),
-                 CLR_E_BIND_ASSEMBLY_VERSION_TOO_LOW, CLR_E_BIND_ASSEMBLY_PUBLIC_KEY_MISMATCH,
-                 CLR_E_BIND_ASSEMBLY_NOT_FOUND)
+                 HRESULT_FROM_WIN32(ERROR_DLL_NOT_FOUND))
 
 DEFINE_EXCEPTION(g_SystemNS,           FormatException,                false,  COR_E_FORMAT)
 
@@ -257,7 +248,7 @@ DEFINE_EXCEPTION(g_SystemNS,           TypeInitializationException,    false,  C
 
 #ifdef FEATURE_COMINTEROP
 DEFINE_EXCEPTION(g_SystemNS,           TypeLoadException,              false,  COR_E_TYPELOAD,
-                 RO_E_METADATA_NAME_NOT_FOUND, CLR_E_BIND_TYPE_NOT_FOUND)
+                 RO_E_METADATA_NAME_NOT_FOUND)
 #else
 DEFINE_EXCEPTION(g_SystemNS,           TypeLoadException,              false,  COR_E_TYPELOAD)
 #endif

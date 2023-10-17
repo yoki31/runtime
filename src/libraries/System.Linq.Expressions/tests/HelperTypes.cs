@@ -5,7 +5,9 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Reflection;
 using System.Reflection.Emit;
+using System.Runtime.CompilerServices;
 using Xunit;
+using Xunit.Sdk;
 
 namespace System.Linq.Expressions.Tests
 {
@@ -246,13 +248,23 @@ namespace System.Linq.Expressions.Tests
 
     internal class CompilationTypes : IEnumerable<object[]>
     {
-        private static readonly IEnumerable<object[]> Booleans = new[]
+        private static IEnumerable<object[]> Booleans
         {
-#if FEATURE_COMPILE && FEATURE_INTERPRET
-            new object[] {false},
-#endif
-            new object[] {true},
-        };
+            get
+            {
+                return LambdaExpression.CanCompileToIL ?
+                    new[]
+                    {
+                        new object[] {false},
+                        new object[] {true},
+                    }
+                    :
+                    new[]
+                    {
+                        new object[] {true},
+                    };
+            }
+        }
 
         public IEnumerator<object[]> GetEnumerator() => Booleans.GetEnumerator();
 
@@ -366,7 +378,6 @@ namespace System.Linq.Expressions.Tests
     public enum Int64Enum : long { A = long.MaxValue }
     public enum UInt64Enum : ulong { A = ulong.MaxValue }
 
-#if FEATURE_COMPILE
     public static class NonCSharpTypes
     {
         private static Type _charEnumType;
@@ -412,7 +423,6 @@ namespace System.Linq.Expressions.Tests
             }
         }
     }
-#endif
 
     public class FakeExpression : Expression
     {
@@ -467,15 +477,17 @@ namespace System.Linq.Expressions.Tests
     {
         public static void Verify(this LambdaExpression expression, string il, string instructions)
         {
-#if FEATURE_COMPILE
-            expression.VerifyIL(il);
-#endif
+            if (LambdaExpression.CanCompileToIL)
+            {
+                expression.VerifyIL(il);
+            }
 
-            // FEATURE_COMPILE is not directly required,
+            // LambdaExpression.CanCompileToIL is not directly required,
             // but this functionality relies on private reflection and that would not work with AOT
-#if FEATURE_INTERPRET && FEATURE_COMPILE
-            expression.VerifyInstructions(instructions);
-#endif
+            if (LambdaExpression.CanCompileToIL && LambdaExpression.CanInterpret)
+            {
+                expression.VerifyInstructions(instructions);
+            }
         }
     }
 

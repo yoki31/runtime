@@ -72,6 +72,7 @@ public:
         GenTree*  m_node;
         unsigned  m_flags;
         unsigned  m_lclNum;
+        unsigned  m_lclOffs;
 
     public:
         NodeInfo(Compiler* compiler, GenTree* node);
@@ -112,9 +113,30 @@ public:
             return m_lclNum;
         }
 
+        inline unsigned LclOffs() const
+        {
+            assert(IsLclVarRead() || IsLclVarWrite());
+            return m_lclOffs;
+        }
+
         inline bool WritesAnyLocation() const
         {
-            return (m_flags & (ALIAS_WRITES_ADDRESSABLE_LOCATION | ALIAS_WRITES_LCL_VAR)) != 0;
+            if ((m_flags & ALIAS_WRITES_ADDRESSABLE_LOCATION) != 0)
+            {
+                return true;
+            }
+
+            if ((m_flags & ALIAS_WRITES_LCL_VAR) != 0)
+            {
+                // Stores to 'lvLiveInOutOfHndlr' locals cannot be reordered with
+                // exception-throwing nodes so we conservatively consider them
+                // globally visible.
+
+                LclVarDsc* const varDsc = m_compiler->lvaGetDesc(LclNum());
+                return varDsc->lvLiveInOutOfHndlr != 0;
+            }
+
+            return false;
         }
     };
 
@@ -128,6 +150,7 @@ public:
     void AddNode(Compiler* compiler, GenTree* node);
     bool InterferesWith(const AliasSet& other) const;
     bool InterferesWith(const NodeInfo& node) const;
+    bool WritesLocal(unsigned lclNum) const;
     void Clear();
 };
 
@@ -158,6 +181,11 @@ public:
     bool InterferesWith(const SideEffectSet& other, bool strict) const;
     bool InterferesWith(Compiler* compiler, GenTree* node, bool strict) const;
     void Clear();
+
+    bool WritesLocal(unsigned lclNum) const
+    {
+        return m_aliasSet.WritesLocal(lclNum);
+    }
 };
 
 #endif // _SIDEEFFECTS_H_

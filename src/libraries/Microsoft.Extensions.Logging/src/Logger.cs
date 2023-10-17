@@ -3,24 +3,36 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Linq;
 
 namespace Microsoft.Extensions.Logging
 {
+    [DebuggerDisplay("{DebuggerToString(),nq}")]
+    [DebuggerTypeProxy(typeof(LoggerDebugView))]
     internal sealed class Logger : ILogger
     {
-        public LoggerInformation[] Loggers { get; set; }
-        public MessageLogger[] MessageLoggers { get; set; }
-        public ScopeLogger[] ScopeLoggers { get; set; }
+        private readonly string _categoryName;
 
-        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception exception, Func<TState, Exception, string> formatter)
+        public Logger(string categoryName, LoggerInformation[] loggers)
         {
-            MessageLogger[] loggers = MessageLoggers;
+            _categoryName = categoryName;
+            Loggers = loggers;
+        }
+
+        public LoggerInformation[] Loggers { get; set; }
+        public MessageLogger[]? MessageLoggers { get; set; }
+        public ScopeLogger[]? ScopeLoggers { get; set; }
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+        {
+            MessageLogger[]? loggers = MessageLoggers;
             if (loggers == null)
             {
                 return;
             }
 
-            List<Exception> exceptions = null;
+            List<Exception>? exceptions = null;
             for (int i = 0; i < loggers.Length; i++)
             {
                 ref readonly MessageLogger loggerInfo = ref loggers[i];
@@ -37,7 +49,7 @@ namespace Microsoft.Extensions.Logging
                 ThrowLoggingError(exceptions);
             }
 
-            static void LoggerLog(LogLevel logLevel, EventId eventId, ILogger logger, Exception exception, Func<TState, Exception, string> formatter, ref List<Exception> exceptions, in TState state)
+            static void LoggerLog(LogLevel logLevel, EventId eventId, ILogger logger, Exception? exception, Func<TState, Exception?, string> formatter, ref List<Exception>? exceptions, in TState state)
             {
                 try
                 {
@@ -45,11 +57,7 @@ namespace Microsoft.Extensions.Logging
                 }
                 catch (Exception ex)
                 {
-                    if (exceptions == null)
-                    {
-                        exceptions = new List<Exception>();
-                    }
-
+                    exceptions ??= new List<Exception>();
                     exceptions.Add(ex);
                 }
             }
@@ -57,13 +65,13 @@ namespace Microsoft.Extensions.Logging
 
         public bool IsEnabled(LogLevel logLevel)
         {
-            MessageLogger[] loggers = MessageLoggers;
+            MessageLogger[]? loggers = MessageLoggers;
             if (loggers == null)
             {
                 return false;
             }
 
-            List<Exception> exceptions = null;
+            List<Exception>? exceptions = null;
             int i = 0;
             for (; i < loggers.Length; i++)
             {
@@ -86,7 +94,7 @@ namespace Microsoft.Extensions.Logging
 
             return i < loggers.Length ? true : false;
 
-            static bool LoggerIsEnabled(LogLevel logLevel, ILogger logger, ref List<Exception> exceptions)
+            static bool LoggerIsEnabled(LogLevel logLevel, ILogger logger, ref List<Exception>? exceptions)
             {
                 try
                 {
@@ -97,11 +105,7 @@ namespace Microsoft.Extensions.Logging
                 }
                 catch (Exception ex)
                 {
-                    if (exceptions == null)
-                    {
-                        exceptions = new List<Exception>();
-                    }
-
+                    exceptions ??= new List<Exception>();
                     exceptions.Add(ex);
                 }
 
@@ -109,9 +113,9 @@ namespace Microsoft.Extensions.Logging
             }
         }
 
-        public IDisposable BeginScope<TState>(TState state)
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull
         {
-            ScopeLogger[] loggers = ScopeLoggers;
+            ScopeLogger[]? loggers = ScopeLoggers;
 
             if (loggers == null)
             {
@@ -124,7 +128,7 @@ namespace Microsoft.Extensions.Logging
             }
 
             var scope = new Scope(loggers.Length);
-            List<Exception> exceptions = null;
+            List<Exception>? exceptions = null;
             for (int i = 0; i < loggers.Length; i++)
             {
                 ref readonly ScopeLogger scopeLogger = ref loggers[i];
@@ -135,11 +139,7 @@ namespace Microsoft.Extensions.Logging
                 }
                 catch (Exception ex)
                 {
-                    if (exceptions == null)
-                    {
-                        exceptions = new List<Exception>();
-                    }
-
+                    exceptions ??= new List<Exception>();
                     exceptions.Add(ex);
                 }
             }
@@ -158,13 +158,106 @@ namespace Microsoft.Extensions.Logging
                 message: "An error occurred while writing to logger(s).", innerExceptions: exceptions);
         }
 
+        internal string DebuggerToString()
+        {
+            return DebuggerDisplayFormatting.DebuggerToString(_categoryName, this);
+        }
+
+        private sealed class LoggerDebugView(Logger logger)
+        {
+            public string Name => logger._categoryName;
+
+            // The list of providers includes the full list of configured providers from the logger factory.
+            // It then mentions the min level and enable status of each provider for this logger.
+            public List<LoggerProviderDebugView> Providers
+            {
+                get
+                {
+                    List<LoggerProviderDebugView> providers = new List<LoggerProviderDebugView>();
+                    for (int i = 0; i < logger.Loggers.Length; i++)
+                    {
+                        LoggerInformation loggerInfo = logger.Loggers[i];
+                        string providerName = ProviderAliasUtilities.GetAlias(loggerInfo.ProviderType) ?? loggerInfo.ProviderType.Name;
+                        MessageLogger? messageLogger = logger.MessageLoggers?.FirstOrDefault(messageLogger => messageLogger.Logger == loggerInfo.Logger);
+
+                        providers.Add(new LoggerProviderDebugView(providerName, messageLogger));
+                    }
+
+                    return providers;
+                }
+            }
+
+            public List<object?>? Scopes
+            {
+                get
+                {
+                    var scopeProvider = logger.ScopeLoggers?.FirstOrDefault().ExternalScopeProvider;
+                    if (scopeProvider == null)
+                    {
+                        return null;
+                    }
+
+                    List<object?> scopes = new List<object?>();
+                    scopeProvider.ForEachScope((scope, scopes) => scopes!.Add(scope), scopes);
+                    return scopes;
+                }
+            }
+            public LogLevel? MinLevel => DebuggerDisplayFormatting.CalculateEnabledLogLevel(logger);
+            public bool Enabled => DebuggerDisplayFormatting.CalculateEnabledLogLevel(logger) != null;
+        }
+
+        [DebuggerDisplay("{DebuggerToString(),nq}")]
+        private sealed class LoggerProviderDebugView(string providerName, MessageLogger? messageLogger)
+        {
+            public string Name => providerName;
+            public LogLevel LogLevel => CalculateEnabledLogLevel(messageLogger) ?? LogLevel.None;
+
+            private static LogLevel? CalculateEnabledLogLevel(MessageLogger? logger)
+            {
+                if (logger == null)
+                {
+                    return null;
+                }
+
+                ReadOnlySpan<LogLevel> logLevels = stackalloc LogLevel[]
+                {
+                    LogLevel.Critical,
+                    LogLevel.Error,
+                    LogLevel.Warning,
+                    LogLevel.Information,
+                    LogLevel.Debug,
+                    LogLevel.Trace,
+                };
+
+                LogLevel? minimumLevel = null;
+
+                // Check log level from highest to lowest. Report the lowest log level.
+                foreach (LogLevel logLevel in logLevels)
+                {
+                    if (!logger.Value.IsEnabled(logLevel))
+                    {
+                        break;
+                    }
+
+                    minimumLevel = logLevel;
+                }
+
+                return minimumLevel;
+            }
+
+            private string DebuggerToString()
+            {
+                return $@"Name = ""{providerName}"", LogLevel = {LogLevel}";
+            }
+        }
+
         private sealed class Scope : IDisposable
         {
             private bool _isDisposed;
 
-            private IDisposable _disposable0;
-            private IDisposable _disposable1;
-            private readonly IDisposable[] _disposable;
+            private IDisposable? _disposable0;
+            private IDisposable? _disposable1;
+            private readonly IDisposable?[]? _disposable;
 
             public Scope(int count)
             {
@@ -174,7 +267,7 @@ namespace Microsoft.Extensions.Logging
                 }
             }
 
-            public void SetDisposable(int index, IDisposable disposable)
+            public void SetDisposable(int index, IDisposable? disposable)
             {
                 switch (index)
                 {
@@ -185,7 +278,7 @@ namespace Microsoft.Extensions.Logging
                         _disposable1 = disposable;
                         break;
                     default:
-                        _disposable[index - 2] = disposable;
+                        _disposable![index - 2] = disposable;
                         break;
                 }
             }
@@ -202,10 +295,7 @@ namespace Microsoft.Extensions.Logging
                         int count = _disposable.Length;
                         for (int index = 0; index != count; ++index)
                         {
-                            if (_disposable[index] != null)
-                            {
-                                _disposable[index].Dispose();
-                            }
+                            _disposable[index]?.Dispose();
                         }
                     }
 

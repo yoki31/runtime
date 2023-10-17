@@ -26,7 +26,6 @@
   .hash algorithm 0x00008004
   .ver 0:0:0:0
 }
-.module CPropOverflow.exe
 // MVID: {68FF9260-9E27-4CCF-88D3-5AE07292CE94}
 .imagebase 0x00400000
 .file alignment 0x00000200
@@ -38,7 +37,7 @@
 
 // =============== CLASS MEMBERS DECLARATION ===================
 
-.class private auto ansi beforefieldinit Sample1
+.class public auto ansi beforefieldinit Sample1
        extends [mscorlib]System.Object
 {
   .method private hidebysig static int32 
@@ -64,8 +63,8 @@
     IL_0018:  ret
   } // end of method Sample1::OverflowTest
 
-  .method private hidebysig static int32 
-          Main(string[] args) cil managed
+  .method public hidebysig static int32 
+          Main() cil managed
   {
     .custom instance void [xunit.core]Xunit.FactAttribute::.ctor() = (
         01 00 00 00

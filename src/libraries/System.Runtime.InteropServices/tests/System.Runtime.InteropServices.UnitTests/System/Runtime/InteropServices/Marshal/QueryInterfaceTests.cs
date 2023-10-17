@@ -22,6 +22,7 @@ namespace System.Runtime.InteropServices.Tests
         [Theory]
         [MemberData(nameof(QueryInterface_ValidInterface_TestData))]
         [SkipOnMono("ComWrappers are not supported on Mono")]
+        [ActiveIssue("https://github.com/dotnet/runtime/issues/76005", typeof(PlatformDetection), nameof(PlatformDetection.IsNativeAot), nameof(PlatformDetection.IsNotWindows))]
         public void QueryInterface_ValidInterface_Success(object o, string iidString)
         {
             var cw = new ComWrappersImpl();
@@ -29,7 +30,7 @@ namespace System.Runtime.InteropServices.Tests
             try
             {
                 Guid guid = new Guid(iidString);
-                Assert.Equal(0, Marshal.QueryInterface(ptr, ref guid, out IntPtr ppv));
+                Assert.Equal(0, Marshal.QueryInterface(ptr, in guid, out IntPtr ppv));
                 Assert.NotEqual(IntPtr.Zero, ppv);
                 try
                 {
@@ -49,12 +50,13 @@ namespace System.Runtime.InteropServices.Tests
         public static IEnumerable<object[]> QueryInterface_NoSuchInterface_TestData()
         {
             yield return new object[] { new object(), Guid.Empty.ToString() };
-            yield return new object[] { new object(), "927971f5-0939-11d1-8be1-00c04fd8d503" };
+            yield return new object[] { new object(), "639610C8-26EA-48BB-BD74-4BC18EECC6EA" };
         }
 
         [Theory]
         [MemberData(nameof(QueryInterface_NoSuchInterface_TestData))]
         [SkipOnMono("ComWrappers are not supported on Mono")]
+        [ActiveIssue("https://github.com/dotnet/runtime/issues/76005", typeof(PlatformDetection), nameof(PlatformDetection.IsNativeAot), nameof(PlatformDetection.IsNotWindows))]
         public void QueryInterface_NoSuchInterface_Success(object o, string iidString)
         {
             var cw = new ComWrappersImpl();
@@ -62,7 +64,7 @@ namespace System.Runtime.InteropServices.Tests
             try
             {
                 Guid iid = new Guid(iidString);
-                Assert.Equal(E_NOINTERFACE, Marshal.QueryInterface(ptr, ref iid, out IntPtr ppv));
+                Assert.Equal(E_NOINTERFACE, Marshal.QueryInterface(ptr, in iid, out IntPtr ppv));
                 Assert.Equal(IntPtr.Zero, ppv);
                 Assert.Equal(new Guid(iidString), iid);
             }
@@ -76,7 +78,7 @@ namespace System.Runtime.InteropServices.Tests
         public void QueryInterface_ZeroPointer_ThrowsArgumentNullException()
         {
             Guid iid = Guid.Empty;
-            AssertExtensions.Throws<ArgumentNullException>("pUnk", () => Marshal.QueryInterface(IntPtr.Zero, ref iid, out IntPtr ppv));
+            AssertExtensions.Throws<ArgumentNullException>("pUnk", () => Marshal.QueryInterface(IntPtr.Zero, in iid, out IntPtr ppv));
         }
     }
 }

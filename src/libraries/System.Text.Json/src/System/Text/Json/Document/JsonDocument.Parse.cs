@@ -20,7 +20,7 @@ namespace System.Text.Json
         private const int UnseekableStreamInitialRentSize = 4096;
 
         /// <summary>
-        ///   Parse memory as UTF-8-encoded text representing a single JSON value into a JsonDocument.
+        ///   Parse memory as UTF-8 encoded text representing a single JSON value into a JsonDocument.
         /// </summary>
         /// <remarks>
         ///   <para>
@@ -50,7 +50,7 @@ namespace System.Text.Json
         }
 
         /// <summary>
-        ///   Parse a sequence as UTF-8-encoded text representing a single JSON value into a JsonDocument.
+        ///   Parse a sequence as UTF-8 encoded text representing a single JSON value into a JsonDocument.
         /// </summary>
         /// <remarks>
         ///   <para>
@@ -101,7 +101,7 @@ namespace System.Text.Json
         }
 
         /// <summary>
-        ///   Parse a <see cref="Stream"/> as UTF-8-encoded data representing a single JSON value into a
+        ///   Parse a <see cref="Stream"/> as UTF-8 encoded data representing a single JSON value into a
         ///   JsonDocument.  The Stream will be read to completion.
         /// </summary>
         /// <param name="utf8Json">JSON data to parse.</param>
@@ -117,9 +117,9 @@ namespace System.Text.Json
         /// </exception>
         public static JsonDocument Parse(Stream utf8Json, JsonDocumentOptions options = default)
         {
-            if (utf8Json == null)
+            if (utf8Json is null)
             {
-                throw new ArgumentNullException(nameof(utf8Json));
+                ThrowHelper.ThrowArgumentNullException(nameof(utf8Json));
             }
 
             ArraySegment<byte> drained = ReadToEnd(utf8Json);
@@ -180,7 +180,7 @@ namespace System.Text.Json
         }
 
         /// <summary>
-        ///   Parse a <see cref="Stream"/> as UTF-8-encoded data representing a single JSON value into a
+        ///   Parse a <see cref="Stream"/> as UTF-8 encoded data representing a single JSON value into a
         ///   JsonDocument.  The Stream will be read to completion.
         /// </summary>
         /// <param name="utf8Json">JSON data to parse.</param>
@@ -200,9 +200,9 @@ namespace System.Text.Json
             JsonDocumentOptions options = default,
             CancellationToken cancellationToken = default)
         {
-            if (utf8Json == null)
+            if (utf8Json is null)
             {
-                throw new ArgumentNullException(nameof(utf8Json));
+                ThrowHelper.ThrowArgumentNullException(nameof(utf8Json));
             }
 
             return ParseAsyncCore(utf8Json, options, cancellationToken);
@@ -228,6 +228,24 @@ namespace System.Text.Json
             }
         }
 
+        internal static async Task<JsonDocument> ParseAsyncCoreUnrented(
+            Stream utf8Json,
+            JsonDocumentOptions options = default,
+            CancellationToken cancellationToken = default)
+        {
+            ArraySegment<byte> drained = await ReadToEndAsync(utf8Json, cancellationToken).ConfigureAwait(false);
+            Debug.Assert(drained.Array != null);
+
+            byte[] owned = new byte[drained.Count];
+            Buffer.BlockCopy(drained.Array, 0, owned, 0, drained.Count);
+
+            // Holds document content, clear it before returning it.
+            drained.AsSpan().Clear();
+            ArrayPool<byte>.Shared.Return(drained.Array);
+
+            return ParseUnrented(owned.AsMemory(), options.GetReaderOptions());
+        }
+
         /// <summary>
         ///   Parses text representing a single JSON value into a JsonDocument.
         /// </summary>
@@ -247,7 +265,7 @@ namespace System.Text.Json
         /// <exception cref="ArgumentException">
         ///   <paramref name="options"/> contains unsupported options.
         /// </exception>
-        public static JsonDocument Parse(ReadOnlyMemory<char> json, JsonDocumentOptions options = default)
+        public static JsonDocument Parse([StringSyntax(StringSyntaxAttribute.Json)] ReadOnlyMemory<char> json, JsonDocumentOptions options = default)
         {
             ReadOnlySpan<char> jsonChars = json.Span;
             int expectedByteCount = JsonReaderHelper.GetUtf8ByteCount(jsonChars);
@@ -311,11 +329,11 @@ namespace System.Text.Json
         /// <exception cref="ArgumentException">
         ///   <paramref name="options"/> contains unsupported options.
         /// </exception>
-        public static JsonDocument Parse(string json, JsonDocumentOptions options = default)
+        public static JsonDocument Parse([StringSyntax(StringSyntaxAttribute.Json)] string json, JsonDocumentOptions options = default)
         {
-            if (json == null)
+            if (json is null)
             {
-                throw new ArgumentNullException(nameof(json));
+                ThrowHelper.ThrowArgumentNullException(nameof(json));
             }
 
             return Parse(json.AsMemory(), options);
@@ -673,7 +691,7 @@ namespace System.Text.Json
             {
                 MetadataDb database = MetadataDb.CreateLocked(utf8Json.Length);
                 database.Append(tokenType, startLocation: 0, utf8Json.Length);
-                return new JsonDocument(utf8Json, database);
+                return new JsonDocument(utf8Json, database, isDisposable: false);
             }
         }
 
@@ -739,7 +757,7 @@ namespace System.Text.Json
                 }
             }
 
-            return new JsonDocument(utf8Json, database);
+            return new JsonDocument(utf8Json, database, isDisposable: false);
         }
 
         private static ArraySegment<byte> ReadToEnd(Stream stream)
@@ -817,7 +835,7 @@ namespace System.Text.Json
         }
 
         private static async
-#if BUILDING_INBOX_LIBRARY
+#if NETCOREAPP
             ValueTask<ArraySegment<byte>>
 #else
             Task<ArraySegment<byte>>
@@ -855,7 +873,7 @@ namespace System.Text.Json
                     Debug.Assert(rented.Length >= JsonConstants.Utf8Bom.Length);
 
                     lastRead = await stream.ReadAsync(
-#if BUILDING_INBOX_LIBRARY
+#if NETCOREAPP
                         rented.AsMemory(written, utf8BomLength - written),
 #else
                         rented,
@@ -886,7 +904,7 @@ namespace System.Text.Json
                     }
 
                     lastRead = await stream.ReadAsync(
-#if BUILDING_INBOX_LIBRARY
+#if NETCOREAPP
                         rented.AsMemory(written),
 #else
                         rented,

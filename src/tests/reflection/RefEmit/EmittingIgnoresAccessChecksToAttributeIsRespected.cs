@@ -5,13 +5,15 @@ using System;
 using System.Linq;
 using System.Reflection;
 using System.Reflection.Emit;
+using Xunit;
 
 class BaseClass1 { }
 
-class Test_EmittingIgnoresAccessChecksToAttributeIsRespected
+public class Test_EmittingIgnoresAccessChecksToAttributeIsRespected
 {
 
-    public static int Main()
+    [Fact]
+    public static void TestEntryPoint()
     {
         AssemblyBuilder assemblyBuilder = AssemblyBuilder.DefineDynamicAssembly(new AssemblyName("testassembly"), AssemblyBuilderAccess.Run);
         ModuleBuilder moduleBuilder = assemblyBuilder.DefineDynamicModule("testmodule");
@@ -31,7 +33,6 @@ class Test_EmittingIgnoresAccessChecksToAttributeIsRespected
             typeBuilder.CreateType();
         }
         Console.WriteLine("PASS");
-        return 100;
     }
 
     static void AddInstanceOfIgnoresAccessChecksToAttribute(AssemblyBuilder assemblyBuilder, ConstructorInfo ignoreAccessChecksToAttributeCtor, Assembly assembly)
@@ -123,7 +124,7 @@ class Test_EmittingIgnoresAccessChecksToAttributeIsRespected
         attributeTypeBuilder.SetCustomAttribute(customAttributeBuilder);
 
         // Make the TypeInfo real so the constructor can be used.
-        return attributeTypeBuilder.CreateTypeInfo()!.DeclaredConstructors.Single();
+        return attributeTypeBuilder.CreateTypeInfo().DeclaredConstructors.Single();
     }
 }
 

@@ -13,6 +13,7 @@
 //
 // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 
@@ -22,8 +23,8 @@ namespace System.Threading.Tasks
     /// Provides concurrent and exclusive task schedulers that coordinate to execute
     /// tasks while ensuring that concurrent tasks may run concurrently and exclusive tasks never do.
     /// </summary>
-    [DebuggerDisplay("Concurrent={ConcurrentTaskCountForDebugger}, Exclusive={ExclusiveTaskCountForDebugger}, Mode={ModeForDebugger}")]
-    [DebuggerTypeProxy(typeof(ConcurrentExclusiveSchedulerPair.DebugView))]
+    [DebuggerDisplay("Concurrent = {ConcurrentTaskCountForDebugger}, Exclusive = {ExclusiveTaskCountForDebugger}, Mode = {ModeForDebugger}")]
+    [DebuggerTypeProxy(typeof(DebugView))]
     public class ConcurrentExclusiveSchedulerPair
     {
         /// <summary>A processing mode to denote what kinds of tasks are currently being processed on this thread.</summary>
@@ -98,8 +99,8 @@ namespace System.Threading.Tasks
         /// <param name="maxItemsPerTask">The maximum number of tasks to process for each underlying scheduled task used by the pair.</param>
         public ConcurrentExclusiveSchedulerPair(TaskScheduler taskScheduler, int maxConcurrencyLevel, int maxItemsPerTask)
         {
-            // Validate arguments
-            if (taskScheduler == null) throw new ArgumentNullException(nameof(taskScheduler));
+            ArgumentNullException.ThrowIfNull(taskScheduler);
+
             if (maxConcurrencyLevel == 0 || maxConcurrencyLevel < -1) throw new ArgumentOutOfRangeException(nameof(maxConcurrencyLevel));
             if (maxItemsPerTask == 0 || maxItemsPerTask < -1) throw new ArgumentOutOfRangeException(nameof(maxItemsPerTask));
 
@@ -139,7 +140,7 @@ namespace System.Threading.Tasks
             }
         }
 
-        /// <summary>Gets a <see cref="System.Threading.Tasks.Task"/> that will complete when the scheduler has completed processing.</summary>
+        /// <summary>Gets a <see cref="Task"/> that will complete when the scheduler has completed processing.</summary>
         public Task Completion => EnsureCompletionStateInitialized();
 
         /// <summary>Gets the lazily-initialized completion state.</summary>
@@ -470,7 +471,7 @@ namespace System.Threading.Tasks
         private sealed class CompletionState : Task
         {
             /// <summary>Whether the scheduler has had completion requested.</summary>
-            /// <remarks>This variable is not volatile, so to gurantee safe reading reads, Volatile.Read is used in TryExecuteTaskInline.</remarks>
+            /// <remarks>This variable is not volatile, so to guarantee safe reading reads, Volatile.Read is used in TryExecuteTaskInline.</remarks>
             internal bool m_completionRequested;
             /// <summary>Whether completion processing has been queued.</summary>
             internal bool m_completionQueued;
@@ -501,7 +502,7 @@ namespace System.Threading.Tasks
         /// <summary>
         /// A scheduler shim used to queue tasks to the pair and execute those tasks on request of the pair.
         /// </summary>
-        [DebuggerDisplay("Count={CountForDebugger}, MaxConcurrencyLevel={m_maxConcurrencyLevel}, Id={Id}")]
+        [DebuggerDisplay("Count = {CountForDebugger}, MaxConcurrencyLevel = {m_maxConcurrencyLevel}, Id = {Id}")]
         [DebuggerTypeProxy(typeof(DebugView))]
         private sealed class ConcurrentExclusiveTaskScheduler : TaskScheduler
         {
@@ -560,7 +561,7 @@ namespace System.Threading.Tasks
             internal void ExecuteTask(Task task)
             {
                 Debug.Assert(task != null, "Infrastructure should have provided a non-null task.");
-                base.TryExecuteTask(task);
+                TryExecuteTask(task);
             }
 
             /// <summary>Tries to execute the task synchronously on this scheduler.</summary>
@@ -581,7 +582,7 @@ namespace System.Threading.Tasks
 
                 // We know the implementation of the default scheduler and how it will behave.
                 // As it's the most common underlying scheduler, we optimize for it.
-                bool isDefaultScheduler = m_pair.m_underlyingTaskScheduler == TaskScheduler.Default;
+                bool isDefaultScheduler = m_pair.m_underlyingTaskScheduler == Default;
 
                 // If we're targeting the default scheduler and taskWasPreviouslyQueued is true,
                 // we know that the default scheduler will only allow it to be inlined

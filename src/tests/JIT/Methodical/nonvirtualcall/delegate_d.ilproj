@@ -1,13 +1,12 @@
 <Project Sdk="Microsoft.NET.Sdk.IL">
   <PropertyGroup>
-    <OutputType>Exe</OutputType>
-    <RestorePackages>true</RestorePackages>
     <CLRTestPriority>1</CLRTestPriority>
   </PropertyGroup>
   <PropertyGroup>
     <DebugType>Full</DebugType>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="delegate_d.il" />
     <Compile Include="delegate.il" />
   </ItemGroup>
 </Project>

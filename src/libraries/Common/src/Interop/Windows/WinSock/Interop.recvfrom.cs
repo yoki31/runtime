@@ -10,13 +10,13 @@ internal static partial class Interop
     internal static partial class Winsock
     {
         // This method is always blocking, so it uses an IntPtr.
-        [GeneratedDllImport(Interop.Libraries.Ws2_32, SetLastError = true)]
+        [LibraryImport(Interop.Libraries.Ws2_32, SetLastError = true)]
         internal static unsafe partial int recvfrom(
             SafeSocketHandle socketHandle,
-            byte* pinnedBuffer,
+            Span<byte> pinnedBuffer,
             int len,
             SocketFlags socketFlags,
-            byte[] socketAddress,
+            Span<byte> socketAddress,
             ref int socketAddressSize);
     }
 }

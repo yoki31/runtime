@@ -114,14 +114,8 @@ namespace System.Collections.Specialized
 
                 case NotifyCollectionChangedAction.Add:
                 case NotifyCollectionChangedAction.Remove:
-                    if (changedItems == null)
-                    {
-                        throw new ArgumentNullException(nameof(changedItems));
-                    }
-                    if (startingIndex < -1)
-                    {
-                        throw new ArgumentException(SR.IndexCannotBeNegative, nameof(startingIndex));
-                    }
+                    ArgumentNullException.ThrowIfNull(changedItems);
+                    ArgumentOutOfRangeException.ThrowIfLessThan(startingIndex, -1);
 
                     if (action == NotifyCollectionChangedAction.Add)
                     {
@@ -197,14 +191,8 @@ namespace System.Collections.Specialized
             {
                 throw new ArgumentException(SR.Format(SR.WrongActionForCtor, NotifyCollectionChangedAction.Replace), nameof(action));
             }
-            if (newItems == null)
-            {
-                throw new ArgumentNullException(nameof(newItems));
-            }
-            if (oldItems == null)
-            {
-                throw new ArgumentNullException(nameof(oldItems));
-            }
+            ArgumentNullException.ThrowIfNull(newItems);
+            ArgumentNullException.ThrowIfNull(oldItems);
 
             _action = action;
             _newItems = new ReadOnlyList(newItems);
@@ -225,10 +213,7 @@ namespace System.Collections.Specialized
             {
                 throw new ArgumentException(SR.Format(SR.WrongActionForCtor, NotifyCollectionChangedAction.Move), nameof(action));
             }
-            if (index < 0)
-            {
-                throw new ArgumentException(SR.IndexCannotBeNegative, nameof(index));
-            }
+            ArgumentOutOfRangeException.ThrowIfNegative(index);
 
             _action = action;
             _newItems = _oldItems = new SingleItemReadOnlyList(changedItem);
@@ -249,10 +234,7 @@ namespace System.Collections.Specialized
             {
                 throw new ArgumentException(SR.Format(SR.WrongActionForCtor, NotifyCollectionChangedAction.Move), nameof(action));
             }
-            if (index < 0)
-            {
-                throw new ArgumentException(SR.IndexCannotBeNegative, nameof(index));
-            }
+            ArgumentOutOfRangeException.ThrowIfNegative(index);
 
             _action = action;
             _newItems = _oldItems = changedItems is not null ? new ReadOnlyList(changedItems) : null;
@@ -346,11 +328,7 @@ namespace System.Collections.Specialized
         {
             get
             {
-                if (index != 0)
-                {
-                    throw new ArgumentOutOfRangeException(nameof(index));
-                }
-
+                ArgumentOutOfRangeException.ThrowIfNotEqual(index, 0);
                 return _item;
             }
             set => throw new NotSupportedException(SR.NotSupported_ReadOnlyCollection);

@@ -188,35 +188,6 @@ GetSystemTimeAsFileTime(
 }
 
 
-#ifdef __APPLE__
-/*++
-Function:
-  FILECFAbsoluteTimeToFileTime
-
-Convert a CFAbsoluteTime value to a win32 FILETIME structure, as described
-in MSDN documentation. CFAbsoluteTime is the number of seconds elapsed since
-00:00 01 January 2001 UTC (Mac OS X epoch), while FILETIME represents a
-64-bit number of 100-nanosecond intervals that have passed since 00:00
-01 January 1601 UTC (win32 epoch).
---*/
-FILETIME FILECFAbsoluteTimeToFileTime( CFAbsoluteTime sec )
-{
-    __int64 Result;
-    FILETIME Ret;
-
-    Result = ((__int64)sec + SECS_BETWEEN_1601_AND_2001_EPOCHS) * SECS_TO_100NS;
-
-    Ret.dwLowDateTime = (DWORD)Result;
-    Ret.dwHighDateTime = (DWORD)(Result >> 32);
-
-    TRACE("CFAbsoluteTime = [%9f] converts to Win32 FILETIME = [%#x:%#x]\n",
-          sec, Ret.dwHighDateTime, Ret.dwLowDateTime);
-
-    return Ret;
-}
-#endif // __APPLE__
-
-
 /*++
 Function:
   FILEUnixTimeToFileTime
@@ -251,7 +222,7 @@ Function
     FileTimeToSystemTime()
 
     Helper function for FileTimeToDosTime.
-    Converts the necessary file time attibutes to system time, for
+    Converts the necessary file time attributes to system time, for
     easier manipulation in FileTimeToDosTime.
 
 --*/
@@ -294,16 +265,16 @@ BOOL PALAPI FileTimeToSystemTime( CONST FILETIME * lpFileTime,
 #endif  /* HAVE_GMTIME_R */
 
         /* Convert unix system time to Windows system time. */
-        lpSystemTime->wDay      = UnixSystemTime->tm_mday;
+        lpSystemTime->wDay      = (WORD)UnixSystemTime->tm_mday;
 
         /* Unix time counts January as a 0, under Windows it is 1*/
-        lpSystemTime->wMonth    = UnixSystemTime->tm_mon + 1;
+        lpSystemTime->wMonth    = (WORD)UnixSystemTime->tm_mon + 1;
         /* Unix time returns the year - 1900, Windows returns the current year*/
-        lpSystemTime->wYear     = UnixSystemTime->tm_year + 1900;
+        lpSystemTime->wYear     = (WORD)UnixSystemTime->tm_year + 1900;
 
-        lpSystemTime->wSecond   = UnixSystemTime->tm_sec;
-        lpSystemTime->wMinute   = UnixSystemTime->tm_min;
-        lpSystemTime->wHour     = UnixSystemTime->tm_hour;
+        lpSystemTime->wSecond   = (WORD)UnixSystemTime->tm_sec;
+        lpSystemTime->wMinute   = (WORD)UnixSystemTime->tm_min;
+        lpSystemTime->wHour     = (WORD)UnixSystemTime->tm_hour;
         return TRUE;
     }
     else

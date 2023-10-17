@@ -150,6 +150,7 @@ namespace System.Runtime.InteropServices.Tests
         }
 
         [Theory]
+        [ActiveIssue("https://github.com/dotnet/runtime/issues/75666", typeof(PlatformDetection), nameof(PlatformDetection.IsNativeAot))]
         [MemberData(nameof(StructureToPtr_NonBlittableObject_TestData))]
         public void StructureToPtr_NonBlittable_ThrowsArgumentException(object o)
         {
@@ -158,6 +159,7 @@ namespace System.Runtime.InteropServices.Tests
         }
 
         [Fact]
+        [ActiveIssue("https://github.com/dotnet/runtime/issues/75666", typeof(PlatformDetection), nameof(PlatformDetection.IsNativeAot))]
         public void StructureToPtr_AutoLayout_ThrowsArgumentException()
         {
             var someTs_Auto = new SomeTestStruct_Auto();
@@ -166,6 +168,7 @@ namespace System.Runtime.InteropServices.Tests
         }
 
         [Fact]
+        [ActiveIssue("https://github.com/dotnet/runtime/issues/75666", typeof(PlatformDetection), nameof(PlatformDetection.IsNativeAot))]
         [ActiveIssue("https://github.com/mono/mono/issues/15104", TestRuntimes.Mono)]
         public void StructureToPtr_InvalidLengthByValArrayInStruct_ThrowsArgumentException()
         {
@@ -256,6 +259,31 @@ namespace System.Runtime.InteropServices.Tests
             Assert.Equal(*opaqueData, *marshaledOpaqueData);
         }
 
+        [Fact]
+        [ActiveIssue("https://github.com/dotnet/runtime/issues/73008", TestPlatforms.iOS | TestPlatforms.tvOS)]
+        public void StructureToPtr_Flat_And_Nested_NonBlittableStructure_Success()
+        {
+            MarshalAndDestroy(new NonBlittableStruct_Flat
+            {
+                del = null,
+                b = 0x55,
+            });
+
+            MarshalAndDestroy(new NonBlittableStruct_Nested
+            {
+                s = { del = null },
+                b = 0x55,
+            });
+
+            static unsafe void MarshalAndDestroy<T>(T value) where T : struct
+            {
+                int sizeof_T = Marshal.SizeOf<T>();
+                void* ptr = stackalloc byte[sizeof_T];
+                Marshal.StructureToPtr(value, (IntPtr)ptr, false);
+                Marshal.DestroyStructure<T>((IntPtr)ptr);
+            }
+        }
+
         public struct StructWithIntField
         {
             public int value;
@@ -317,6 +345,23 @@ namespace System.Runtime.InteropServices.Tests
         {
             public OpaqueStruct opaque;
             public string str;
+        }
+
+        public struct NonBlittableStruct_Flat
+        {
+            public Delegate del;
+            public byte b;
+        }
+
+        public struct NonBlittableStruct_Nested
+        {
+            public struct InnerStruct
+            {
+                public Delegate del;
+            }
+
+            public InnerStruct s;
+            public byte b;
         }
     }
 }

@@ -6,7 +6,8 @@ set(DOTNET_PROJECT_NAME "dotnet")
 
 if(CLR_CMAKE_TARGET_WIN32)
     list(APPEND SOURCES
-        dotnet.manifest)
+        dotnet.manifest
+        dotnet.rc)
 endif()
 
 list(APPEND SOURCES
@@ -14,3 +15,7 @@ list(APPEND SOURCES
 )
 
 include(../exe.cmake)
+
+if (CLR_CMAKE_HOST_APPLE)
+    adhoc_sign_with_entitlements(dotnet "${CLR_ENG_NATIVE_DIR}/entitlements.plist")
+endif()

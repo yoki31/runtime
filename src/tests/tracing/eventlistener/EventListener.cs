@@ -5,6 +5,7 @@ using System;
 using System.IO;
 using System.Diagnostics.Tracing;
 using Tracing.Tests.Common;
+using Xunit;
 
 namespace Tracing.Tests
 {
@@ -15,6 +16,20 @@ namespace Tracing.Tests
 
         [Event(1)]
         internal void MathResult(int x, int y, int z, string formula) { this.WriteEvent(1, x, y, z, formula); }
+
+        [Event(2)]
+        internal void DateTimeEvent(DateTime dateTime) => WriteEvent(2, dateTime);
+
+
+        [NonEvent]  
+        private unsafe void WriteEvent(int eventId, DateTime dateTime)  
+        {
+            EventData* desc = stackalloc EventData[1];
+            long fileTime = dateTime.ToFileTimeUtc();
+            desc[0].DataPointer = (IntPtr)(&fileTime);
+            desc[0].Size = 8;
+            WriteEventCore(eventId, 1, desc);
+        }
     }
     
     internal sealed class SimpleEventListener : EventListener
@@ -23,6 +38,7 @@ namespace Tracing.Tests
         private readonly EventLevel _level;
         
         public int EventCount { get; private set; } = 0;
+        public DateTime DateObserved { get; private set; } = DateTime.MinValue;
 
         public SimpleEventListener(string targetSourceName, EventLevel level)
         {
@@ -41,15 +57,22 @@ namespace Tracing.Tests
 
         protected override void OnEventWritten(EventWrittenEventArgs eventData)
         {
-            EventCount++;
+            if (eventData.EventId == 2)
+            {
+                DateObserved = (DateTime)eventData.Payload[0];
+            }
+            else
+                EventCount++;
         }
     }
 
-    class EventPipeSmoke
+    public class EventPipeSmoke
     {
         private static int messageIterations = 100;
+        private static readonly DateTime ThePast = DateTime.UtcNow;
 
-        static int Main(string[] args)
+        [Fact]
+        public static int TestEntryPoint()
         {
             bool pass = false;
             using(var listener = new SimpleEventListener("SimpleEventSource", EventLevel.Verbose))
@@ -68,10 +91,12 @@ namespace Tracing.Tests
                     
                     eventSource.MathResult(x, y, x+y, formula);
                 }
+                eventSource.DateTimeEvent(ThePast);
                 Console.WriteLine("\tEnd: Messaging.\n");
                 
                 Console.WriteLine($"\tEventListener received {listener.EventCount} event(s)\n");
-                pass = listener.EventCount == messageIterations;
+                Console.WriteLine($"\tEventListener received {listener.DateObserved} vs {ThePast}\n");
+                pass = listener.EventCount == messageIterations && ThePast == listener.DateObserved;
             }
 
             return pass ? 100 : -1;

@@ -212,10 +212,7 @@ namespace System.Xml
         // (http://www.w3.org/TR/1998/REC-xml-19980210#NT-Name).
         public virtual void WriteNmToken(string name)
         {
-            if (string.IsNullOrEmpty(name))
-            {
-                throw new ArgumentException(SR.Xml_EmptyName);
-            }
+            ArgumentException.ThrowIfNullOrEmpty(name);
             WriteString(XmlConvert.VerifyNMTOKEN(name, ExceptionType.ArgumentException));
         }
 
@@ -245,10 +242,8 @@ namespace System.Xml
         // Writes out the specified value.
         public virtual void WriteValue(object value)
         {
-            if (value == null)
-            {
-                throw new ArgumentNullException(nameof(value));
-            }
+            ArgumentNullException.ThrowIfNull(value);
+
             WriteString(XmlUntypedConverter.Untyped.ToString(value, null));
         }
 
@@ -279,7 +274,7 @@ namespace System.Xml
             // Under Win8P, WriteValue(DateTime) will invoke this overload, but custom writers
             // might not have implemented it. This base implementation should call WriteValue(DateTime).
             // The following conversion results in the same string as calling ToString with DateTimeOffset.
-            WriteValue(value.Offset != TimeSpan.Zero ? value.LocalDateTime : value.UtcDateTime);
+            WriteValue(value.TotalOffsetMinutes != 0 ? value.LocalDateTime : value.UtcDateTime);
         }
 
         // Writes out the specified value.
@@ -317,10 +312,7 @@ namespace System.Xml
         // Writes out all the attributes found at the current position in the specified XmlReader.
         public virtual void WriteAttributes(XmlReader reader, bool defattr)
         {
-            if (reader == null)
-            {
-                throw new ArgumentNullException(nameof(reader));
-            }
+            ArgumentNullException.ThrowIfNull(reader);
 
             if (reader.NodeType is XmlNodeType.Element or XmlNodeType.XmlDeclaration)
             {
@@ -365,10 +357,7 @@ namespace System.Xml
         // to the corresponding end element.
         public virtual void WriteNode(XmlReader reader, bool defattr)
         {
-            if (reader == null)
-            {
-                throw new ArgumentNullException(nameof(reader));
-            }
+            ArgumentNullException.ThrowIfNull(reader);
 
             bool canReadChunk = reader.CanReadValueChunk;
             int d = reader.NodeType == XmlNodeType.None ? -1 : reader.Depth;
@@ -432,10 +421,8 @@ namespace System.Xml
         // Copies the current node from the given XPathNavigator to the writer (including child nodes).
         public virtual void WriteNode(XPathNavigator navigator, bool defattr)
         {
-            if (navigator == null)
-            {
-                throw new ArgumentNullException(nameof(navigator));
-            }
+            ArgumentNullException.ThrowIfNull(navigator);
+
             int iLevel = 0;
 
             navigator = navigator.Clone();
@@ -625,10 +612,7 @@ namespace System.Xml
         // Creates an XmlWriter for writing into the provided file.
         public static XmlWriter Create(string outputFileName)
         {
-            if (outputFileName == null)
-            {
-                throw new ArgumentNullException(nameof(outputFileName));
-            }
+            ArgumentNullException.ThrowIfNull(outputFileName);
 
             // Avoid using XmlWriter.Create(string, XmlReaderSettings), as it references a lot of types
             // that then can't be trimmed away.
@@ -656,10 +640,7 @@ namespace System.Xml
         // Creates an XmlWriter for writing into the provided stream.
         public static XmlWriter Create(Stream output)
         {
-            if (output == null)
-            {
-                throw new ArgumentNullException(nameof(output));
-            }
+            ArgumentNullException.ThrowIfNull(output);
 
             // Avoid using XmlWriter.Create(Stream, XmlReaderSettings), as it references a lot of types
             // that then can't be trimmed away.
@@ -678,10 +659,7 @@ namespace System.Xml
         // Creates an XmlWriter for writing into the provided TextWriter.
         public static XmlWriter Create(TextWriter output)
         {
-            if (output == null)
-            {
-                throw new ArgumentNullException(nameof(output));
-            }
+            ArgumentNullException.ThrowIfNull(output);
 
             // Avoid using XmlWriter.Create(TextWriter, XmlReaderSettings), as it references a lot of types
             // that then can't be trimmed away.
@@ -700,10 +678,7 @@ namespace System.Xml
         // Creates an XmlWriter for writing into the provided StringBuilder.
         public static XmlWriter Create(StringBuilder output)
         {
-            if (output == null)
-            {
-                throw new ArgumentNullException(nameof(output));
-            }
+            ArgumentNullException.ThrowIfNull(output);
 
             // Avoid using XmlWriter.Create(StringBuilder, XmlReaderSettings), as it references a lot of types
             // that then can't be trimmed away.
@@ -713,10 +688,7 @@ namespace System.Xml
         // Creates an XmlWriter for writing into the provided StringBuilder with the specified settings.
         public static XmlWriter Create(StringBuilder output, XmlWriterSettings? settings)
         {
-            if (output == null)
-            {
-                throw new ArgumentNullException(nameof(output));
-            }
+            ArgumentNullException.ThrowIfNull(output);
 
             settings ??= XmlWriterSettings.s_defaultWriterSettings;
             return settings.CreateWriter(new StringWriter(output, CultureInfo.InvariantCulture));

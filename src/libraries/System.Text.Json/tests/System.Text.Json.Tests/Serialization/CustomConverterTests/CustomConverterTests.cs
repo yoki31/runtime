@@ -1,6 +1,9 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
+using System.Collections.Generic;
+using System.IO;
+using Microsoft.DotNet.RemoteExecutor;
 using Xunit;
 
 namespace System.Text.Json.Serialization.Tests
@@ -176,10 +179,97 @@ namespace System.Text.Json.Serialization.Tests
             }
         }
 
+        [ActiveIssue("https://github.com/dotnet/runtime/issues/66232", TargetFrameworkMonikers.NetFramework)]
+        [ActiveIssue("https://github.com/dotnet/runtime/issues/66371", typeof(PlatformDetection), nameof(PlatformDetection.IsMonoInterpreter))]
+        [ConditionalFact(typeof(RemoteExecutor), nameof(RemoteExecutor.IsSupported))]
+        public static void GetConverter_Poco_WriteThrowsNotSupportedException()
+        {
+            RemoteExecutor.Invoke(static () =>
+            {
+                JsonSerializerOptions options = new();
+                JsonConverter<Point_2D> converter = (JsonConverter<Point_2D>)options.GetConverter(typeof(Point_2D));
+
+                using var writer = new Utf8JsonWriter(new MemoryStream());
+                var value = new Point_2D(0, 0);
+
+                // Running the converter without priming the options instance
+                // for reflection-based serialization should throw NotSupportedException
+                // since it can't resolve reflection-based metadata.
+                Assert.Throws<NotSupportedException>(() => converter.Write(writer, value, options));
+                Assert.Equal(0, writer.BytesCommitted + writer.BytesPending);
+                options.IncludeFields = false; // options should still be mutable
+
+                JsonSerializer.Serialize(42, options);
+
+                // Same operation should succeed when instance has been primed.
+                converter.Write(writer, value, options);
+                Assert.NotEqual(0, writer.BytesCommitted + writer.BytesPending);
+                writer.Reset();
+
+                Assert.Throws<InvalidOperationException>(() => options.IncludeFields = false);
+
+                // State change should not leak into unrelated options instances.
+                var options2 = new JsonSerializerOptions();
+                options2.AddContext<JsonContext>();
+                Assert.Throws<NotSupportedException>(() => converter.Write(writer, value, options2));
+                Assert.Equal(0, writer.BytesCommitted + writer.BytesPending);
+            }).Dispose();
+        }
+
         [Fact]
         public static void GetConverterTypeToConvertNull()
         {
             Assert.Throws<ArgumentNullException>(() => (new JsonSerializerOptions()).GetConverter(typeToConvert: null!));
+        }
+
+        [Fact]
+        public static void ErrorMessageContainsExpectedType()
+        {
+            JsonSerializerOptions options = new();
+            options.Converters.Add(new InvalidJsonConverterFactory());
+            var ex = Assert.Throws<InvalidOperationException>(() => 
+                JsonSerializer.Serialize(new InvalidTestInfo("Hello"), options));
+            Assert.Contains(typeof(InvalidTestInfo).Name, ex.Message);
+        }
+
+        private sealed record InvalidTestInfo(string Name);
+
+        private sealed class InvalidJsonConverterFactory : JsonConverterFactory
+        {
+            public override bool CanConvert(Type typeToConvert) => true;
+
+            public override JsonConverter? CreateConverter(Type typeToConvert, JsonSerializerOptions options)
+                => new MyBoolEnumConverter();
+        }
+
+        [Theory]
+        [InlineData(typeof(ConverterReturningNull), typeof(Customer))]
+        [InlineData(typeof(TestFactory.SimpleConverter), typeof(string))]
+        [InlineData(typeof(ObjectBoolConverter), typeof(object))]
+        [InlineData(typeof(Int32NullConverter), typeof(int))]
+        [InlineData(typeof(JsonStringEnumConverter), null)]
+        [InlineData(typeof(JsonStringEnumConverter<MyBoolEnum>), null)]
+        [InlineData(typeof(InvalidJsonConverterFactory), null)]
+        [InlineData(typeof(TestFactory), null)]
+        public static void JsonConverter_TypeProperty_ReturnsExpectedResult(Type converterType, Type expectedType)
+        {
+            var converter = (JsonConverter)Activator.CreateInstance(converterType)!;
+            Assert.Equal(expectedType, converter.Type);
+        }
+
+        [Theory]
+        [InlineData(typeof(bool))]
+        [InlineData(typeof(int))]
+        [InlineData(typeof(string))]
+        [InlineData(typeof(object))]
+        [InlineData(typeof(MyBoolEnum))]
+        [InlineData(typeof(Customer))]
+        [InlineData(typeof(int[]))]
+        [InlineData(typeof(Dictionary<string, int>))]
+        public static void JsonSerializerOptions_GetConverter_TypeProperty_ReturnsExpectedResult(Type type)
+        {
+            JsonConverter converter = JsonSerializerOptions.Default.GetConverter(type);
+            Assert.Equal(type, converter.Type);
         }
     }
 }

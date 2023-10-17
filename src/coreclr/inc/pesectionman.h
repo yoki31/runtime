@@ -38,8 +38,6 @@ public:
     // Apply all the relocs for in memory conversion
     HRESULT applyRelocs(CeeGenTokenMapper *pTokenMapper);
 
-    HRESULT cloneInstance(PESectionMan *destination);
-
 protected:
 
     // Finds section with given name.  returns 0 if not found
@@ -136,14 +134,11 @@ class PESection : public CeeSectionImpl {
     virtual char * computePointer(unsigned offset) const;
 
     // Checks to see if pointer is in section
-    virtual BOOL containsPointer(__in char *ptr) const;
+    virtual BOOL containsPointer(_In_ char *ptr) const;
 
     // Given a pointer pointing into this section,
     // computes an offset as if this were an array
-    virtual unsigned computeOffset(__in char *ptr) const;
-
-    // Make 'destination' a copy of the current PESection
-    HRESULT cloneInstance(PESection *destination);
+    virtual unsigned computeOffset(_In_ char *ptr) const;
 
     // Cause the section to allocate memory in smaller chunks
     void SetInitialGrowth(unsigned growth);

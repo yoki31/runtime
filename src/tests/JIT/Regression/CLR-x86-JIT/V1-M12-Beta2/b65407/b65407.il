@@ -9,20 +9,19 @@
   .publickeytoken = (B0 3F 5F 7F 11 D5 0A 3A )
   .ver 4:0:0:0
 }
-.assembly sample
+.assembly 'b65407'
 {
 }
 .assembly extern xunit.core {}
-.module sample.exe
 // MVID: {EAE7CF60-60E9-49D2-84F9-F450B7E26DE4}
 
 .file alignment 512
 
 // Image base: 0x03110000
-.class private auto ansi beforefieldinit sample
+.class public auto ansi beforefieldinit sample
        extends [mscorlib]System.Object
 {
-  .method private hidebysig static int32 Main() cil managed
+  .method public hidebysig static int32 Main() cil managed
   {
     .custom instance void [xunit.core]Xunit.FactAttribute::.ctor() = (
         01 00 00 00

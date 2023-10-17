@@ -16,21 +16,28 @@ namespace System.Net.Http
         private PollingCounter? _failedRequestsCounter;
         private PollingCounter? _totalHttp11ConnectionsCounter;
         private PollingCounter? _totalHttp20ConnectionsCounter;
+        private PollingCounter? _totalHttp30ConnectionsCounter;
         private EventCounter? _http11RequestsQueueDurationCounter;
         private EventCounter? _http20RequestsQueueDurationCounter;
+        private EventCounter? _http30RequestsQueueDurationCounter;
 
         [NonEvent]
-        public void Http11RequestLeftQueue(double timeOnQueueMilliseconds)
+        public void RequestLeftQueue(int versionMajor, TimeSpan duration)
         {
-            _http11RequestsQueueDurationCounter!.WriteMetric(timeOnQueueMilliseconds);
-            RequestLeftQueue(timeOnQueueMilliseconds, versionMajor: 1, versionMinor: 1);
-        }
+            Debug.Assert(versionMajor is 1 or 2 or 3);
 
-        [NonEvent]
-        public void Http20RequestLeftQueue(double timeOnQueueMilliseconds)
-        {
-            _http20RequestsQueueDurationCounter!.WriteMetric(timeOnQueueMilliseconds);
-            RequestLeftQueue(timeOnQueueMilliseconds, versionMajor: 2, versionMinor: 0);
+            EventCounter? counter = versionMajor switch
+            {
+                1 => _http11RequestsQueueDurationCounter,
+                2 => _http20RequestsQueueDurationCounter,
+                _ => _http30RequestsQueueDurationCounter
+            };
+
+            double timeOnQueueMs = duration.TotalMilliseconds;
+
+            counter?.WriteMetric(timeOnQueueMs);
+
+            RequestLeftQueue(timeOnQueueMs, (byte)versionMajor, versionMinor: versionMajor == 1 ? (byte)1 : (byte)0);
         }
 
         protected override void OnEventCommand(EventCommandEventArgs command)
@@ -55,7 +62,7 @@ namespace System.Net.Http
 
                 // The cumulative number of HTTP requests failed since the process started.
                 // Failed means that an exception occurred during the handler's Send(Async) call as a result of a connection related error, timeout, or explicitly cancelled.
-                // In case of using HttpClient's SendAsync(and friends) with buffering, this includes exceptions that occured while buffering the response content
+                // In case of using HttpClient's SendAsync(and friends) with buffering, this includes exceptions that occurred while buffering the response content
                 // In case of using HttpClient's helper methods (GetString/ByteArray/Stream), this includes responses with non-success status codes
                 _failedRequestsCounter ??= new PollingCounter("requests-failed", this, () => Interlocked.Read(ref _failedRequests))
                 {
@@ -87,6 +94,11 @@ namespace System.Net.Http
                     DisplayName = "Current Http 2.0 Connections"
                 };
 
+                _totalHttp30ConnectionsCounter ??= new PollingCounter("http30-connections-current-total", this, () => Interlocked.Read(ref _openedHttp30Connections))
+                {
+                    DisplayName = "Current Http 3.0 Connections"
+                };
+
                 _http11RequestsQueueDurationCounter ??= new EventCounter("http11-requests-queue-duration", this)
                 {
                     DisplayName = "HTTP 1.1 Requests Queue Duration",
@@ -96,6 +108,12 @@ namespace System.Net.Http
                 _http20RequestsQueueDurationCounter ??= new EventCounter("http20-requests-queue-duration", this)
                 {
                     DisplayName = "HTTP 2.0 Requests Queue Duration",
+                    DisplayUnits = "ms"
+                };
+
+                _http30RequestsQueueDurationCounter ??= new EventCounter("http30-requests-queue-duration", this)
+                {
+                    DisplayName = "HTTP 3.0 Requests Queue Duration",
                     DisplayUnits = "ms"
                 };
             }

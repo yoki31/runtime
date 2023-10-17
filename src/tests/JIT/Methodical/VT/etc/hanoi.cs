@@ -2,15 +2,16 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 using System;
+using Xunit;
 
-namespace JitTest
+namespace JitTest_hanoi_etc_cs
 {
     internal struct CI
     {
         public int index;
     }
 
-    internal class Test
+    public class Test
     {
         private static int[][] s_cols;
         private static int[] s_heights;
@@ -52,7 +53,8 @@ namespace JitTest
             }
         }
 
-        private static int Main()
+        [Fact]
+        public static void TestEntryPoint()
         {
             int NUM = 17;
             s_cols = new int[3][];
@@ -67,7 +69,6 @@ namespace JitTest
             CI F, T;
             F.index = 0;
             T.index = 1;
-            return 100;
         }
     }
 }

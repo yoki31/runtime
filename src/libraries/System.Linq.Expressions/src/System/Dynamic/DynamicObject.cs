@@ -463,8 +463,7 @@ namespace System.Dynamic
 
                     if (variable.IsByRef)
                     {
-                        if (block == null)
-                            block = new ReadOnlyCollectionBuilder<Expression>();
+                        block ??= new ReadOnlyCollectionBuilder<Expression>();
 
                         block.Add(
                             Expression.Assign(
@@ -612,8 +611,7 @@ namespace System.Dynamic
                                     Expression.Call(
                                         String_Format_String_ObjectArray,
                                         Expression.Constant(convertFailed),
-                                        Expression.NewArrayInit(
-                                            typeof(object),
+                                        Expression.NewObjectArrayInit(
                                             new TrueReadOnlyCollection<Expression>(
                                                 Expression.Condition(
                                                     Expression.Equal(resultMO.Expression, AstUtils.Null),
@@ -646,7 +644,7 @@ namespace System.Dynamic
                     Expression.Block(
                         new TrueReadOnlyCollection<ParameterExpression>(result, callArgs),
                         new TrueReadOnlyCollection<Expression>(
-                            method != DynamicObject_TryBinaryOperation ? Expression.Assign(callArgs, Expression.NewArrayInit(typeof(object), callArgsValue)) : Expression.Assign(callArgs, callArgsValue[0]),
+                            method != DynamicObject_TryBinaryOperation ? Expression.Assign(callArgs, Expression.NewObjectArrayInit(callArgsValue)) : Expression.Assign(callArgs, callArgsValue[0]),
                             Expression.Condition(
                                 Expression.Call(
                                     GetLimitedSelf(),
@@ -706,7 +704,7 @@ namespace System.Dynamic
                     Expression.Block(
                         new TrueReadOnlyCollection<ParameterExpression>(result, callArgs),
                         new TrueReadOnlyCollection<Expression>(
-                            Expression.Assign(callArgs, Expression.NewArrayInit(typeof(object), callArgsValue)),
+                            Expression.Assign(callArgs, Expression.NewObjectArrayInit(callArgsValue)),
                             Expression.Condition(
                                 Expression.Call(
                                     GetLimitedSelf(),
@@ -769,7 +767,7 @@ namespace System.Dynamic
                     Expression.Block(
                         new TrueReadOnlyCollection<ParameterExpression>(callArgs),
                         new TrueReadOnlyCollection<Expression>(
-                            Expression.Assign(callArgs, Expression.NewArrayInit(typeof(object), callArgsValue)),
+                            Expression.Assign(callArgs, Expression.NewObjectArrayInit(callArgsValue)),
                             Expression.Condition(
                                 Expression.Call(
                                     GetLimitedSelf(),
@@ -810,7 +808,7 @@ namespace System.Dynamic
             /// behavior which lets the call site determine how the binder is performed.
             /// </summary>
             [UnconditionalSuppressMessage("ReflectionAnalysis", "IL2075:UnrecognizedReflectionPattern",
-                Justification = "This is looking if the method is overriden on an instantiated type. An overriden method will never be trimmed if the virtual method exists.")]
+                Justification = "This is looking if the method is overridden on an instantiated type. An overridden method will never be trimmed if the virtual method exists.")]
             private bool IsOverridden(MethodInfo method)
             {
                 MemberInfo[] methods = Value.GetType().GetMember(method.Name, MemberTypes.Method, BindingFlags.Public | BindingFlags.Instance);

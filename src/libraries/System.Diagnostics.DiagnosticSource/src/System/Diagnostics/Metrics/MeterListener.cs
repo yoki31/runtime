@@ -7,24 +7,21 @@ using System.Runtime.CompilerServices;
 namespace System.Diagnostics.Metrics
 {
     /// <summary>
-    /// A delegate to represent the Meterlistener callbacks used in measurements recording operation.
+    /// A delegate to represent the MeterListener callbacks used in measurements recording operation.
     /// </summary>
     public delegate void MeasurementCallback<T>(Instrument instrument, T measurement, ReadOnlySpan<KeyValuePair<string, object?>> tags, object? state) where T : struct;
 
     /// <summary>
     /// MeterListener is class used to listen to the metrics instrument measurements recording.
     /// </summary>
-#if ALLOW_PARTIALLY_TRUSTED_CALLERS
-        [System.Security.SecuritySafeCriticalAttribute]
-#endif
     public sealed class MeterListener : IDisposable
     {
         // We use LikedList here so we don't have to take any lock while iterating over the list as we always hold on a node which be either valid or null.
         // DiagLinkedList is thread safe for Add, Remove, and Clear operations.
-        private static List<MeterListener> s_allStartedListeners = new List<MeterListener>();
+        private static readonly List<MeterListener> s_allStartedListeners = new List<MeterListener>();
 
         // List of the instruments which the current listener is listening to.
-        private DiagLinkedList<Instrument> _enabledMeasurementInstruments = new DiagLinkedList<Instrument>();
+        private readonly DiagLinkedList<Instrument> _enabledMeasurementInstruments = new DiagLinkedList<Instrument>();
         private bool _disposed;
 
         // We initialize all measurement callback with no-op operations so we'll avoid the null checks during the execution;
@@ -59,6 +56,11 @@ namespace System.Diagnostics.Metrics
         /// <param name="state">A state object which will be passed back to the callback getting measurements events.</param>
         public void EnableMeasurementEvents(Instrument instrument, object? state = null)
         {
+            if (!Meter.IsSupported)
+            {
+                return;
+            }
+
             bool oldStateStored = false;
             bool enabled = false;
             object? oldState = null;
@@ -67,7 +69,7 @@ namespace System.Diagnostics.Metrics
             {
                 if (instrument is not null && !_disposed && !instrument.Meter.Disposed)
                 {
-                    _enabledMeasurementInstruments.AddIfNotExist(instrument, (instrument1, instrument2) => object.ReferenceEquals(instrument1, instrument2));
+                    _enabledMeasurementInstruments.AddIfNotExist(instrument, object.ReferenceEquals);
                     oldState = instrument.EnableMeasurement(new ListenerSubscription(this, state), out oldStateStored);
                     enabled = true;
                 }
@@ -95,10 +97,15 @@ namespace System.Diagnostics.Metrics
         /// <returns>The state object originally passed to <see cref="EnableMeasurementEvents" /> method.</returns>
         public object? DisableMeasurementEvents(Instrument instrument)
         {
+            if (!Meter.IsSupported)
+            {
+                return default;
+            }
+
             object? state =  null;
             lock (Instrument.SyncObject)
             {
-                if (instrument is null || _enabledMeasurementInstruments.Remove(instrument, (instrument1, instrument2) => object.ReferenceEquals(instrument1, instrument2)) == default)
+                if (instrument is null || _enabledMeasurementInstruments.Remove(instrument, object.ReferenceEquals) == default)
                 {
                     return default;
                 }
@@ -117,33 +124,40 @@ namespace System.Diagnostics.Metrics
         /// <param name="measurementCallback">The callback which can be used to get measurement recording of numeric type T.</param>
         public void SetMeasurementEventCallback<T>(MeasurementCallback<T>? measurementCallback) where T : struct
         {
-            if (measurementCallback is MeasurementCallback<byte> byteCallback)
+            if (!Meter.IsSupported)
             {
-                _byteMeasurementCallback = (measurementCallback is null) ? ((instrument, measurement, tags, state) => { /* no-op */}) : byteCallback;
+                return;
             }
-            else if (measurementCallback is MeasurementCallback<int> intCallback)
+
+            measurementCallback ??= (instrument, measurement, tags, state) => { /* no-op */};
+
+            if (typeof(T) == typeof(byte))
             {
-                _intMeasurementCallback = (measurementCallback is null) ? ((instrument, measurement, tags, state) => { /* no-op */}) : intCallback;
+                _byteMeasurementCallback = (MeasurementCallback<byte>)(object)measurementCallback;
             }
-            else if (measurementCallback is MeasurementCallback<float> floatCallback)
+            else if (typeof(T) == typeof(int))
             {
-                _floatMeasurementCallback = (measurementCallback is null) ? ((instrument, measurement, tags, state) => { /* no-op */}) : floatCallback;
+                _intMeasurementCallback = (MeasurementCallback<int>)(object)measurementCallback;
             }
-            else if (measurementCallback is MeasurementCallback<double> doubleCallback)
+            else if (typeof(T) == typeof(float))
             {
-                _doubleMeasurementCallback = (measurementCallback is null) ? ((instrument, measurement, tags, state) => { /* no-op */}) : doubleCallback;
+                _floatMeasurementCallback = (MeasurementCallback<float>)(object)measurementCallback;
             }
-            else if (measurementCallback is MeasurementCallback<decimal> decimalCallback)
+            else if (typeof(T) == typeof(double))
             {
-                _decimalMeasurementCallback = (measurementCallback is null) ? ((instrument, measurement, tags, state) => { /* no-op */}) : decimalCallback;
+                _doubleMeasurementCallback = (MeasurementCallback<double>)(object)measurementCallback;
             }
-            else if (measurementCallback is MeasurementCallback<short> shortCallback)
+            else if (typeof(T) == typeof(decimal))
             {
-                _shortMeasurementCallback = (measurementCallback is null) ? ((instrument, measurement, tags, state) => { /* no-op */}) : shortCallback;
+                _decimalMeasurementCallback = (MeasurementCallback<decimal>)(object)measurementCallback;
             }
-            else if (measurementCallback is MeasurementCallback<long> longCallback)
+            else if (typeof(T) == typeof(short))
             {
-                _longMeasurementCallback = (measurementCallback is null) ? ((instrument, measurement, tags, state) => { /* no-op */}) : longCallback;
+                _shortMeasurementCallback = (MeasurementCallback<short>)(object)measurementCallback;
+            }
+            else if (typeof(T) == typeof(long))
+            {
+                _longMeasurementCallback = (MeasurementCallback<long>)(object)measurementCallback;
             }
             else
             {
@@ -156,6 +170,11 @@ namespace System.Diagnostics.Metrics
         /// </summary>
         public void Start()
         {
+            if (!Meter.IsSupported)
+            {
+                return;
+            }
+
             List<Instrument>? publishedInstruments = null;
             lock (Instrument.SyncObject)
             {
@@ -185,6 +204,11 @@ namespace System.Diagnostics.Metrics
         /// </summary>
         public void RecordObservableInstruments()
         {
+            if (!Meter.IsSupported)
+            {
+                return;
+            }
+
             List<Exception>? exceptionsList = null;
             DiagNode<Instrument>? current = _enabledMeasurementInstruments.First;
             while (current is not null)
@@ -216,6 +240,11 @@ namespace System.Diagnostics.Metrics
         /// </summary>
         public void Dispose()
         {
+            if (!Meter.IsSupported)
+            {
+                return;
+            }
+
             Dictionary<Instrument, object?>? callbacksArguments = null;
             Action<Instrument, object?>? measurementsCompleted = MeasurementsCompleted;
 

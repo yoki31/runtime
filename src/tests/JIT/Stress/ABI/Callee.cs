@@ -12,8 +12,10 @@ namespace ABIStress
 {
     class Callee
     {
-        private static readonly MethodInfo s_hashCodeAddMethod =
-            typeof(HashCode).GetMethods().Single(mi => mi.Name == "Add" && mi.GetParameters().Length == 1);
+        private static readonly MethodInfo s_memoryMarshalCreateReadOnlySpanMethod =
+            typeof(MemoryMarshal).GetMethod("CreateReadOnlySpan").MakeGenericMethod(typeof(byte));
+        private static readonly MethodInfo s_hashCodeAddBytesMethod =
+            typeof(HashCode).GetMethod("AddBytes");
         private static readonly MethodInfo s_hashCodeToHashCodeMethod =
             typeof(HashCode).GetMethod("ToHashCode");
 
@@ -50,9 +52,23 @@ namespace ABIStress
             for (int i = 0; i < Parameters.Count; i++)
             {
                 TypeEx pm = Parameters[i];
-                g.Emit(OpCodes.Ldloca, hashCode);
-                g.Emit(OpCodes.Ldarg, checked((short)i));
-                g.Emit(OpCodes.Call, s_hashCodeAddMethod.MakeGenericMethod(pm.Type));
+                foreach ((int start, int end) in pm.DataSegments)
+                {
+                    g.Emit(OpCodes.Ldloca, hashCode);
+
+                    g.Emit(OpCodes.Ldarga, checked((short)i));
+                    if (start > 0)
+                    {
+                        g.Emit(OpCodes.Ldc_I4, start);
+                        g.Emit(OpCodes.Conv_I);
+                        g.Emit(OpCodes.Add);
+                    }
+
+                    g.Emit(OpCodes.Ldc_I4, end - start);
+                    g.Emit(OpCodes.Call, s_memoryMarshalCreateReadOnlySpanMethod);
+
+                    g.Emit(OpCodes.Call, s_hashCodeAddBytesMethod);
+                }
             }
 
             g.Emit(OpCodes.Ldloca, hashCode);

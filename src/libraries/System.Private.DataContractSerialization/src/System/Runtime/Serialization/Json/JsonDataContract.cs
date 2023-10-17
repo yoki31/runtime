@@ -1,13 +1,17 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
+using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Runtime;
-using System.Runtime.Serialization;
-using System.Reflection;
-using System.Xml;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
+using System.Reflection;
+using System.Runtime;
+using System.Runtime.Serialization;
+using System.Runtime.Serialization.DataContracts;
+using System.Xml;
+
+using DataContractDictionary = System.Collections.Generic.Dictionary<System.Xml.XmlQualifiedName, System.Runtime.Serialization.DataContracts.DataContract>;
 
 namespace System.Runtime.Serialization.Json
 {
@@ -15,6 +19,7 @@ namespace System.Runtime.Serialization.Json
     {
         private readonly JsonDataContractCriticalHelper _helper;
 
+        [RequiresDynamicCode(DataContract.SerializerAOTWarning)]
         [RequiresUnreferencedCode(DataContract.SerializerTrimmerWarning)]
         protected JsonDataContract(DataContract traditionalDataContract)
         {
@@ -32,7 +37,7 @@ namespace System.Runtime.Serialization.Json
 
         protected DataContract TraditionalDataContract => _helper.TraditionalDataContract;
 
-        private Dictionary<XmlQualifiedName, DataContract>? KnownDataContracts => _helper.KnownDataContracts;
+        private DataContractDictionary? KnownDataContracts => _helper.KnownDataContracts;
 
         public static JsonReadWriteDelegates? GetGeneratedReadWriteDelegates(DataContract c)
         {
@@ -62,12 +67,14 @@ namespace System.Runtime.Serialization.Json
             return result;
         }
 
+        [RequiresDynamicCode(DataContract.SerializerAOTWarning)]
         [RequiresUnreferencedCode(DataContract.SerializerTrimmerWarning)]
         public static JsonDataContract GetJsonDataContract(DataContract traditionalDataContract)
         {
             return JsonDataContractCriticalHelper.GetJsonDataContract(traditionalDataContract);
         }
 
+        [RequiresDynamicCode(DataContract.SerializerAOTWarning)]
         [RequiresUnreferencedCode(DataContract.SerializerTrimmerWarning)]
         public object? ReadJsonValue(XmlReaderDelegator jsonReader, XmlObjectSerializerReadContextComplexJson? context)
         {
@@ -77,12 +84,14 @@ namespace System.Runtime.Serialization.Json
             return deserializedObject;
         }
 
+        [RequiresDynamicCode(DataContract.SerializerAOTWarning)]
         [RequiresUnreferencedCode(DataContract.SerializerTrimmerWarning)]
         public virtual object? ReadJsonValueCore(XmlReaderDelegator jsonReader, XmlObjectSerializerReadContextComplexJson? context)
         {
             return TraditionalDataContract.ReadXmlValue(jsonReader, context);
         }
 
+        [RequiresDynamicCode(DataContract.SerializerAOTWarning)]
         [RequiresUnreferencedCode(DataContract.SerializerTrimmerWarning)]
         public void WriteJsonValue(XmlWriterDelegator jsonWriter, object obj, XmlObjectSerializerWriteContextComplexJson? context, RuntimeTypeHandle declaredTypeHandle)
         {
@@ -91,6 +100,7 @@ namespace System.Runtime.Serialization.Json
             PopKnownDataContracts(context);
         }
 
+        [RequiresDynamicCode(DataContract.SerializerAOTWarning)]
         [RequiresUnreferencedCode(DataContract.SerializerTrimmerWarning)]
         public virtual void WriteJsonValueCore(XmlWriterDelegator jsonWriter, object obj, XmlObjectSerializerWriteContextComplexJson? context, RuntimeTypeHandle declaredTypeHandle)
         {
@@ -142,12 +152,12 @@ namespace System.Runtime.Serialization.Json
             private static JsonDataContract[] s_dataContractCache = new JsonDataContract[32];
             private static int s_dataContractID;
 
-            private static readonly TypeHandleRef s_typeHandleRef = new TypeHandleRef();
-            private static readonly Dictionary<TypeHandleRef, IntRef> s_typeToIDCache = new Dictionary<TypeHandleRef, IntRef>(new TypeHandleRefEqualityComparer());
-            private Dictionary<XmlQualifiedName, DataContract>? _knownDataContracts;
+            private static readonly ConcurrentDictionary<nint, int> s_typeToIDCache = new();
+            private DataContractDictionary? _knownDataContracts;
             private readonly DataContract _traditionalDataContract;
             private readonly string _typeName;
 
+            [RequiresDynamicCode(DataContract.SerializerAOTWarning)]
             [RequiresUnreferencedCode(DataContract.SerializerTrimmerWarning)]
             internal JsonDataContractCriticalHelper(DataContract traditionalDataContract)
             {
@@ -156,12 +166,13 @@ namespace System.Runtime.Serialization.Json
                 _typeName = string.IsNullOrEmpty(traditionalDataContract.Namespace.Value) ? traditionalDataContract.Name.Value : string.Concat(traditionalDataContract.Name.Value, JsonGlobals.NameValueSeparatorString, XmlObjectSerializerWriteContextComplexJson.TruncateDefaultDataContractNamespace(traditionalDataContract.Namespace.Value));
             }
 
-            internal Dictionary<XmlQualifiedName, DataContract>? KnownDataContracts => _knownDataContracts;
+            internal DataContractDictionary? KnownDataContracts => _knownDataContracts;
 
             internal DataContract TraditionalDataContract => _traditionalDataContract;
 
             internal virtual string TypeName => _typeName;
 
+            [RequiresDynamicCode(DataContract.SerializerAOTWarning)]
             [RequiresUnreferencedCode(DataContract.SerializerTrimmerWarning)]
             public static JsonDataContract GetJsonDataContract(DataContract traditionalDataContract)
             {
@@ -177,37 +188,30 @@ namespace System.Runtime.Serialization.Json
 
             internal static int GetId(RuntimeTypeHandle typeHandle)
             {
+                if (s_typeToIDCache.TryGetValue(typeHandle.Value, out int id))
+                    return id;
+
                 lock (s_cacheLock)
                 {
-                    IntRef? id;
-                    s_typeHandleRef.Value = typeHandle;
-                    if (!s_typeToIDCache.TryGetValue(s_typeHandleRef, out id))
+                    return s_typeToIDCache.GetOrAdd(typeHandle.Value, static _ =>
                     {
-                        int value = s_dataContractID++;
-                        if (value >= s_dataContractCache.Length)
+                        int nextId = s_dataContractID++;
+                        if (nextId >= s_dataContractCache.Length)
                         {
-                            int newSize = (value < int.MaxValue / 2) ? value * 2 : int.MaxValue;
-                            if (newSize <= value)
+                            int newSize = (nextId < int.MaxValue / 2) ? nextId * 2 : int.MaxValue;
+                            if (newSize <= nextId)
                             {
-                                Fx.Assert("DataContract cache overflow");
+                                Debug.Fail("DataContract cache overflow");
                                 throw new SerializationException(SR.DataContractCacheOverflow);
                             }
                             Array.Resize<JsonDataContract>(ref s_dataContractCache, newSize);
                         }
-                        id = new IntRef(value);
-                        try
-                        {
-                            s_typeToIDCache.Add(new TypeHandleRef(typeHandle), id);
-                        }
-                        catch (Exception ex)
-                        {
-                            throw DiagnosticUtility.ExceptionUtility.ThrowHelperFatal(ex.Message, ex);
-                        }
-                    }
-                    return id.Value;
+                        return nextId;
+                    });
                 }
             }
 
+            [RequiresDynamicCode(DataContract.SerializerAOTWarning)]
             [RequiresUnreferencedCode(DataContract.SerializerTrimmerWarning)]
             private static JsonDataContract CreateJsonDataContract(int id, DataContract traditionalDataContract)
             {
@@ -272,6 +276,7 @@ namespace System.Runtime.Serialization.Json
                 }
             }
 
+            [RequiresDynamicCode(DataContract.SerializerAOTWarning)]
             [RequiresUnreferencedCode(DataContract.SerializerTrimmerWarning)]
             private void AddCollectionItemContractsToKnownDataContracts()
             {
@@ -283,18 +288,15 @@ namespace System.Runtime.Serialization.Json
                         while (collectionDataContract != null)
                         {
                             DataContract itemContract = collectionDataContract.ItemContract;
-                            if (_knownDataContracts == null)
-                            {
-                                _knownDataContracts = new Dictionary<XmlQualifiedName, DataContract>();
-                            }
+                            _knownDataContracts ??= new DataContractDictionary();
 
-                            _knownDataContracts.TryAdd(itemContract.StableName, itemContract);
+                            _knownDataContracts.TryAdd(itemContract.XmlName, itemContract);
 
                             if (collectionDataContract.ItemType.IsGenericType
                                 && collectionDataContract.ItemType.GetGenericTypeDefinition() == typeof(KeyValue<,>))
                             {
                                 DataContract itemDataContract = DataContract.GetDataContract(Globals.TypeOfKeyValuePair.MakeGenericType(collectionDataContract.ItemType.GenericTypeArguments));
-                                _knownDataContracts.TryAdd(itemDataContract.StableName, itemDataContract);
+                                _knownDataContracts.TryAdd(itemDataContract.XmlName, itemDataContract);
                             }
 
                             if (!(itemContract is CollectionDataContract))

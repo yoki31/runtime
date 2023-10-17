@@ -6,6 +6,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
 using System.Numerics;
+using System.Text;
 using Microsoft.DotNet.RemoteExecutor;
 using Xunit;
 
@@ -255,6 +256,37 @@ namespace System.Tests
         public void Ctor_LargeScale_ThrowsArgumentOutOfRangeException()
         {
             AssertExtensions.Throws<ArgumentOutOfRangeException>("scale", () => new Decimal(1, 2, 3, false, 29));
+        }
+
+        public static IEnumerable<object[]> Scale_TestData()
+        {
+            yield return new object[] { 10m, 0 };
+            yield return new object[] { 1m, 0 };
+            yield return new object[] { -1m, 0 };
+            yield return new object[] { 1.0m, 1 };
+            yield return new object[] { -1.0m, 1 };
+            yield return new object[] { 1.1m, 1 };
+            yield return new object[] { 1.00m, 2 };
+            yield return new object[] { 1.01m, 2 };
+            yield return new object[] { 1.0000000000000000000000000000m, 28};
+        }
+
+        [Theory]
+        [MemberData(nameof(Scale_TestData))]
+        public static void Scale(decimal value, byte expectedScale)
+        {
+            Assert.Equal(expectedScale, value.Scale);
+        }
+
+        [Theory]
+        [InlineData(new int[] { 1, 0, 0, 0 }, 0)] // 1
+        [InlineData(new int[] { 10, 0, 0, 65536 }, 1)] // 1.0
+        [InlineData(new int[] { 100, 0, 0, 131072 }, 2)] // 1.00
+        [InlineData(new int[] { 268435456, 1042612833, 542101086, 1835008 }, 28)] // 1.0000000000000000000000000000
+        [InlineData(new int[] { 10, 0, 0, -2147418112 }, 1)] // -1.0
+        public static void ScaleFromBits(int[] bits, byte expectedScale)
+        {
+            Assert.Equal(expectedScale, new decimal(bits).Scale);
         }
 
         public static IEnumerable<object[]> Add_Valid_TestData()
@@ -968,7 +1000,50 @@ namespace System.Tests
                 Assert.Equal(0, result);
             }
         }
-        
+
+        [Theory]
+        [MemberData(nameof(Parse_ValidWithOffsetCount_TestData))]
+        public static void Parse_Utf8Span_Valid(string value, int offset, int count, NumberStyles style, IFormatProvider provider, decimal expected)
+        {
+            bool isDefaultProvider = provider == null || provider == NumberFormatInfo.CurrentInfo;
+
+            decimal result;
+            ReadOnlySpan<byte> valueUtf8 = Encoding.UTF8.GetBytes(value, offset, count);
+
+            if ((style & ~NumberStyles.Number) == 0 && style != NumberStyles.None)
+            {
+                // Use Parse(string) or Parse(string, IFormatProvider)
+                if (isDefaultProvider)
+                {
+                    Assert.True(decimal.TryParse(valueUtf8, out result));
+                    Assert.Equal(expected, result);
+
+                    Assert.Equal(expected, decimal.Parse(valueUtf8));
+                }
+
+                Assert.Equal(expected, decimal.Parse(valueUtf8, provider: provider));
+            }
+
+            Assert.Equal(expected, decimal.Parse(valueUtf8, style, provider));
+
+            Assert.True(decimal.TryParse(valueUtf8, style, provider, out result));
+            Assert.Equal(expected, result);
+        }
+
+        [Theory]
+        [MemberData(nameof(Parse_Invalid_TestData))]
+        public static void Parse_Utf8Span_Invalid(string value, NumberStyles style, IFormatProvider provider, Type exceptionType)
+        {
+            if (value != null)
+            {
+                ReadOnlySpan<byte> valueUtf8 = Encoding.UTF8.GetBytes(value);
+                Assert.Throws(exceptionType, () => decimal.Parse(Encoding.UTF8.GetBytes(value), style, provider));
+
+                Assert.False(decimal.TryParse(valueUtf8, style, provider, out decimal result));
+                Assert.Equal(0, result);
+            }
+        }
+
         public static IEnumerable<object[]> Remainder_Valid_TestData()
         {
             decimal NegativeZero = new decimal(0, 0, 0, true, 0);
@@ -1472,7 +1547,7 @@ namespace System.Tests
             }
 
             NumberFormatInfo invariantFormat = NumberFormatInfo.InvariantInfo;
-            yield return new object[] { 32.5m, "C100", invariantFormat, "¤32.5000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000" };
+            yield return new object[] { 32.5m, "C100", invariantFormat, "\u00A432.5000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000" };
             yield return new object[] { 32.5m, "P100", invariantFormat, "3,250.0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000 %" };
             yield return new object[] { 32.5m, "E100", invariantFormat, "3.2500000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000E+001" };
             yield return new object[] { 32.5m, "F100", invariantFormat, "32.5000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000" };
@@ -2337,43 +2412,7 @@ namespace System.Tests
 
                     try
                     {
-                        char[] actual;
-                        int charsWritten;
-
-                        // Just right
-                        actual = new char[localExpected.Length];
-                        Assert.True(localI.TryFormat(actual.AsSpan(), out charsWritten, localFormat, localProvider));
-                        Assert.Equal(localExpected.Length, charsWritten);
-                        Assert.Equal(localExpected, new string(actual));
-
-                        // Longer than needed
-                        actual = new char[localExpected.Length + 1];
-                        Assert.True(localI.TryFormat(actual.AsSpan(), out charsWritten, localFormat, localProvider));
-                        Assert.Equal(localExpected.Length, charsWritten);
-                        Assert.Equal(localExpected, new string(actual, 0, charsWritten));
-
-                        // Too short
-                        if (localExpected.Length > 0)
-                        {
-                            actual = new char[localExpected.Length - 1];
-                            Assert.False(localI.TryFormat(actual.AsSpan(), out charsWritten, localFormat, localProvider));
-                            Assert.Equal(0, charsWritten);
-                        }
-
-                        if (localFormat != null)
-                        {
-                            // Upper localFormat
-                            actual = new char[localExpected.Length];
-                            Assert.True(localI.TryFormat(actual.AsSpan(), out charsWritten, localFormat.ToUpperInvariant(), localProvider));
-                            Assert.Equal(localExpected.Length, charsWritten);
-                            Assert.Equal(localExpected.ToUpperInvariant(), new string(actual));
-
-                            // Lower format
-                            actual = new char[localExpected.Length];
-                            Assert.True(localI.TryFormat(actual.AsSpan(), out charsWritten, localFormat.ToLowerInvariant(), localProvider));
-                            Assert.Equal(localExpected.Length, charsWritten);
-                            Assert.Equal(localExpected.ToLowerInvariant(), new string(actual));
-                        }
+                        NumberFormatTestHelper.TryFormatNumberTest(localI, localFormat, localProvider, localExpected);
                     }
                     catch (Exception exc)
                     {

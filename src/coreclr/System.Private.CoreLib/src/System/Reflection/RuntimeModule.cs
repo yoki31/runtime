@@ -1,6 +1,7 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
+using System.ComponentModel;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices;
 using System.Runtime.Serialization;
@@ -9,19 +10,19 @@ using System.Runtime.CompilerServices;
 
 namespace System.Reflection
 {
-    internal class RuntimeModule : Module
+    internal sealed partial class RuntimeModule : Module
     {
         internal RuntimeModule() { throw new NotSupportedException(); }
 
         #region FCalls
-        [DllImport(RuntimeHelpers.QCall, EntryPoint = "RuntimeModule_GetType", CharSet = CharSet.Unicode)]
-        private static extern void GetType(QCallModule module, string className, bool throwOnError, bool ignoreCase, ObjectHandleOnStack type, ObjectHandleOnStack keepAlive);
+        [LibraryImport(RuntimeHelpers.QCall, EntryPoint = "RuntimeModule_GetType", StringMarshalling = StringMarshalling.Utf16)]
+        private static partial void GetType(QCallModule module, string className, [MarshalAs(UnmanagedType.Bool)] bool throwOnError, [MarshalAs(UnmanagedType.Bool)] bool ignoreCase, ObjectHandleOnStack type, ObjectHandleOnStack keepAlive);
 
-        [DllImport(RuntimeHelpers.QCall, EntryPoint = "RuntimeModule_GetScopeName")]
-        private static extern void GetScopeName(QCallModule module, StringHandleOnStack retString);
+        [LibraryImport(RuntimeHelpers.QCall, EntryPoint = "RuntimeModule_GetScopeName")]
+        private static partial void GetScopeName(QCallModule module, StringHandleOnStack retString);
 
-        [DllImport(RuntimeHelpers.QCall, EntryPoint = "RuntimeModule_GetFullyQualifiedName")]
-        private static extern void GetFullyQualifiedName(QCallModule module, StringHandleOnStack retString);
+        [LibraryImport(RuntimeHelpers.QCall, EntryPoint = "RuntimeModule_GetFullyQualifiedName")]
+        private static partial void GetFullyQualifiedName(QCallModule module, StringHandleOnStack retString);
 
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern RuntimeType[] GetTypes(RuntimeModule module);
@@ -152,8 +153,6 @@ namespace System.Reflection
             tkDeclaringType = MetadataImport.GetParentToken(tk);
 
             Type declaringType = ResolveType(tkDeclaringType, genericTypeArguments, genericMethodArguments);
-
-            declaringType.GetFields();
 
             try
             {
@@ -339,11 +338,11 @@ namespace System.Reflection
 #pragma warning disable CA1823, 169
         // If you add any data members, you need to update the native declaration ReflectModuleBaseObject.
         private RuntimeType m_runtimeType;
-        private RuntimeAssembly m_runtimeAssembly;
-        private IntPtr m_pRefClass;
-        private IntPtr m_pData;
-        private IntPtr m_pGlobals;
-        private IntPtr m_pFields;
+        private readonly RuntimeAssembly m_runtimeAssembly;
+        private readonly IntPtr m_pRefClass;
+        private readonly IntPtr m_pData;
+        private readonly IntPtr m_pGlobals;
+        private readonly IntPtr m_pFields;
 #pragma warning restore CA1823, 169
         #endregion
 
@@ -387,8 +386,7 @@ namespace System.Reflection
 
         public override object[] GetCustomAttributes(Type attributeType, bool inherit)
         {
-            if (attributeType == null)
-                throw new ArgumentNullException(nameof(attributeType));
+            ArgumentNullException.ThrowIfNull(attributeType);
 
             if (attributeType.UnderlyingSystemType is not RuntimeType attributeRuntimeType)
                 throw new ArgumentException(SR.Arg_MustBeType, nameof(attributeType));
@@ -398,8 +396,7 @@ namespace System.Reflection
 
         public override bool IsDefined(Type attributeType, bool inherit)
         {
-            if (attributeType == null)
-                throw new ArgumentNullException(nameof(attributeType));
+            ArgumentNullException.ThrowIfNull(attributeType);
 
             if (attributeType.UnderlyingSystemType is not RuntimeType attributeRuntimeType)
                 throw new ArgumentException(SR.Arg_MustBeType, nameof(attributeType));
@@ -414,24 +411,22 @@ namespace System.Reflection
         #endregion
 
         #region Public Virtuals
+        [Obsolete(Obsoletions.LegacyFormatterImplMessage, DiagnosticId = Obsoletions.LegacyFormatterImplDiagId, UrlFormat = Obsoletions.SharedUrlFormat)]
+        [EditorBrowsable(EditorBrowsableState.Never)]
         public override void GetObjectData(SerializationInfo info, StreamingContext context)
         {
             throw new PlatformNotSupportedException();
         }
 
-        [RequiresUnreferencedCode("Types might be removed")]
-        public override Type? GetType(string className, bool throwOnError, bool ignoreCase)
+        [RequiresUnreferencedCode("Types might be removed by trimming. If the type name is a string literal, consider using Type.GetType instead.")]
+        public override Type? GetType(
+            string className, // throw on null strings regardless of the value of "throwOnError"
+            bool throwOnError, bool ignoreCase)
         {
-            // throw on null strings regardless of the value of "throwOnError"
-            if (className == null)
-                throw new ArgumentNullException(nameof(className));
+            ArgumentException.ThrowIfNullOrEmpty(className);
 
-            RuntimeType? retType = null;
-            object? keepAlive = null;
-            RuntimeModule thisAsLocal = this;
-            GetType(new QCallModule(ref thisAsLocal), className, throwOnError, ignoreCase, ObjectHandleOnStack.Create(ref retType), ObjectHandleOnStack.Create(ref keepAlive));
-            GC.KeepAlive(keepAlive);
-            return retType;
+            return TypeNameParser.GetType(className, topLevelAssembly: Assembly,
+                throwOnError: throwOnError, ignoreCase: ignoreCase);
         }
 
         [RequiresAssemblyFiles(UnknownStringMessageInRAF)]
@@ -485,13 +480,9 @@ namespace System.Reflection
         [RequiresUnreferencedCode("Fields might be removed")]
         public override FieldInfo? GetField(string name, BindingFlags bindingAttr)
         {
-            if (name == null)
-                throw new ArgumentNullException(nameof(name));
+            ArgumentNullException.ThrowIfNull(name);
 
-            if (RuntimeType == null)
-                return null;
-
-            return RuntimeType.GetField(name, bindingAttr);
+            return RuntimeType?.GetField(name, bindingAttr);
         }
 
         [RequiresUnreferencedCode("Methods might be removed")]
@@ -521,9 +512,9 @@ namespace System.Reflection
             {
                 string s = GetFullyQualifiedName();
 
-                int i = s.LastIndexOf(System.IO.Path.DirectorySeparatorChar);
+                int i = s.LastIndexOf(IO.Path.DirectorySeparatorChar);
 
-                if (i == -1)
+                if (i < 0)
                     return s;
 
                 return s.Substring(i + 1);
@@ -537,7 +528,7 @@ namespace System.Reflection
             return m_runtimeAssembly;
         }
 
-        protected override ModuleHandle GetModuleHandleImpl()
+        private protected override ModuleHandle GetModuleHandleImpl()
         {
             return new ModuleHandle(this);
         }

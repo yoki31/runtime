@@ -3,7 +3,7 @@
 
 namespace System.Security.Cryptography
 {
-    public abstract partial class ECDiffieHellman : AsymmetricAlgorithm
+    public abstract partial class ECDiffieHellman : ECAlgorithm
     {
         public static new partial ECDiffieHellman Create()
         {
@@ -17,7 +17,7 @@ namespace System.Security.Cryptography
 
         public static partial ECDiffieHellman Create(ECParameters parameters)
         {
-            ECDiffieHellman ecdh = new ECDiffieHellmanImplementation.ECDiffieHellmanAndroid();
+            var ecdh = new ECDiffieHellmanImplementation.ECDiffieHellmanAndroid();
 
             try
             {

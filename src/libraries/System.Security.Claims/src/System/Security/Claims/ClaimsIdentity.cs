@@ -2,6 +2,8 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 using System.Collections.Generic;
+using System.ComponentModel;
+using System.Diagnostics;
 using System.IO;
 using System.Runtime.Serialization;
 using System.Security.Principal;
@@ -11,6 +13,7 @@ namespace System.Security.Claims
     /// <summary>
     /// An Identity that is represented by a set of claims.
     /// </summary>
+    [DebuggerDisplay("{DebuggerToString(),nq}")]
     public class ClaimsIdentity : IIdentity
     {
         private enum SerializationMask
@@ -197,8 +200,7 @@ namespace System.Security.Claims
         /// <exception cref="ArgumentNullException">if 'reader' is null.</exception>
         public ClaimsIdentity(BinaryReader reader)
         {
-            if (reader == null)
-                throw new ArgumentNullException(nameof(reader));
+            ArgumentNullException.ThrowIfNull(reader);
 
             Initialize(reader);
         }
@@ -210,10 +212,7 @@ namespace System.Security.Claims
         /// <exception cref="ArgumentNullException">if 'other' is null.</exception>
         protected ClaimsIdentity(ClaimsIdentity other)
         {
-            if (other == null)
-            {
-                throw new ArgumentNullException(nameof(other));
-            }
+            ArgumentNullException.ThrowIfNull(other);
 
             if (other._actor != null)
             {
@@ -233,6 +232,8 @@ namespace System.Security.Claims
             SafeAddClaims(other._instanceClaims);
         }
 
+        [Obsolete(Obsoletions.LegacyFormatterImplMessage, DiagnosticId = Obsoletions.LegacyFormatterImplDiagId, UrlFormat = Obsoletions.SharedUrlFormat)]
+        [EditorBrowsable(EditorBrowsableState.Never)]
         protected ClaimsIdentity(SerializationInfo info, StreamingContext context)
         {
             throw new PlatformNotSupportedException();
@@ -246,6 +247,8 @@ namespace System.Security.Claims
         /// The <see cref="SerializationInfo"/> to read from.
         /// </param>
         /// <exception cref="ArgumentNullException">Thrown is the <paramref name="info"/> is null.</exception>
+        [Obsolete(Obsoletions.LegacyFormatterImplMessage, DiagnosticId = Obsoletions.LegacyFormatterImplDiagId, UrlFormat = Obsoletions.SharedUrlFormat)]
+        [EditorBrowsable(EditorBrowsableState.Never)]
         protected ClaimsIdentity(SerializationInfo info)
         {
             throw new PlatformNotSupportedException();
@@ -347,17 +350,7 @@ namespace System.Security.Claims
         /// Allow the association of claims with this instance of <see cref="ClaimsIdentity"/>.
         /// The claims will not be serialized or added in Clone(). They will be included in searches, finds and returned from the call to <see cref="ClaimsIdentity.Claims"/>.
         /// </summary>
-        internal List<List<Claim>> ExternalClaims
-        {
-            get
-            {
-                if (_externalClaims == null)
-                {
-                    _externalClaims = new List<List<Claim>>();
-                }
-                return _externalClaims;
-            }
-        }
+        internal List<List<Claim>> ExternalClaims => _externalClaims ??= new List<List<Claim>>();
 
         /// <summary>
         /// Gets or sets the label for this <see cref="ClaimsIdentity"/>
@@ -419,10 +412,7 @@ namespace System.Security.Claims
         /// <exception cref="ArgumentNullException">if 'claim' is null.</exception>
         public virtual void AddClaim(Claim claim)
         {
-            if (claim == null)
-            {
-                throw new ArgumentNullException(nameof(claim));
-            }
+            ArgumentNullException.ThrowIfNull(claim);
 
             if (object.ReferenceEquals(claim.Subject, this))
             {
@@ -442,10 +432,7 @@ namespace System.Security.Claims
         /// <exception cref="ArgumentNullException">if 'claims' is null.</exception>
         public virtual void AddClaims(IEnumerable<Claim?> claims)
         {
-            if (claims == null)
-            {
-                throw new ArgumentNullException(nameof(claims));
-            }
+            ArgumentNullException.ThrowIfNull(claims);
 
             foreach (Claim? claim in claims)
             {
@@ -559,16 +546,17 @@ namespace System.Security.Claims
         /// <exception cref="ArgumentNullException">if 'match' is null.</exception>
         public virtual IEnumerable<Claim> FindAll(Predicate<Claim> match)
         {
-            if (match == null)
-            {
-                throw new ArgumentNullException(nameof(match));
-            }
+            ArgumentNullException.ThrowIfNull(match);
+            return Core(match);
 
-            foreach (Claim claim in Claims)
+            IEnumerable<Claim> Core(Predicate<Claim> match)
             {
-                if (match(claim))
+                foreach (Claim claim in Claims)
                 {
-                    yield return claim;
+                    if (match(claim))
+                    {
+                        yield return claim;
+                    }
                 }
             }
         }
@@ -582,18 +570,19 @@ namespace System.Security.Claims
         /// <exception cref="ArgumentNullException">if 'type' is null.</exception>
         public virtual IEnumerable<Claim> FindAll(string type)
         {
-            if (type == null)
-            {
-                throw new ArgumentNullException(nameof(type));
-            }
+            ArgumentNullException.ThrowIfNull(type);
+            return Core(type);
 
-            foreach (Claim claim in Claims)
+            IEnumerable<Claim> Core(string type)
             {
-                if (claim != null)
+                foreach (Claim claim in Claims)
                 {
-                    if (string.Equals(claim.Type, type, StringComparison.OrdinalIgnoreCase))
+                    if (claim != null)
                     {
-                        yield return claim;
+                        if (string.Equals(claim.Type, type, StringComparison.OrdinalIgnoreCase))
+                        {
+                            yield return claim;
+                        }
                     }
                 }
             }
@@ -607,10 +596,7 @@ namespace System.Security.Claims
         /// <exception cref="ArgumentNullException">if 'match' is null.</exception>
         public virtual Claim? FindFirst(Predicate<Claim> match)
         {
-            if (match == null)
-            {
-                throw new ArgumentNullException(nameof(match));
-            }
+            ArgumentNullException.ThrowIfNull(match);
 
             foreach (Claim claim in Claims)
             {
@@ -632,10 +618,7 @@ namespace System.Security.Claims
         /// <exception cref="ArgumentNullException">if 'type' is null.</exception>
         public virtual Claim? FindFirst(string type)
         {
-            if (type == null)
-            {
-                throw new ArgumentNullException(nameof(type));
-            }
+            ArgumentNullException.ThrowIfNull(type);
 
             foreach (Claim claim in Claims)
             {
@@ -659,10 +642,7 @@ namespace System.Security.Claims
         /// <exception cref="ArgumentNullException">if 'match' is null.</exception>
         public virtual bool HasClaim(Predicate<Claim> match)
         {
-            if (match == null)
-            {
-                throw new ArgumentNullException(nameof(match));
-            }
+            ArgumentNullException.ThrowIfNull(match);
 
             foreach (Claim claim in Claims)
             {
@@ -686,15 +666,8 @@ namespace System.Security.Claims
         /// <exception cref="ArgumentNullException">if 'value' is null.</exception>
         public virtual bool HasClaim(string type, string value)
         {
-            if (type == null)
-            {
-                throw new ArgumentNullException(nameof(type));
-            }
-
-            if (value == null)
-            {
-                throw new ArgumentNullException(nameof(value));
-            }
+            ArgumentNullException.ThrowIfNull(type);
+            ArgumentNullException.ThrowIfNull(value);
 
             foreach (Claim claim in Claims)
             {
@@ -717,10 +690,7 @@ namespace System.Security.Claims
         /// <exception cref="ArgumentNullException">if 'reader' is null.</exception>
         private void Initialize(BinaryReader reader)
         {
-            if (reader == null)
-            {
-                throw new ArgumentNullException(nameof(reader));
-            }
+            ArgumentNullException.ThrowIfNull(reader);
 
             SerializationMask mask = (SerializationMask)reader.ReadInt32();
             int numPropertiesRead = 0;
@@ -800,10 +770,7 @@ namespace System.Security.Claims
         /// <returns>a new <see cref="Claim"/>.</returns>
         protected virtual Claim CreateClaim(BinaryReader reader)
         {
-            if (reader == null)
-            {
-                throw new ArgumentNullException(nameof(reader));
-            }
+            ArgumentNullException.ThrowIfNull(reader);
 
             return new Claim(reader, this);
         }
@@ -826,10 +793,7 @@ namespace System.Security.Claims
         /// <exception cref="ArgumentNullException">if 'writer' is null.</exception>
         protected virtual void WriteTo(BinaryWriter writer, byte[]? userData)
         {
-            if (writer == null)
-            {
-                throw new ArgumentNullException(nameof(writer));
-            }
+            ArgumentNullException.ThrowIfNull(writer);
 
             int numberOfPropertiesWritten = 0;
             var mask = SerializationMask.None;
@@ -841,7 +805,7 @@ namespace System.Security.Claims
 
             if (_bootstrapContext != null)
             {
-                if (_bootstrapContext is string rawData)
+                if (_bootstrapContext is string)
                 {
                     mask |= SerializationMask.BootstrapConext;
                     numberOfPropertiesWritten++;
@@ -970,6 +934,32 @@ namespace System.Security.Claims
         protected virtual void GetObjectData(SerializationInfo info, StreamingContext context)
         {
             throw new PlatformNotSupportedException();
+        }
+
+        internal string DebuggerToString()
+        {
+            // DebuggerDisplayAttribute is inherited. Use virtual members instead of private fields to gather data.
+            int claimsCount = 0;
+            foreach (Claim item in Claims)
+            {
+                claimsCount++;
+            }
+
+            string debugText = $"IsAuthenticated = {(IsAuthenticated ? "true" : "false")}";
+            if (Name != null)
+            {
+                // The ClaimsIdentity.Name property requires that ClaimsIdentity.NameClaimType is correctly
+                // configured to match the name of the logical name claim type of the identity.
+                // Because of this, only include name if the ClaimsIdentity.Name property has a value.
+                // Not including the name is to avoid developer confusion at seeing "Name = (null)" on an authenticated identity.
+                debugText += $", Name = {Name}";
+            }
+            if (claimsCount > 0)
+            {
+                debugText += $", Claims = {claimsCount}";
+            }
+
+            return debugText;
         }
     }
 }

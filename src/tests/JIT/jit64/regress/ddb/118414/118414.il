@@ -1,11 +1,11 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
-.assembly ILGEN_0x3243f637 {}
+.assembly '118414' {}
 .assembly extern xunit.core {}
 .assembly extern mscorlib{auto}
 
-.class ILGEN_0x3243f637 {
+.class public ILGEN_0x3243f637 {
 
     .method static int64  Method_0xa31c545(native int Arg_0x1) {
         .zeroinit 
@@ -38,7 +38,7 @@ Loop_0x0:
         ret
     }
 
-    .method static int32 Main() {
+    .method public static int32 Main() {
         .custom instance void [xunit.core]Xunit.FactAttribute::.ctor() = (
             01 00 00 00
         )

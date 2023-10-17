@@ -4,7 +4,7 @@
 // Defines the type "ValueNum".
 
 // This file exists only to break an include file cycle -- had been in ValueNum.h.  But that
-// file wanted to include gentree.h to get GT_COUNT, and gentree.h wanted ton include ValueNum.h to
+// file wanted to include gentree.h to get GT_COUNT, and gentree.h wanted to include ValueNum.h for
 // the ValueNum type.
 
 /*****************************************************************************/
@@ -94,6 +94,16 @@ public:
     {
         m_liberal      = vn;
         m_conservative = vn;
+    }
+
+    bool operator==(const ValueNumPair& other) const
+    {
+        return (m_liberal == other.m_liberal) && (m_conservative == other.m_conservative);
+    }
+
+    bool operator!=(const ValueNumPair& other) const
+    {
+        return !(*this == other);
     }
 
     void operator=(const ValueNumPair& vn2)

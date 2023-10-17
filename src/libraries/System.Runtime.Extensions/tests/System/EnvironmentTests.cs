@@ -44,13 +44,11 @@ namespace System.Tests
                 Environment.CurrentDirectory = TestDirectory;
                 Assert.Equal(Directory.GetCurrentDirectory(), Environment.CurrentDirectory);
 
-                if (!OperatingSystem.IsMacOS())
-                {
-                    // On OSX, the temp directory /tmp/ is a symlink to /private/tmp, so setting the current
-                    // directory to a symlinked path will result in GetCurrentDirectory returning the absolute
-                    // path that followed the symlink.
-                    Assert.Equal(TestDirectory, Directory.GetCurrentDirectory());
-                }
+                // If the temp directory is symlink, setting the current directory to a symlinked path will result
+                // in GetCurrentDirectory returning the absolute path that followed the symlink. We can only verify
+                // the test directory name in that case.
+                Assert.Equal(Path.GetFileName(TestDirectory), Path.GetFileName(Environment.CurrentDirectory));
+
             }).Dispose();
         }
 
@@ -61,6 +59,7 @@ namespace System.Tests
         }
 
         [ConditionalFact(typeof(PlatformDetection), nameof(PlatformDetection.IsThreadingSupported))]
+        [ActiveIssue("https://github.com/dotnet/runtime/issues/91538", typeof(PlatformDetection), nameof(PlatformDetection.IsWasmThreadingSupported))]
         public void CurrentManagedThreadId_DifferentForActiveThreads()
         {
             var ids = new HashSet<int>();
@@ -184,14 +183,10 @@ namespace System.Tests
 
         [Fact]
         [PlatformSpecific(TestPlatforms.OSX)]
-        [ActiveIssue("https://github.com/dotnet/runtime/issues/49106", typeof(PlatformDetection), nameof(PlatformDetection.IsMacOsAppleSilicon))]
         public void OSVersion_ValidVersion_OSX()
         {
             Version version = Environment.OSVersion.Version;
-
-            // verify that the Environment.OSVersion.Version matches the current RID
-            Assert.Contains(version.ToString(2), RuntimeInformation.RuntimeIdentifier);
-
+            Assert.True(version.Minor >= 0, "OSVersion Minor should be non-negative");
             Assert.True(version.Build >= 0, "OSVersion Build should be non-negative");
             Assert.Equal(-1, version.Revision); // Revision is never set on OSX
         }
@@ -236,7 +231,7 @@ namespace System.Tests
         [Fact]
         public void WorkingSet_Valid()
         {
-            if (PlatformDetection.IsBrowser)
+            if (PlatformDetection.IsBrowser || (PlatformDetection.IsiOS && !PlatformDetection.IsMacCatalyst) || PlatformDetection.IstvOS)
                 Assert.Equal(0, Environment.WorkingSet);
             else
                 Assert.True(Environment.WorkingSet > 0, "Expected positive WorkingSet value");
@@ -333,19 +328,21 @@ namespace System.Tests
 
         [Fact]
         [PlatformSpecific(TestPlatforms.AnyUnix | TestPlatforms.Browser)]
-        public void GetFolderPath_Unix_PersonalExists()
+        public void GetFolderPath_Unix_UserProfileExists()
         {
-            Assert.True(Directory.Exists(Environment.GetFolderPath(Environment.SpecialFolder.Personal)));
+            Assert.True(Directory.Exists(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)));
         }
 
         [Fact]
         [PlatformSpecific(TestPlatforms.AnyUnix | TestPlatforms.Browser)]  // Tests OS-specific environment
-        public void GetFolderPath_Unix_PersonalIsHomeAndUserProfile()
+        public void GetFolderPath_Unix_PersonalIsDocumentsAndUserProfile()
         {
             if (!PlatformDetection.IsiOS && !PlatformDetection.IstvOS && !PlatformDetection.IsMacCatalyst)
             {
-                Assert.Equal(Environment.GetEnvironmentVariable("HOME"), Environment.GetFolderPath(Environment.SpecialFolder.Personal));
-                Assert.Equal(Environment.GetEnvironmentVariable("HOME"), Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments));
+                Assert.Equal(Path.Combine(Environment.GetEnvironmentVariable("HOME"), "Documents"),
+                             Environment.GetFolderPath(Environment.SpecialFolder.Personal,  Environment.SpecialFolderOption.DoNotVerify));
+                Assert.Equal(Path.Combine(Environment.GetEnvironmentVariable("HOME"), "Documents"),
+                             Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments,  Environment.SpecialFolderOption.DoNotVerify));
             }
 
             Assert.Equal(Environment.GetEnvironmentVariable("HOME"), Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
@@ -358,10 +355,12 @@ namespace System.Tests
         [InlineData(Environment.SpecialFolder.Desktop)]
         [InlineData(Environment.SpecialFolder.DesktopDirectory)]
         [InlineData(Environment.SpecialFolder.Fonts)]
+        [InlineData(Environment.SpecialFolder.MyDocuments)]
         [InlineData(Environment.SpecialFolder.MyMusic)]
         [InlineData(Environment.SpecialFolder.MyPictures)]
         [InlineData(Environment.SpecialFolder.MyVideos)]
         [InlineData(Environment.SpecialFolder.Templates)]
+        [SkipOnPlatform(TestPlatforms.iOS | TestPlatforms.tvOS | TestPlatforms.Android | TestPlatforms.Browser, "Not supported on iOS/tvOS/Android/Browser.")]
         public void GetFolderPath_Unix_SpecialFolderDoesNotExist_CreatesSuccessfully(Environment.SpecialFolder folder)
         {
             string path = Environment.GetFolderPath(folder, Environment.SpecialFolderOption.DoNotVerify);
@@ -375,24 +374,13 @@ namespace System.Tests
         [Fact]
         public void GetSystemDirectory()
         {
-            if (PlatformDetection.IsWindowsNanoServer)
-            {
-                // https://github.com/dotnet/runtime/issues/21430
-                // On Windows Nano, ShGetKnownFolderPath currently doesn't give
-                // the correct result for SystemDirectory.
-                // Assert that it's wrong, so that if it's fixed, we don't forget to
-                // enable this test for Nano.
-                Assert.NotEqual(Environment.GetFolderPath(Environment.SpecialFolder.System), Environment.SystemDirectory);
-                return;
-            }
-
             Assert.Equal(Environment.GetFolderPath(Environment.SpecialFolder.System), Environment.SystemDirectory);
         }
 
         [Theory]
         [PlatformSpecific(TestPlatforms.AnyUnix)]  // Tests OS-specific environment
         [InlineData(Environment.SpecialFolder.UserProfile, Environment.SpecialFolderOption.None)]
-        [InlineData(Environment.SpecialFolder.MyDocuments, Environment.SpecialFolderOption.None)] // MyDocuments == Personal
+        [InlineData(Environment.SpecialFolder.MyDocuments, Environment.SpecialFolderOption.DoNotVerify)] // MyDocuments == Personal
         [InlineData(Environment.SpecialFolder.CommonApplicationData, Environment.SpecialFolderOption.None)]
         [InlineData(Environment.SpecialFolder.CommonTemplates, Environment.SpecialFolderOption.DoNotVerify)]
         [InlineData(Environment.SpecialFolder.ApplicationData, Environment.SpecialFolderOption.DoNotVerify)]
@@ -557,6 +545,7 @@ namespace System.Tests
         }
 
         [Fact]
+        [ActiveIssue("https://github.com/dotnet/runtime/issues/60586", TestPlatforms.iOS | TestPlatforms.tvOS)]
         [PlatformSpecific(TestPlatforms.AnyUnix)]  // Uses P/Invokes
         public void GetLogicalDrives_Unix_AtLeastOneIsRoot()
         {

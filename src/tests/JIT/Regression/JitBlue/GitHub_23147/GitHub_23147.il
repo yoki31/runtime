@@ -1,4 +1,4 @@
-.assembly extern System.Runtime { }
+.assembly extern System.Runtime { .publickeytoken = (B0 3F 5F 7F 11 D5 0A 3A ) }
 .assembly extern System.Console
 {
 }
@@ -7,7 +7,6 @@
 {
 }
 .assembly extern xunit.core {}
-.module GitHub_23147.exe
 
 .class private sequential ansi sealed beforefieldinit Test_GitHub_23147.HFA_f2
        extends [System.Runtime]System.ValueType
@@ -57,7 +56,7 @@
   .field public float64 d4
 } // end of class Test.HFA_d4
 
-.class private auto ansi beforefieldinit Test_GitHub_23147.X
+.class public auto ansi beforefieldinit Test_GitHub_23147.X
        extends [System.Runtime]System.Object
 {
   .field public static float32 fx1

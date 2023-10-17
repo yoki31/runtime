@@ -15,10 +15,10 @@
 
 .assembly extern mscorlib{}
 .assembly extern System.Console{}
-.assembly a {}
+.assembly 'GitHub_23792' {}
 .assembly extern xunit.core {}
 
-.class private auto ansi beforefieldinit Test_GitHub_23792
+.class public auto ansi beforefieldinit Test_GitHub_23792
        extends [mscorlib]System.Object
 {
 

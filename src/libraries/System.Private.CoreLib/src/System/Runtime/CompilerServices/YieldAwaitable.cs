@@ -38,7 +38,7 @@ namespace System.Runtime.CompilerServices
     {
         /// <summary>Gets an awaiter for this <see cref="YieldAwaitable"/>.</summary>
         /// <returns>An awaiter for this awaitable.</returns>
-        /// <remarks>This method is intended for compiler user rather than use directly in code.</remarks>
+        /// <remarks>This method is intended for compiler use rather than use directly in code.</remarks>
         public YieldAwaiter GetAwaiter() { return default; }
 
         /// <summary>Provides an awaiter that switches into a target environment.</summary>
@@ -51,7 +51,7 @@ namespace System.Runtime.CompilerServices
 
             /// <summary>Posts the <paramref name="continuation"/> back to the current context.</summary>
             /// <param name="continuation">The action to invoke asynchronously.</param>
-            /// <exception cref="System.ArgumentNullException">The <paramref name="continuation"/> argument is null (Nothing in Visual Basic).</exception>
+            /// <exception cref="ArgumentNullException">The <paramref name="continuation"/> argument is null (<see langword="Nothing" /> in Visual Basic).</exception>
             public void OnCompleted(Action continuation)
             {
                 QueueContinuation(continuation, flowContext: true);
@@ -59,7 +59,7 @@ namespace System.Runtime.CompilerServices
 
             /// <summary>Posts the <paramref name="continuation"/> back to the current context.</summary>
             /// <param name="continuation">The action to invoke asynchronously.</param>
-            /// <exception cref="System.ArgumentNullException">The <paramref name="continuation"/> argument is null (Nothing in Visual Basic).</exception>
+            /// <exception cref="ArgumentNullException">The <paramref name="continuation"/> argument is null (<see langword="Nothing" /> in Visual Basic).</exception>
             public void UnsafeOnCompleted(Action continuation)
             {
                 QueueContinuation(continuation, flowContext: false);
@@ -68,16 +68,16 @@ namespace System.Runtime.CompilerServices
             /// <summary>Posts the <paramref name="continuation"/> back to the current context.</summary>
             /// <param name="continuation">The action to invoke asynchronously.</param>
             /// <param name="flowContext">true to flow ExecutionContext; false if flowing is not required.</param>
-            /// <exception cref="System.ArgumentNullException">The <paramref name="continuation"/> argument is null (Nothing in Visual Basic).</exception>
+            /// <exception cref="ArgumentNullException">The <paramref name="continuation"/> argument is null (<see langword="Nothing" /> in Visual Basic).</exception>
             private static void QueueContinuation(Action continuation, bool flowContext)
             {
-                // Validate arguments
-                if (continuation == null) throw new ArgumentNullException(nameof(continuation));
+                ArgumentNullException.ThrowIfNull(continuation);
 
                 if (TplEventSource.Log.IsEnabled())
                 {
                     continuation = OutputCorrelationEtwEvent(continuation);
                 }
+
                 // Get the current SynchronizationContext, and if there is one,
                 // post the continuation to it.  However, treat the base type
                 // as if there wasn't a SynchronizationContext, since that's what it
@@ -147,7 +147,7 @@ namespace System.Runtime.CompilerServices
 
             private static Action OutputCorrelationEtwEvent(Action continuation)
             {
-#if CORERT
+#if NATIVEAOT
                 // TODO
                 return continuation;
 #else

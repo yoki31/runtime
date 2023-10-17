@@ -2,6 +2,7 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 using System.IO;
+using System.Runtime.CompilerServices;
 using System.Runtime.ExceptionServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -23,14 +24,14 @@ namespace System.Net.Http
             public override int Read(Span<byte> buffer)
             {
                 HttpConnection? connection = _connection;
-                if (connection == null || buffer.Length == 0)
+                if (connection == null)
                 {
                     // Response body fully consumed or the caller didn't ask for any data
                     return 0;
                 }
 
                 int bytesRead = connection.ReadBuffered(buffer);
-                if (bytesRead == 0)
+                if (bytesRead == 0 && buffer.Length != 0)
                 {
                     // We cannot reuse this connection, so close it.
                     _connection = null;
@@ -40,14 +41,15 @@ namespace System.Net.Http
                 return bytesRead;
             }
 
+            [AsyncMethodBuilder(typeof(PoolingAsyncValueTaskMethodBuilder<>))]
             public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken)
             {
                 CancellationHelper.ThrowIfCancellationRequested(cancellationToken);
 
                 HttpConnection? connection = _connection;
-                if (connection == null || buffer.Length == 0)
+                if (connection == null)
                 {
-                    // Response body fully consumed or the caller didn't ask for any data
+                    // Response body fully consumed
                     return 0;
                 }
 
@@ -74,7 +76,7 @@ namespace System.Net.Http
                     }
                 }
 
-                if (bytesRead == 0)
+                if (bytesRead == 0 && buffer.Length != 0)
                 {
                     // A cancellation request may have caused the EOF.
                     CancellationHelper.ThrowIfCancellationRequested(cancellationToken);

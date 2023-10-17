@@ -18,6 +18,8 @@ import subprocess
 import sys
 import tempfile
 import logging
+import time
+import tarfile
 import urllib
 import urllib.request
 import zipfile
@@ -28,6 +30,7 @@ import zipfile
 ##
 ################################################################################
 
+
 class TempDir:
     """ Class to create a temporary working directory, or use one that is passed as an argument.
 
@@ -36,20 +39,37 @@ class TempDir:
         directory and its contents (if skip_cleanup is False).
     """
 
-    def __init__(self, path=None, skip_cleanup=False):
+    def __init__(self, path=None, skip_cleanup=False, change_dir=True):
         self.mydir = tempfile.mkdtemp() if path is None else path
         self.cwd = None
+        self.change_dir = change_dir
         self._skip_cleanup = skip_cleanup
 
     def __enter__(self):
         self.cwd = os.getcwd()
-        os.chdir(self.mydir)
+        if self.change_dir:
+            os.chdir(self.mydir)
         return self.mydir
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        os.chdir(self.cwd)
+        if self.change_dir:
+            os.chdir(self.cwd)
         if not self._skip_cleanup:
-            shutil.rmtree(self.mydir)
+            try:
+                shutil.rmtree(self.mydir)
+            except Exception as ex:
+                logging.warning("Warning: failed to remove directory \"%s\": %s", self.mydir, ex)
+                # Print out all the remaining files and directories, in case that provides useful information
+                # for diagnosing the failure. If there is an exception doing this, ignore it.
+                try:
+                    for dirpath, dirnames, filenames in os.walk(self.mydir):
+                        for dir_name in dirnames:
+                            logging.warning("  Remaining directory: \"%s\"", os.path.join(dirpath, dir_name))
+                        for file_name in filenames:
+                            logging.warning("  Remaining file: \"%s\"", os.path.join(dirpath, file_name))
+                except Exception:
+                    pass
+
 
 class ChangeDir:
     """ Class to temporarily change to a given directory. Use with "with".
@@ -91,14 +111,33 @@ def set_pipeline_variable(name, value):
 ##
 ################################################################################
 
-def run_command(command_to_run, _cwd=None, _exit_on_fail=False, _output_file=None):
+def decode_and_print(str_to_decode):
+    """Decode a UTF-8 encoded bytes to string.
+
+    Args:
+        str_to_decode (byte stream): Byte stream to decode
+
+    Returns:
+        String output. If there any encoding/decoding errors, it will not print anything
+        and return an empty string.
+    """
+    output = ''
+    try:
+        output = str_to_decode.decode("utf-8", errors='replace')
+        print(output)
+    finally:
+        return output
+
+
+def run_command(command_to_run, _cwd=None, _exit_on_fail=False, _output_file=None, _env=None):
     """ Runs the command.
 
     Args:
         command_to_run ([string]): Command to run along with arguments.
         _cwd (string): Current working directory.
         _exit_on_fail (bool): If it should exit on failure.
-        _output_file (): 
+        _output_file ():
+        _env: environment for sub-process, passed to subprocess.Popen()
     Returns:
         (string, string, int): Returns a tuple of stdout, stderr, and command return code if _output_file= None
         Otherwise stdout, stderr are empty.
@@ -106,10 +145,16 @@ def run_command(command_to_run, _cwd=None, _exit_on_fail=False, _output_file=Non
     print("Running: " + " ".join(command_to_run))
     command_stdout = ""
     command_stderr = ""
+
+    if _env:
+        print("  with environment:")
+        for name, value in _env.items():
+            print("    {0}={1}".format(name,value))
+
     return_code = 1
 
     output_type = subprocess.STDOUT if _output_file else subprocess.PIPE
-    with subprocess.Popen(command_to_run, stdout=subprocess.PIPE, stderr=output_type, cwd=_cwd) as proc:
+    with subprocess.Popen(command_to_run, env=_env, stdout=subprocess.PIPE, stderr=output_type, cwd=_cwd) as proc:
 
         # For long running command, continuously print the output
         if _output_file:
@@ -119,15 +164,14 @@ def run_command(command_to_run, _cwd=None, _exit_on_fail=False, _output_file=Non
                     if proc.poll() is not None:
                         break
                     if output:
-                        output_str = output.strip().decode("utf-8")
-                        print(output_str)
+                        output_str = decode_and_print(output.strip())
                         of.write(output_str + "\n")
         else:
             command_stdout, command_stderr = proc.communicate()
             if len(command_stdout) > 0:
-                print(command_stdout.decode("utf-8"))
+                decode_and_print(command_stdout)
             if len(command_stderr) > 0:
-                print(command_stderr.decode("utf-8"))
+                decode_and_print(command_stderr)
 
         return_code = proc.returncode
         if _exit_on_fail and return_code != 0:
@@ -237,6 +281,8 @@ def is_nonzero_length_file(fpath):
 
 def make_safe_filename(s):
     """ Turn a string into a string usable as a single file name component; replace illegal characters with underscores.
+        Also, limit the length of the file name to avoid creating illegally long file names. This is done by taking a
+        suffix of the name no longer than the maximum allowed file name length.
 
     Args:
         s (str) : string to convert to a file name
@@ -249,7 +295,12 @@ def make_safe_filename(s):
             return c
         else:
             return "_"
-    return "".join(safe_char(c) for c in s)
+    # Typically, a max filename length is 256, but let's limit it far below that, because callers typically add additional
+    # strings to this.
+    max_allowed_file_name_length = 150
+    s = "".join(safe_char(c) for c in s)
+    s = s[-max_allowed_file_name_length:]
+    return s
 
 
 def find_in_path(name, pathlist, match_func=os.path.isfile):
@@ -401,6 +452,71 @@ def is_url(path):
     # If it doesn't look like an URL, treat it like a file, possibly a UNC file.
     return path.lower().startswith("http:") or path.lower().startswith("https:")
 
+
+def determine_jit_name(host_os, target_os=None, host_arch=None, target_arch=None, use_cross_compile_jit=False):
+    """ Determine the jit file name to use.
+
+    Args:
+        host_os               (str)  : name of the OS the JIT will run on
+        target_os             (str)  : name of the OS the JIT will generate code for. Only needed for cross-compiler case.
+        host_arch             (str)  : name of the architecture the JIT will run on. Only needed for cross-compiler case.
+        target_arch           (str)  : name of the architecture the JIT will generate code for. Only needed for cross-compiler case.
+        use_cross_compile_jit (bool) : If True, will always generate a fully named "cross-compile" JIT,
+                                       not the default "clrjit.dll".
+
+        If you pass one of target_os, host_arch, or target_arch, you must pass them all.
+
+    Return:
+        (str) : name of the jit for this OS
+    """
+
+    jit_base_name = 'clrjit'
+
+    if use_cross_compile_jit or (host_arch != target_arch) or ((target_os is not None) and (host_os != target_os)):
+        if target_arch.startswith("arm"):
+            jit_os_name = "universal"
+        elif target_os == "windows":
+            jit_os_name = "win"
+        elif target_os == "osx" or target_os == "linux":
+            jit_os_name = "unix"
+        else:
+            raise RuntimeError("Unknown target OS.")
+
+        jit_base_name = 'clrjit_{}_{}_{}'.format(jit_os_name, target_arch, host_arch)
+
+    if host_os == "osx":
+        return "lib" + jit_base_name + ".dylib"
+    elif host_os == "linux":
+        return "lib" + jit_base_name + ".so"
+    elif host_os == "windows":
+        return jit_base_name + ".dll"
+    else:
+        raise RuntimeError("Unknown host OS.")
+
+
+def get_deepest_existing_directory(path):
+    """ Given a path, find the deepest existing directory containing it. This
+        might be the path itself, or a parent directory. If no such directory
+        is found, None is returned.
+
+    Args:
+        path (str) : path to check
+
+    Returns:
+        As described above
+    """
+    path = os.path.abspath(path)
+    lastPath = ""
+
+    # When os.path.dirname() is called on the root directory ("C:\\" on Windows or "/" on Linux),
+    # if returns itself.
+    while not os.path.isdir(path) and path != lastPath:
+        lastPath = path
+        path = os.path.dirname(path)
+
+    return path if os.path.isdir(path) else None
+
+
 ################################################################################
 ##
 ## Azure Storage functions
@@ -533,6 +649,7 @@ def download_progress_hook(count, block_size, total_size):
 
 def download_with_progress_urlretrieve(uri, target_location, fail_if_not_found=True, display_progress=True):
     """ Do an URI download using urllib.request.urlretrieve with a progress hook.
+        Retries the download up to 5 times unless the URL returns 404.
 
         Outputs messages using the `logging` package.
 
@@ -547,15 +664,32 @@ def download_with_progress_urlretrieve(uri, target_location, fail_if_not_found=T
     """
     logging.info("Download: %s -> %s", uri, target_location)
 
-    ok = True
-    try:
-        progress_display_method = download_progress_hook if display_progress else None
-        urllib.request.urlretrieve(uri, target_location, reporthook=progress_display_method)
-    except urllib.error.HTTPError as httperror:
-        if (httperror == 404) and fail_if_not_found:
-            logging.error("HTTP 404 error")
-            raise httperror
-        ok = False
+    ok = False
+    num_tries = 5
+    for try_num in range(num_tries):
+        try:
+            progress_display_method = download_progress_hook if display_progress else None
+            urllib.request.urlretrieve(uri, target_location, reporthook=progress_display_method)
+            ok = True
+            break
+        except Exception as ex:
+            if try_num == num_tries - 1:
+                raise ex
+
+            if isinstance(ex, urllib.error.HTTPError) and ex.code == 404:
+                if fail_if_not_found:
+                    logging.error("HTTP 404 error")
+                    raise ex
+                # Do not retry; assume we won't progress
+                break
+
+            if display_progress:
+                sys.stdout.write("\n")
+
+            logging.error("Try {}/{} got error: {}".format(try_num + 1, num_tries, ex))
+            sleep_time = (try_num + 1) * 2.0
+            logging.info("Sleeping for {} seconds before next try".format(sleep_time))
+            time.sleep(sleep_time)
 
     if display_progress:
         sys.stdout.write("\n") # Add newline after progress hook
@@ -621,7 +755,7 @@ def download_files(paths, target_dir, verbose=True, fail_if_not_found=True, is_a
             is_item_url = is_url(item_path)
             item_name = item_path.split("/")[-1] if is_item_url else os.path.basename(item_path)
 
-            if item_path.lower().endswith(".zip"):
+            if item_path.lower().endswith(".zip") or item_path.lower().endswith(".tar.gz"):
                 # Delete everything in the temp_location (from previous iterations of this loop, so previous URL downloads).
                 temp_location_items = [os.path.join(temp_location, item) for item in os.listdir(temp_location)]
                 for item in temp_location_items:
@@ -642,22 +776,26 @@ def download_files(paths, target_dir, verbose=True, fail_if_not_found=True, is_a
                         shutil.copy2(item_path, download_path)
 
                 if verbose:
-                    logging.info("Uncompress %s", download_path)
-                with zipfile.ZipFile(download_path, "r") as file_handle:
-                    file_handle.extractall(temp_location)
+                    logging.info("Uncompress %s => %s", download_path, target_dir)
 
-                # Copy everything that was extracted to the target directory.
-                copy_directory(temp_location, target_dir, verbose_copy=verbose, match_func=lambda path: not path.endswith(".zip"))
+                if item_path.lower().endswith(".zip"):
+                    with zipfile.ZipFile(download_path, "r") as zip:
+                        zip.extractall(target_dir)
+                        archive_names = zip.namelist()
+                else:
+                    with tarfile.open(download_path, "r") as tar:
+                        tar.extractall(target_dir)
+                        archive_names = tar.getnames()
 
-                # The caller wants to know where all the files ended up, so compute that.
-                for dirpath, _, files in os.walk(temp_location, topdown=True):
-                    for file_name in files:
-                        if not file_name.endswith(".zip"):
-                            full_file_path = os.path.join(dirpath, file_name)
-                            target_path = full_file_path.replace(temp_location, target_dir)
-                            local_paths.append(target_path)
+                for archive_name in archive_names:
+                    if archive_name.endswith("/"):
+                        # Directory
+                        continue
+
+                    target_path = os.path.join(target_dir, archive_name.replace("/", os.path.sep))
+                    local_paths.append(target_path)
             else:
-                # Not a zip file; download directory to target directory
+                # Not an archive
                 download_path = os.path.join(target_dir, item_name)
                 if is_item_url:
                     ok = download_one_url(item_path, download_path, fail_if_not_found=fail_if_not_found, is_azure_storage=is_azure_storage, display_progress=display_progress)

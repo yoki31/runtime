@@ -65,6 +65,7 @@ namespace System.Threading.Tests
         }
 
         [ConditionalFact(typeof(PlatformDetection), nameof(PlatformDetection.IsThreadingSupported))]
+        [ActiveIssue("https://github.com/dotnet/runtime/issues/91538", typeof(PlatformDetection), nameof(PlatformDetection.IsWasmThreadingSupported))]
         public static void IsEntered_WhenHeldBySomeoneElse_ThrowsSynchronizationLockException()
         {
             var obj = new object();
@@ -216,6 +217,7 @@ namespace System.Threading.Tests
         }
 
         [ConditionalFact(typeof(PlatformDetection), nameof(PlatformDetection.IsThreadingSupported))]
+        [ActiveIssue("https://github.com/dotnet/runtime/issues/91538", typeof(PlatformDetection), nameof(PlatformDetection.IsWasmThreadingSupported))]
         public static void Enter_HasToWait()
         {
             var thinLock = new object();
@@ -414,6 +416,7 @@ namespace System.Threading.Tests
         }
 
         [ConditionalFact(typeof(PlatformDetection), nameof(PlatformDetection.IsThreadingSupported))]
+        [ActiveIssue("https://github.com/dotnet/runtime/issues/91538", typeof(PlatformDetection), nameof(PlatformDetection.IsWasmThreadingSupported))]
         public static void WaitTest()
         {
             var obj = new object();
@@ -450,11 +453,43 @@ namespace System.Threading.Tests
         }
 
         [ConditionalFact(typeof(PlatformDetection), nameof(PlatformDetection.IsThreadingSupported))]
+        [ActiveIssue("https://github.com/dotnet/runtime/issues/91538", typeof(PlatformDetection), nameof(PlatformDetection.IsWasmThreadingSupported))]
         public static void Enter_HasToWait_LockContentionCountTest()
         {
             long initialLockContentionCount = Monitor.LockContentionCount;
             Enter_HasToWait();
             Assert.True(Monitor.LockContentionCount - initialLockContentionCount >= 2);
+        }
+
+        [ConditionalFact(typeof(PlatformDetection), nameof(PlatformDetection.IsThreadingSupported))]
+        [ActiveIssue("https://github.com/dotnet/runtime/issues/91538", typeof(PlatformDetection), nameof(PlatformDetection.IsWasmThreadingSupported))]
+        public static void ObjectHeaderSyncBlockTransitionTryEnterRaceTest()
+        {
+            var threadStarted = new AutoResetEvent(false);
+            var startTest = new AutoResetEvent(false);
+            var obj = new object();
+            var t = ThreadTestHelpers.CreateGuardedThread(out _, () =>
+            {
+                threadStarted.Set();
+                startTest.CheckedWait();
+                Monitor.TryEnter(obj, 100); // likely to perform a full wait, which may involve some sort of transition
+            });
+            t.IsBackground = true;
+            t.Start();
+            threadStarted.CheckedWait();
+
+            lock (obj)
+            {
+                startTest.Set();
+                do
+                {
+                    for (int i = 0; i < 1000; i++)
+                    {
+                        Assert.True(Monitor.TryEnter(obj)); // this could race with the transition happening on the other thread
+                        Monitor.Exit(obj);
+                    }
+                } while (!t.Join(0));
+            }
         }
     }
 }

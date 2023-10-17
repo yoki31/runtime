@@ -7,9 +7,9 @@
   .publickeytoken = (B0 3F 5F 7F 11 D5 0A 3A )
   .ver 4:0:0:0
 }
-.assembly ILGEN_0xa09c7ca6 {}
+.assembly 'b59478' {}
 .assembly extern xunit.core {}
-.class ILGEN_0xa09c7ca6 {
+.class public ILGEN_0xa09c7ca6 {
 .method static int32 Method_0x1ff34cdc(int64 Arg_0x1) {
 .maxstack	9
 
@@ -62,7 +62,7 @@ End_Orphan_0:
  conv.u2
 ret
 }
-.method static int32 Main() {
+.method public static int32 Main() {
 .custom instance void [xunit.core]Xunit.FactAttribute::.ctor() = (
     01 00 00 00
 )

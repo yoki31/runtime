@@ -24,7 +24,6 @@
 extern "C" mdTypeRef QCALLTYPE ModuleBuilder_GetTypeRef(QCall::ModuleHandle pModule,
                                           LPCWSTR wszFullName,
                                           QCall::ModuleHandle pRefedModule,
-                                          LPCWSTR wszRefedModuleFileName,
                                           INT32 tkResolutionArg)
 {
     QCALL_CONTRACT;
@@ -85,35 +84,25 @@ extern "C" mdTypeRef QCALLTYPE ModuleBuilder_GetTypeRef(QCall::ModuleHandle pMod
         else
         {
             // reference to top level type
-            if ( pThisAssembly != pRefedAssembly )
+
+            SafeComHolderPreemp<IMetaDataAssemblyEmit> pAssemblyEmit;
+
+            // Generate AssemblyRef
+            IfFailThrow( pEmit->QueryInterface(IID_IMetaDataAssemblyEmit, (void **) &pAssemblyEmit) );
+            tkResolution = pThisAssembly->AddAssemblyRef(pRefedAssembly, pAssemblyEmit);
+
+            // Add the assembly ref token and the manifest module it is referring to this module's rid map.
+            // This is needed regardless of whether the dynamic assembly has run access. Even in Save-only
+            // or Refleciton-only mode, CreateType() of the referencing type may still need the referenced
+            // type to be resolved and loaded, e.g. if the referencing type is a subclass of the referenced type.
+            //
+            // Don't cache if there is assembly associated with the token already. The assembly ref resolution
+            // can be ambiguous because of reflection emit does not require unique assembly names.
+            // We always let the first association win. Ideally, we would disallow this situation by throwing
+            // exception, but that would be a breaking change.
+            if(pModule->LookupAssemblyRef(tkResolution) == NULL)
             {
-                SafeComHolderPreemp<IMetaDataAssemblyEmit> pAssemblyEmit;
-
-                // Generate AssemblyRef
-                IfFailThrow( pEmit->QueryInterface(IID_IMetaDataAssemblyEmit, (void **) &pAssemblyEmit) );
-                tkResolution = pThisAssembly->AddAssemblyRef(pRefedAssembly, pAssemblyEmit);
-
-                // Add the assembly ref token and the manifest module it is referring to this module's rid map.
-                // This is needed regardless of whether the dynamic assembly has run access. Even in Save-only
-                // or Refleciton-only mode, CreateType() of the referencing type may still need the referenced
-                // type to be resolved and loaded, e.g. if the referencing type is a subclass of the referenced type.
-                //
-                // Don't cache if there is assembly associated with the token already. The assembly ref resolution
-                // can be ambiguous because of reflection emit does not require unique assembly names.
-                // We always let the first association win. Ideally, we would disallow this situation by throwing
-                // exception, but that would be a breaking change.
-                if(pModule->LookupAssemblyRef(tkResolution) == NULL)
-                {
-                    pModule->ForceStoreAssemblyRef(tkResolution, pRefedAssembly);
-                }
-            }
-            else
-            {
-                _ASSERTE(pModule != pRefedModule);
-                _ASSERTE(wszRefedModuleFileName != NULL);
-
-                // Generate ModuleRef
-                IfFailThrow(pEmit->DefineModuleRef(wszRefedModuleFileName, &tkResolution));
+                pModule->ForceStoreAssemblyRef(tkResolution, pRefedAssembly);
             }
         }
 
@@ -256,13 +245,13 @@ extern "C" INT32 QCALLTYPE ModuleBuilder_GetMemberRef(QCall::ModuleHandle pModul
     }
 
     SafeComHolderPreemp<IMetaDataAssemblyEmit> pAssemblyEmit;
-    IfFailThrow( pRefingAssembly->GetManifestModule()->GetEmitter()->QueryInterface(IID_IMetaDataAssemblyEmit, (void **) &pAssemblyEmit) );
+    IfFailThrow( pRefingAssembly->GetModule()->GetEmitter()->QueryInterface(IID_IMetaDataAssemblyEmit, (void **) &pAssemblyEmit) );
 
     CQuickBytes             qbNewSig;
     ULONG                   cbNewSig;
 
     IfFailThrow( pRefedModule->GetMDImport()->TranslateSigWithScope(
-        pRefedAssembly->GetManifestImport(),
+        pRefedAssembly->GetMDImport(),
         NULL, 0,        // hash value
         pvComSig,
         cbComSig,
@@ -335,7 +324,7 @@ extern "C" INT32 QCALLTYPE ModuleBuilder_GetMemberRefOfMethodInfo(QCall::ModuleH
         Assembly * pRefingAssembly = pModule->GetAssembly();
 
         SafeComHolderPreemp<IMetaDataAssemblyEmit> pAssemblyEmit;
-        IfFailThrow( pRefingAssembly->GetManifestModule()->GetEmitter()->QueryInterface(IID_IMetaDataAssemblyEmit, (void **) &pAssemblyEmit) );
+        IfFailThrow( pRefingAssembly->GetModule()->GetEmitter()->QueryInterface(IID_IMetaDataAssemblyEmit, (void **) &pAssemblyEmit) );
 
         CQuickBytes     qbNewSig;
         ULONG           cbNewSig;
@@ -349,7 +338,7 @@ extern "C" INT32 QCALLTYPE ModuleBuilder_GetMemberRefOfMethodInfo(QCall::ModuleH
         }
 
         IfFailThrow( pMeth->GetMDImport()->TranslateSigWithScope(
-            pRefedAssembly->GetManifestImport(),
+            pRefedAssembly->GetMDImport(),
             NULL, 0,        // hash blob value
             pvComSig,
             cbComSig,
@@ -421,14 +410,14 @@ extern "C" mdMemberRef QCALLTYPE ModuleBuilder_GetMemberRefOfFieldInfo(QCall::Mo
                 COMPlusThrow(kNotSupportedException, W("NotSupported_CollectibleBoundNonCollectible"));
         }
         SafeComHolderPreemp<IMetaDataAssemblyEmit> pAssemblyEmit;
-        IfFailThrow( pRefingAssembly->GetManifestModule()->GetEmitter()->QueryInterface(IID_IMetaDataAssemblyEmit, (void **) &pAssemblyEmit) );
+        IfFailThrow( pRefingAssembly->GetModule()->GetEmitter()->QueryInterface(IID_IMetaDataAssemblyEmit, (void **) &pAssemblyEmit) );
 
         // Translate the field signature this scope
         CQuickBytes     qbNewSig;
         ULONG           cbNewSig;
 
         IfFailThrow( pRefedMDImport->TranslateSigWithScope(
-        pRefedAssembly->GetManifestImport(),
+        pRefedAssembly->GetMDImport(),
         NULL, 0,            // hash value
         pvComSig,
         cbComSig,
@@ -499,14 +488,20 @@ extern "C" void QCALLTYPE ModuleBuilder_SetFieldRVAContent(QCall::ModuleHandle p
     if (pReflectionModule->m_sdataSection == 0)
         IfFailThrow( pGen->GetSectionCreate (".sdata", sdReadWrite, &pReflectionModule->m_sdataSection) );
 
+    // Define the alignment that the rva will be set to. Since the CoreCLR runtime only has hard alignment requirements
+    // up to 8 bytes, the highest alignment we may need is 8 byte alignment. This hard alignment requirement is only needed
+    // by Runtime.Helpers.CreateSpan<T>. Since the previous alignment was 4 bytes before CreateSpan was implemented, if the
+    // data isn't itself of size divisible by 8, just align to 4 to the memory cost of excess alignment.
+    DWORD alignment = (length % 8 == 0) ? 8 : 4;
+
     // Get the size of current .sdata section. This will be the RVA for this field within the section
     DWORD dwRVA = 0;
     IfFailThrow( pGen->GetSectionDataLen(pReflectionModule->m_sdataSection, &dwRVA) );
-    dwRVA = (dwRVA + sizeof(DWORD)-1) & ~(sizeof(DWORD)-1);
+    dwRVA = (dwRVA + alignment-1) & ~(alignment-1);
 
     // allocate the space in .sdata section
     void * pvBlob;
-    IfFailThrow( pGen->GetSectionBlock(pReflectionModule->m_sdataSection, length, sizeof(DWORD), (void**) &pvBlob) );
+    IfFailThrow( pGen->GetSectionBlock(pReflectionModule->m_sdataSection, length, alignment, (void**) &pvBlob) );
 
     // copy over the initialized data if specified
     if (pContent != NULL)
@@ -597,52 +592,6 @@ extern "C" mdTypeSpec QCALLTYPE ModuleBuilder_GetTokenFromTypeSpec(QCall::Module
 }
 
 
-// GetType
-// Given a class name, this method will look for that class
-//  with in the module.
-extern "C" void QCALLTYPE RuntimeModule_GetType(QCall::ModuleHandle pModule, LPCWSTR wszName, BOOL bThrowOnError, BOOL bIgnoreCase, QCall::ObjectHandleOnStack retType, QCall::ObjectHandleOnStack keepAlive)
-{
-    CONTRACTL
-    {
-        QCALL_CHECK;
-        PRECONDITION(CheckPointer(wszName));
-    }
-    CONTRACTL_END;
-
-    TypeHandle retTypeHandle;
-
-    BEGIN_QCALL;
-
-    DomainAssembly *pAssembly = pModule->GetDomainAssembly();
-    _ASSERTE(pAssembly);
-
-    BOOL prohibitAsmQualifiedName = TRUE;
-
-    // Load the class from this assembly (fail if it is in a different one).
-    retTypeHandle = TypeName::GetTypeManaged(wszName, pAssembly, bThrowOnError, bIgnoreCase, prohibitAsmQualifiedName, NULL, (OBJECTREF*)keepAlive.m_ppObject);
-
-    // Verify that it's in 'this' module
-    // But, if it's in a different assembly than expected, that's okay, because
-    // it just means that it's been type forwarded.
-    if (!retTypeHandle.IsNull())
-    {
-        if ( (retTypeHandle.GetModule() != pModule) &&
-             (retTypeHandle.GetModule()->GetAssembly() == pModule->GetAssembly()) )
-            retTypeHandle = TypeHandle();
-    }
-
-    if (!retTypeHandle.IsNull())
-    {
-        GCX_COOP();
-        retType.Set(retTypeHandle.GetManagedClassObject());
-    }
-
-    END_QCALL;
-
-    return;
-}
-
-
 // GetName
 // This routine will return the name of the module as a String
 extern "C" void QCALLTYPE RuntimeModule_GetScopeName(QCall::ModuleHandle pModule, QCall::StringHandleOnStack retString)
@@ -663,17 +612,6 @@ extern "C" void QCALLTYPE RuntimeModule_GetScopeName(QCall::ModuleHandle pModule
     END_QCALL;
 }
 
-static void ReplaceNiExtension(SString& fileName, PCWSTR pwzOldSuffix, PCWSTR pwzNewSuffix)
-{
-    STANDARD_VM_CONTRACT;
-
-    if (fileName.EndsWithCaseInsensitive(pwzOldSuffix))
-    {
-        COUNT_T oldSuffixLen = (COUNT_T)wcslen(pwzOldSuffix);
-        fileName.Replace(fileName.End() - oldSuffixLen, oldSuffixLen, pwzNewSuffix);
-    }
-}
-
 /*============================GetFullyQualifiedName=============================
 **Action:
 **Returns:
@@ -691,9 +629,12 @@ extern "C" void QCALLTYPE RuntimeModule_GetFullyQualifiedName(QCall::ModuleHandl
     if (pModule->IsPEFile())
     {
         LPCWSTR fileName = pModule->GetPath();
-        if (*fileName != 0) {
-                retString.Set(fileName);
-        } else {
+        if (*fileName != W('\0'))
+        {
+            retString.Set(fileName);
+        }
+        else
+        {
             retString.Set(W("<Unknown>"));
         }
     }

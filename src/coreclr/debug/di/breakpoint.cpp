@@ -201,7 +201,7 @@ HRESULT CordbFunctionBreakpoint::Activate(BOOL fActivate)
         pProcess->InitIPCEvent(pEvent, DB_IPCE_BREAKPOINT_ADD, true, pAppDomain->GetADToken());
 
         pEvent->BreakpointData.funcMetadataToken = m_code->GetMetadataToken();
-        pEvent->BreakpointData.vmDomainFile = m_code->GetModule()->GetRuntimeDomainFile();
+        pEvent->BreakpointData.vmDomainAssembly = m_code->GetModule()->GetRuntimeDomainAssembly();
         pEvent->BreakpointData.encVersion = m_code->GetVersion();
 
         BOOL codeIsIL = m_code->IsIL();
@@ -211,11 +211,13 @@ HRESULT CordbFunctionBreakpoint::Activate(BOOL fActivate)
         if (codeIsIL)
         {
             pEvent->BreakpointData.nativeCodeMethodDescToken = pEvent->BreakpointData.nativeCodeMethodDescToken.NullPtr();
+            pEvent->BreakpointData.codeStartAddress = 0;
         }
         else
         {
             pEvent->BreakpointData.nativeCodeMethodDescToken =
                 (m_code.GetValue()->AsNativeCode())->GetVMNativeCodeMethodDescToken().ToLsPtr();
+            pEvent->BreakpointData.codeStartAddress = (m_code.GetValue()->AsNativeCode())->GetAddress();
         }
 
         // Note: we're sending a two-way event, so it blocks here

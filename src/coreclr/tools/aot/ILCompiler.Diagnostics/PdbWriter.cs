@@ -7,6 +7,7 @@ using System.IO;
 using System.Reflection;
 using System.Reflection.PortableExecutable;
 using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.Marshalling;
 using System.Text;
 
 using Internal.TypeSystem;
@@ -73,7 +74,7 @@ namespace ILCompiler.Diagnostics
         }
     }
 
-    public class PdbWriter
+    public partial class PdbWriter
     {
         private const string DiaSymReaderLibrary = "Microsoft.DiaSymReader.Native";
 
@@ -112,11 +113,11 @@ namespace ILCompiler.Diagnostics
         }
 
         [DefaultDllImportSearchPaths(DllImportSearchPath.AssemblyDirectory | DllImportSearchPath.SafeDirectories)]
-        [DllImport(DiaSymReaderLibrary, PreserveSig = false)]
-        private extern static void CreateNGenPdbWriter(
-            [MarshalAs(UnmanagedType.LPWStr)] string ngenImagePath,
-            [MarshalAs(UnmanagedType.LPWStr)] string pdbPath,
-            [MarshalAs(UnmanagedType.Interface)] out ISymNGenWriter2 ngenPdbWriter);
+        [LibraryImport(DiaSymReaderLibrary, StringMarshalling = StringMarshalling.Utf16)]
+        private static partial void CreateNGenPdbWriter(
+            string ngenImagePath,
+            string pdbPath,
+            out IntPtr ngenPdbWriterPtr);
 
         public PdbWriter(string pdbPath, PDBExtraData pdbExtraData, TargetDetails target)
         {
@@ -138,23 +139,13 @@ namespace ILCompiler.Diagnostics
             {
                 try
                 {
-                    try
-                    {
-                        WritePDBDataHelper(dllPath, methods);
-                    }
-                    finally
-                    {
-                        if ((_ngenWriter != null) && (_pdbMod != UIntPtr.Zero))
-                        {
-                            _ngenWriter.CloseMod(_pdbMod);
-                        }
-                    }
+                    WritePDBDataHelper(dllPath, methods);
                 }
                 finally
                 {
-                    if (_ngenWriter != null)
+                    if ((_ngenWriter != null) && (_pdbMod != UIntPtr.Zero))
                     {
-                        Marshal.FinalReleaseComObject(_ngenWriter);
+                        _ngenWriter.CloseMod(_pdbMod);
                     }
                 }
 
@@ -217,15 +208,22 @@ namespace ILCompiler.Diagnostics
             // Delete any preexisting PDB file upfront, otherwise CreateNGenPdbWriter silently opens it
             File.Delete(_pdbFilePath);
 
-            CreateNGenPdbWriter(dllPath, _pdbFilePath, out _ngenWriter);
+            var comWrapper = new StrategyBasedComWrappers();
+            CreateNGenPdbWriter(dllPath, _pdbFilePath, out var pdbWriterInst);
+            _ngenWriter = (ISymNGenWriter2)comWrapper.GetOrCreateObjectForComInstance(pdbWriterInst, CreateObjectFlags.UniqueInstance);
 
             {
                 // PDB file is now created. Get its path and update _pdbFilePath so the PDB file
                 // can be deleted if we don't make it successfully to the end.
-                StringBuilder pdbFilePathBuilder = new StringBuilder();
-                pdbFilePathBuilder.Capacity = 1024;
-                _ngenWriter.QueryPDBNameExW(pdbFilePathBuilder, new IntPtr(pdbFilePathBuilder.Capacity));
-                _pdbFilePath = pdbFilePathBuilder.ToString();
+                const int capacity = 1024;
+                var pdbFilePathBuilder = new char[capacity];
+                _ngenWriter.QueryPDBNameExW(pdbFilePathBuilder, new IntPtr(capacity - 1) /* remove 1 byte for null */);
+                int length = 0;
+                while (length < pdbFilePathBuilder.Length && pdbFilePathBuilder[length] != '\0')
+                {
+                    length++;
+                }
+                _pdbFilePath = new string(pdbFilePathBuilder, 0, length);
             }
 
             _ngenWriter.OpenModW(originalDllPath, Path.GetFileName(originalDllPath), out _pdbMod);
@@ -428,9 +426,9 @@ namespace ILCompiler.Diagnostics
                 byte iLanguage = (byte)CV_CFL_LANG.CV_CFL_MSIL;
                 writer.Write(iLanguage);
                 // Write rest of flags
-                writer.Write((byte)0); 
-                writer.Write((byte)0); 
-                writer.Write((byte)0); 
+                writer.Write((byte)0);
+                writer.Write((byte)0);
+                writer.Write((byte)0);
 
                 switch (_target.Architecture)
                 {

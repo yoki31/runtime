@@ -4,7 +4,6 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -14,54 +13,35 @@ namespace Microsoft.Interop
 {
     public sealed class Utf16CharMarshaller : IMarshallingGenerator
     {
-        private static readonly PredefinedTypeSyntax s_nativeType = PredefinedType(Token(SyntaxKind.UShortKeyword));
+        private static readonly ManagedTypeInfo s_nativeType = new SpecialTypeInfo("ushort", "ushort", SpecialType.System_UInt16);
 
-        public Utf16CharMarshaller()
+        public ValueBoundaryBehavior GetValueBoundaryBehavior(TypePositionInfo info, StubCodeContext context)
         {
-        }
-
-        public bool IsSupported(TargetFramework target, Version version) => true;
-
-        public ArgumentSyntax AsArgument(TypePositionInfo info, StubCodeContext context)
-        {
-            (string managedIdentifier, string nativeIdentifier) = context.GetIdentifiers(info);
-            if (!info.IsByRef)
+            if (IsPinningPathSupported(info, context))
             {
-                // (ushort)<managedIdentifier>
-                return Argument(
-                    CastExpression(
-                        AsNativeType(info),
-                        IdentifierName(managedIdentifier)));
+                return ValueBoundaryBehavior.NativeIdentifier;
             }
-            else if (IsPinningPathSupported(info, context))
+            else if (!UsesNativeIdentifier(info, context))
             {
-                // (ushort*)<pinned>
-                return Argument(
-                    CastExpression(
-                        PointerType(AsNativeType(info)),
-                        IdentifierName(PinnedIdentifier(info.InstanceIdentifier))));
+                return ValueBoundaryBehavior.ManagedIdentifier;
+            }
+            else if (info.IsByRef)
+            {
+                return ValueBoundaryBehavior.AddressOfNativeIdentifier;
             }
 
-            // &<nativeIdentifier>
-            return Argument(
-                PrefixUnaryExpression(
-                    SyntaxKind.AddressOfExpression,
-                    IdentifierName(nativeIdentifier)));
+            return ValueBoundaryBehavior.NativeIdentifier;
         }
 
-        public TypeSyntax AsNativeType(TypePositionInfo info)
+        public ManagedTypeInfo AsNativeType(TypePositionInfo info)
         {
             Debug.Assert(info.ManagedType is SpecialTypeInfo(_, _, SpecialType.System_Char));
             return s_nativeType;
         }
 
-        public ParameterSyntax AsParameter(TypePositionInfo info)
+        public SignatureBehavior GetNativeSignatureBehavior(TypePositionInfo info)
         {
-            TypeSyntax type = info.IsByRef
-                ? PointerType(AsNativeType(info))
-                : AsNativeType(info);
-            return Parameter(Identifier(info.InstanceIdentifier))
-                .WithType(type);
+            return info.IsByRef ? SignatureBehavior.PointerToNativeType : SignatureBehavior.NativeType;
         }
 
         public IEnumerable<StatementSyntax> Generate(TypePositionInfo info, StubCodeContext context)
@@ -85,29 +65,44 @@ namespace Microsoft.Interop
                                     ))
                             )
                         ),
-                        EmptyStatement()
+                        // ushort* <native> = (ushort*)<pinned>;
+                        LocalDeclarationStatement(
+                            VariableDeclaration(PointerType(AsNativeType(info).Syntax),
+                                SingletonSeparatedList(
+                                    VariableDeclarator(nativeIdentifier)
+                                        .WithInitializer(EqualsValueClause(
+                                            CastExpression(
+                                                PointerType(AsNativeType(info).Syntax),
+                                                IdentifierName(PinnedIdentifier(info.InstanceIdentifier))))))))
                     );
                 }
                 yield break;
             }
+
+            MarshalDirection elementMarshalDirection = MarshallerHelpers.GetMarshalDirection(info, context);
 
             switch (context.CurrentStage)
             {
                 case StubCodeContext.Stage.Setup:
                     break;
                 case StubCodeContext.Stage.Marshal:
-                    if ((info.IsByRef && info.RefKind != RefKind.Out) || !context.SingleFrameSpansNativeContext)
+                    if (elementMarshalDirection is MarshalDirection.ManagedToUnmanaged or MarshalDirection.Bidirectional)
                     {
-                        yield return ExpressionStatement(
-                            AssignmentExpression(
-                                SyntaxKind.SimpleAssignmentExpression,
-                                IdentifierName(nativeIdentifier),
-                                IdentifierName(managedIdentifier)));
+                        // There's an implicit conversion from char to ushort,
+                        // so we simplify the generated code to just pass the char value directly
+                        if (info.IsByRef)
+                        {
+                            yield return ExpressionStatement(
+                                AssignmentExpression(
+                                    SyntaxKind.SimpleAssignmentExpression,
+                                    IdentifierName(nativeIdentifier),
+                                    IdentifierName(managedIdentifier)));
+                        }
                     }
 
                     break;
                 case StubCodeContext.Stage.Unmarshal:
-                    if (info.IsManagedReturnPosition || (info.IsByRef && info.RefKind != RefKind.In))
+                    if (elementMarshalDirection is MarshalDirection.UnmanagedToManaged or MarshalDirection.Bidirectional)
                     {
                         yield return ExpressionStatement(
                             AssignmentExpression(
@@ -127,18 +122,22 @@ namespace Microsoft.Interop
 
         public bool UsesNativeIdentifier(TypePositionInfo info, StubCodeContext context)
         {
-            return info.IsManagedReturnPosition || (info.IsByRef && !context.SingleFrameSpansNativeContext);
+            MarshalDirection elementMarshalDirection = MarshallerHelpers.GetMarshalDirection(info, context);
+            return !IsPinningPathSupported(info, context) && (elementMarshalDirection != MarshalDirection.ManagedToUnmanaged || info.IsByRef);
         }
 
-        public bool SupportsByValueMarshalKind(ByValueContentsMarshalKind marshalKind, StubCodeContext context) => false;
-
-        private bool IsPinningPathSupported(TypePositionInfo info, StubCodeContext context)
+        private static bool IsPinningPathSupported(TypePositionInfo info, StubCodeContext context)
         {
             return context.SingleFrameSpansNativeContext
-                && !info.IsManagedReturnPosition
+                && !context.IsInStubReturnPosition(info)
                 && info.IsByRef;
         }
 
         private static string PinnedIdentifier(string identifier) => $"{identifier}__pinned";
+        public ByValueMarshalKindSupport SupportsByValueMarshalKind(ByValueContentsMarshalKind marshalKind, TypePositionInfo info, StubCodeContext context, out GeneratorDiagnostic? diagnostic)
+        {
+            return ByValueMarshalKindSupportDescriptor.Default.GetSupport(marshalKind, info, context, out diagnostic);
+        }
+
     }
 }

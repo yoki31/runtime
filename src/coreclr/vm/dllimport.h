@@ -23,7 +23,15 @@ public:
     MethodDesc        *m_pMD;
     MethodTable       *m_pMT;
     Signature          m_sig;
+    // Module to use for signature reading.
     Module            *m_pModule;
+    // Module that owns any metadata that influences interop behavior.
+    // This is usually the same as m_pModule, but can differ with vararg
+    // P/Invokes, where the calling assembly's module is assigned to m_pModule
+    // since the specific caller signature is defined in that assembly, not the
+    // assembly that defined the P/Invoke.
+    Module            *m_pMetadataModule;
+    // Used for ILStubCache selection and MethodTable creation.
     Module            *m_pLoaderModule;
     mdMethodDef        m_tkMethodDef;
     SigTypeContext     m_typeContext;
@@ -186,6 +194,7 @@ enum ILStubTypes
     ILSTUB_WRAPPERDELEGATE_INVOKE        = 0x80000007,
     ILSTUB_TAILCALL_STOREARGS            = 0x80000008,
     ILSTUB_TAILCALL_CALLTARGET           = 0x80000009,
+    ILSTUB_STATIC_VIRTUAL_DISPATCH_STUB  = 0x8000000A,
 };
 
 #ifdef FEATURE_COMINTEROP
@@ -205,6 +214,8 @@ inline bool SF_IsCALLIStub             (DWORD dwStubFlags) { LIMITED_METHOD_CONT
 inline bool SF_IsForNumParamBytes      (DWORD dwStubFlags) { LIMITED_METHOD_CONTRACT; return (dwStubFlags < NDIRECTSTUB_FL_INVALID && 0 != (dwStubFlags & NDIRECTSTUB_FL_FOR_NUMPARAMBYTES)); }
 inline bool SF_IsStructMarshalStub     (DWORD dwStubFlags) { LIMITED_METHOD_CONTRACT; return (dwStubFlags < NDIRECTSTUB_FL_INVALID && 0 != (dwStubFlags & NDIRECTSTUB_FL_STRUCT_MARSHAL)); }
 inline bool SF_IsCheckPendingException (DWORD dwStubFlags) { LIMITED_METHOD_CONTRACT; return (dwStubFlags < NDIRECTSTUB_FL_INVALID && 0 != (dwStubFlags & NDIRECTSTUB_FL_CHECK_PENDING_EXCEPTION)); }
+
+inline bool SF_IsVirtualStaticMethodDispatchStub(DWORD dwStubFlags) { LIMITED_METHOD_CONTRACT; return dwStubFlags == ILSTUB_STATIC_VIRTUAL_DISPATCH_STUB; }
 
 #ifdef FEATURE_ARRAYSTUB_AS_IL
 inline bool SF_IsArrayOpStub           (DWORD dwStubFlags) { LIMITED_METHOD_CONTRACT; return ((dwStubFlags == ILSTUB_ARRAYOP_GET) ||
@@ -317,7 +328,7 @@ public:
     PInvokeStaticSigInfo(_In_ MethodDesc* pMD, _Outptr_opt_ LPCUTF8* pLibName, _Outptr_opt_ LPCUTF8* pEntryPointName);
 
 private:
-    void ThrowError(_In_ WORD errorResourceID);
+    void ThrowError(_In_ UINT errorResourceID);
     void InitCallConv(_In_ CorInfoCallConvExtension callConv, _In_ MethodDesc* pMD);
     void InitCallConv(_In_ CorInfoCallConvExtension callConv, _In_ BOOL bIsVarArg);
     void DllImportInit(_In_ MethodDesc* pMD, _Outptr_opt_ LPCUTF8* pLibName, _Outptr_opt_ LPCUTF8* pEntryPointName);

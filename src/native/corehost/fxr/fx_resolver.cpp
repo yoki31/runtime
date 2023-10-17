@@ -174,9 +174,6 @@ namespace
 
         if (best_match == fx_ver_t())
         {
-            // This is not strictly necessary, we just need to return version which doesn't exist.
-            // But it's cleaner to return the desider reference then invalid -1.-1.-1 version.
-            best_match = fx_ref.get_fx_version_number();
             trace::verbose(_X("Framework reference didn't resolve to any available version."));
         }
         else if (trace::is_enabled())
@@ -190,7 +187,8 @@ namespace
     fx_definition_t* resolve_framework_reference(
         const fx_reference_t & fx_ref,
         const pal::string_t & oldest_requested_version,
-        const pal::string_t & dotnet_dir)
+        const pal::string_t & dotnet_dir,
+        const bool disable_multilevel_lookup)
     {
 #if defined(DEBUG)
         assert(!fx_ref.get_fx_name().empty());
@@ -205,13 +203,14 @@ namespace
             fx_ref.get_fx_name().c_str(), fx_ref.get_fx_version().c_str());
 
         std::vector<pal::string_t> hive_dir;
-        get_framework_and_sdk_locations(dotnet_dir, &hive_dir);
+        get_framework_and_sdk_locations(dotnet_dir, disable_multilevel_lookup, &hive_dir);
 
         pal::string_t selected_fx_dir;
         pal::string_t selected_fx_version;
         fx_ver_t selected_ver;
 
-        for (pal::string_t dir : hive_dir)
+        pal::string_t deps_file_name = fx_ref.get_fx_name() + _X(".deps.json");
+        for (pal::string_t& dir : hive_dir)
         {
             auto fx_dir = dir;
             trace::verbose(_X("Searching FX directory in [%s]"), fx_dir.c_str());
@@ -235,7 +234,7 @@ namespace
                     fx_ref.get_fx_version().c_str());
 
                 append_path(&fx_dir, fx_ref.get_fx_version().c_str());
-                if (pal::directory_exists(fx_dir))
+                if (library_exists_in_dir(fx_dir, deps_file_name, nullptr))
                 {
                     selected_fx_dir = fx_dir;
                     selected_fx_version = fx_ref.get_fx_version();
@@ -258,27 +257,39 @@ namespace
                 }
 
                 fx_ver_t resolved_ver = resolve_framework_reference_from_version_list(version_list, fx_ref);
-
-                pal::string_t resolved_ver_str = resolved_ver.as_str();
-                append_path(&fx_dir, resolved_ver_str.c_str());
-
-                if (pal::directory_exists(fx_dir))
+                while (resolved_ver != fx_ver_t())
                 {
-                    if (selected_ver != fx_ver_t())
+                    pal::string_t resolved_ver_str = resolved_ver.as_str();
+                    pal::string_t resolved_fx_dir = fx_dir;
+                    append_path(&resolved_fx_dir, resolved_ver_str.c_str());
+
+                    // Check that the framework's .deps.json exists. To minimize the file checks done in the most common
+                    // scenario (.deps.json exists), only check after resolving the version and if the .deps.json doesn't
+                    // exist, attempt resolving again without that version.
+                    if (!library_exists_in_dir(resolved_fx_dir, deps_file_name, nullptr))
                     {
-                        // Compare the previous hive_dir selection with the current hive_dir to see which one is the better match
-                        std::vector<fx_ver_t> version_list;
-                        version_list.push_back(resolved_ver);
-                        version_list.push_back(selected_ver);
+                        // Remove the version and try resolving again
+                        trace::verbose(_X("Ignoring FX version [%s] without .deps.json"), resolved_ver_str.c_str());
+                        version_list.erase(std::find(version_list.cbegin(), version_list.cend(), resolved_ver));
                         resolved_ver = resolve_framework_reference_from_version_list(version_list, fx_ref);
                     }
-
-                    if (resolved_ver != selected_ver)
+                    else
                     {
-                        trace::verbose(_X("Changing Selected FX version from [%s] to [%s]"), selected_fx_dir.c_str(), fx_dir.c_str());
-                        selected_ver = resolved_ver;
-                        selected_fx_dir = fx_dir;
-                        selected_fx_version = resolved_ver_str;
+                        if (selected_ver != fx_ver_t())
+                        {
+                            // Compare the previous hive_dir selection with the current hive_dir to see which one is the better match
+                            resolved_ver = resolve_framework_reference_from_version_list({ resolved_ver, selected_ver }, fx_ref);
+                        }
+
+                        if (resolved_ver != selected_ver)
+                        {
+                            trace::verbose(_X("Changing Selected FX version from [%s] to [%s]"), selected_fx_dir.c_str(), resolved_fx_dir.c_str());
+                            selected_ver = resolved_ver;
+                            selected_fx_dir = resolved_fx_dir;
+                            selected_fx_version = resolved_ver_str;
+                        }
+
+                        break;
                     }
                 }
             }
@@ -286,7 +297,7 @@ namespace
 
         if (selected_fx_dir.empty())
         {
-            trace::error(_X("It was not possible to find any compatible framework version"));
+            trace::verbose(_X("It was not possible to find any compatible framework version"));
             return nullptr;
         }
 
@@ -370,7 +381,7 @@ void fx_resolver_t::update_newest_references(
 // - host_info
 //     Information about the host - mainly used to determine where to search for frameworks.
 // - override_settings
-//     Framework resolution settings which will win over anything found (settings comming from command line).
+//     Framework resolution settings which will win over anything found (settings coming from command line).
 //     Passed as fx_reference_t for simplicity, the version part of that structure is ignored.
 // - config
 //     Parsed runtime configuration to process.
@@ -394,10 +405,12 @@ void fx_resolver_t::update_newest_references(
 //     InvalidConfigFile - reading of a runtime config for some of the processed frameworks has failed.
 StatusCode fx_resolver_t::read_framework(
     const host_startup_info_t & host_info,
+    bool disable_multilevel_lookup,
     const runtime_config_t::settings_t& override_settings,
     const runtime_config_t & config,
     const fx_reference_t * effective_parent_fx_ref,
-    fx_definition_vector_t & fx_definitions)
+    fx_definition_vector_t & fx_definitions,
+    const pal::char_t* app_display_name)
 {
     // This reconciles duplicate references to minimize the number of resolve retries.
     update_newest_references(config);
@@ -438,11 +451,18 @@ StatusCode fx_resolver_t::read_framework(
 
             m_effective_fx_references[fx_name] = new_effective_fx_ref;
 
-            // Resolve the effective framework reference against the the existing physical framework folders
-            fx_definition_t* fx = resolve_framework_reference(new_effective_fx_ref, m_oldest_fx_references[fx_name].get_fx_version(), host_info.dotnet_root);
+            // Resolve the effective framework reference against the existing physical framework folders
+            fx_definition_t* fx = resolve_framework_reference(new_effective_fx_ref, m_oldest_fx_references[fx_name].get_fx_version(), host_info.dotnet_root, disable_multilevel_lookup);
             if (fx == nullptr)
             {
-                display_missing_framework_error(fx_name, new_effective_fx_ref.get_fx_version(), pal::string_t(), host_info.dotnet_root);
+                trace::error(
+                    INSTALL_OR_UPDATE_NET_ERROR_MESSAGE
+                    _X("\n\n")
+                    _X("App: %s\n")
+                    _X("Architecture: %s"),
+                    app_display_name != nullptr ? app_display_name : host_info.host_path.c_str(),
+                    get_current_arch_name());
+                display_missing_framework_error(fx_name, new_effective_fx_ref.get_fx_version(), pal::string_t(), host_info.dotnet_root, disable_multilevel_lookup);
                 return FrameworkMissingFailure;
             }
 
@@ -471,7 +491,7 @@ StatusCode fx_resolver_t::read_framework(
                 return StatusCode::InvalidConfigFile;
             }
 
-            rc = read_framework(host_info, override_settings, new_config, &new_effective_fx_ref, fx_definitions);
+            rc = read_framework(host_info, disable_multilevel_lookup, override_settings, new_config, &new_effective_fx_ref, fx_definitions, app_display_name);
             if (rc)
             {
                 break; // Error case
@@ -511,9 +531,11 @@ fx_resolver_t::fx_resolver_t()
 
 StatusCode fx_resolver_t::resolve_frameworks_for_app(
     const host_startup_info_t & host_info,
+    bool disable_multilevel_lookup,
     const runtime_config_t::settings_t& override_settings,
     const runtime_config_t & app_config,
-    fx_definition_vector_t & fx_definitions)
+    fx_definition_vector_t & fx_definitions,
+    const pal::char_t* app_display_name)
 {
     fx_resolver_t resolver;
 
@@ -523,7 +545,7 @@ StatusCode fx_resolver_t::resolve_frameworks_for_app(
     do
     {
         fx_definitions.resize(1); // Erase any existing frameworks for re-try
-        rc = resolver.read_framework(host_info, override_settings, app_config, /*effective_parent_fx_ref*/ nullptr,  fx_definitions);
+        rc = resolver.read_framework(host_info, disable_multilevel_lookup, override_settings, app_config, /*effective_parent_fx_ref*/ nullptr, fx_definitions, app_display_name);
     } while (rc == StatusCode::FrameworkCompatRetry && retry_count++ < Max_Framework_Resolve_Retries);
 
     assert(retry_count < Max_Framework_Resolve_Retries);

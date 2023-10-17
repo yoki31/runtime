@@ -98,6 +98,7 @@ MONO_JIT_ICALL (__emul_ldiv_un) \
 MONO_JIT_ICALL (__emul_lmul) \
 MONO_JIT_ICALL (__emul_lmul_ovf) \
 MONO_JIT_ICALL (__emul_lmul_ovf_un) \
+MONO_JIT_ICALL (__emul_lmul_ovf_un_oom) \
 MONO_JIT_ICALL (__emul_lrem) \
 MONO_JIT_ICALL (__emul_lrem_un) \
 MONO_JIT_ICALL (__emul_lshl) \
@@ -108,6 +109,7 @@ MONO_JIT_ICALL (__emul_op_idiv_un) \
 MONO_JIT_ICALL (__emul_op_imul) \
 MONO_JIT_ICALL (__emul_op_imul_ovf) \
 MONO_JIT_ICALL (__emul_op_imul_ovf_un) \
+MONO_JIT_ICALL (__emul_op_imul_ovf_un_oom) \
 MONO_JIT_ICALL (__emul_op_irem) \
 MONO_JIT_ICALL (__emul_op_irem_un) \
 MONO_JIT_ICALL (__emul_rconv_to_i8) \
@@ -135,10 +137,16 @@ MONO_JIT_ICALL (mini_llvmonly_resolve_generic_virtual_call) \
 MONO_JIT_ICALL (mini_llvmonly_resolve_generic_virtual_iface_call) \
 MONO_JIT_ICALL (mini_llvmonly_resolve_iface_call_gsharedvt) \
 MONO_JIT_ICALL (mini_llvmonly_resolve_vcall_gsharedvt) \
+MONO_JIT_ICALL (mini_llvmonly_resolve_vcall_gsharedvt_fast) \
 MONO_JIT_ICALL (mini_llvmonly_throw_nullref_exception) \
 MONO_JIT_ICALL (mini_llvmonly_throw_aot_failed_exception) \
-MONO_JIT_ICALL (mini_llvmonly_pop_lmf) \
-MONO_JIT_ICALL (mini_llvmonly_get_interp_entry) \
+MONO_JIT_ICALL (mini_llvmonly_throw_index_out_of_range_exception) \
+MONO_JIT_ICALL (mini_llvmonly_throw_invalid_cast_exception) \
+MONO_JIT_ICALL (mini_llvmonly_interp_entry_gsharedvt) \
+MONO_JIT_ICALL (mini_llvmonly_throw_exception) \
+MONO_JIT_ICALL (mini_llvmonly_rethrow_exception) \
+MONO_JIT_ICALL (mini_llvmonly_throw_corlib_exception) \
+MONO_JIT_ICALL (mini_llvmonly_resume_exception_il_state) \
 MONO_JIT_ICALL (mono_amd64_resume_unwind)	\
 MONO_JIT_ICALL (mono_amd64_start_gsharedvt_call)	\
 MONO_JIT_ICALL (mono_amd64_throw_corlib_exception)	\
@@ -180,6 +188,7 @@ MONO_JIT_ICALL (mono_delegate_end_invoke) \
 MONO_JIT_ICALL (mono_delegate_to_ftnptr) \
 MONO_JIT_ICALL (mono_domain_get) \
 MONO_JIT_ICALL (mono_dummy_jit_icall) \
+MONO_JIT_ICALL (mono_dummy_jit_icall_val) \
 MONO_JIT_ICALL (mono_exception_from_token) \
 MONO_JIT_ICALL (mono_fill_class_rgctx) \
 MONO_JIT_ICALL (mono_fill_method_rgctx) \
@@ -196,6 +205,7 @@ MONO_JIT_ICALL (mono_gc_wbarrier_generic_nostore_internal) \
 MONO_JIT_ICALL (mono_gc_wbarrier_range_copy) \
 MONO_JIT_ICALL (mono_gchandle_get_target_internal) \
 MONO_JIT_ICALL (mono_generic_class_init) \
+MONO_JIT_ICALL (mono_get_addr_compiled_method) \
 MONO_JIT_ICALL (mono_get_assembly_object) \
 MONO_JIT_ICALL (mono_get_method_object) \
 MONO_JIT_ICALL (mono_get_native_calli_wrapper) \
@@ -216,18 +226,11 @@ MONO_JIT_ICALL (mono_ldtoken_wrapper) \
 MONO_JIT_ICALL (mono_ldtoken_wrapper_generic_shared) \
 MONO_JIT_ICALL (mono_ldvirtfn) \
 MONO_JIT_ICALL (mono_ldvirtfn_gshared) \
-MONO_JIT_ICALL (mono_llvm_clear_exception) \
-MONO_JIT_ICALL (mono_llvm_load_exception) \
-MONO_JIT_ICALL (mono_llvm_match_exception) \
-MONO_JIT_ICALL (mono_llvm_resume_exception) \
 MONO_JIT_ICALL (mono_llvm_resume_unwind_trampoline) \
-MONO_JIT_ICALL (mono_llvm_rethrow_exception) \
 MONO_JIT_ICALL (mono_llvm_rethrow_exception_trampoline) \
 MONO_JIT_ICALL (mono_llvm_set_unhandled_exception_handler) \
-MONO_JIT_ICALL (mono_llvm_throw_corlib_exception) \
 MONO_JIT_ICALL (mono_llvm_throw_corlib_exception_abs_trampoline) \
 MONO_JIT_ICALL (mono_llvm_throw_corlib_exception_trampoline) \
-MONO_JIT_ICALL (mono_llvm_throw_exception) \
 MONO_JIT_ICALL (mono_llvm_throw_exception_trampoline) \
 MONO_JIT_ICALL (mono_llvmonly_init_delegate) \
 MONO_JIT_ICALL (mono_llvmonly_init_delegate_virtual) \
@@ -304,10 +307,12 @@ MONO_JIT_ICALL (mono_threads_exit_gc_unsafe_region_unbalanced) \
 MONO_JIT_ICALL (mono_threads_state_poll) \
 MONO_JIT_ICALL (mono_throw_exception) \
 MONO_JIT_ICALL (mono_throw_method_access) \
+MONO_JIT_ICALL (mono_throw_ambiguous_implementation) \
 MONO_JIT_ICALL (mono_throw_bad_image) \
 MONO_JIT_ICALL (mono_throw_not_supported) \
 MONO_JIT_ICALL (mono_throw_platform_not_supported) \
 MONO_JIT_ICALL (mono_throw_invalid_program) \
+MONO_JIT_ICALL (mono_throw_type_load) \
 MONO_JIT_ICALL (mono_trace_enter_method) \
 MONO_JIT_ICALL (mono_trace_leave_method) \
 MONO_JIT_ICALL (mono_trace_tail_method) \
@@ -316,6 +321,7 @@ MONO_JIT_ICALL (mono_value_copy_internal) \
 MONO_JIT_ICALL (mono_x86_start_gsharedvt_call)	\
 MONO_JIT_ICALL (mono_x86_throw_corlib_exception)	\
 MONO_JIT_ICALL (mono_x86_throw_exception)	\
+MONO_JIT_ICALL (mini_init_method_rgctx)		\
 MONO_JIT_ICALL (native_to_interp_trampoline)	\
 MONO_JIT_ICALL (personality) \
 MONO_JIT_ICALL (pthread_getspecific) \
@@ -336,6 +342,8 @@ MONO_JIT_ICALL (ves_icall_string_alloc) \
 MONO_JIT_ICALL (ves_icall_string_new_wrapper) \
 MONO_JIT_ICALL (ves_icall_thread_finish_async_abort) \
 MONO_JIT_ICALL (mono_marshal_lookup_pinvoke) \
+MONO_JIT_ICALL (mono_gsharedvt_constrained_call_fast) \
+MONO_JIT_ICALL (mono_dummy_runtime_init_callback) \
 	\
 MONO_JIT_ICALL (count) \
 
@@ -348,6 +356,7 @@ MONO_JIT_ICALLS
 #undef MONO_JIT_ICALL
 } MonoJitICallId;
 
+MONO_DISABLE_WARNING(4201) // nonstandard extension used: nameless struct/union
 typedef union MonoJitICallInfos {
 	struct {
 #define MONO_JIT_ICALL(x) MonoJitICallInfo x;
@@ -356,6 +365,7 @@ MONO_JIT_ICALLS
 	};
 	MonoJitICallInfo array [MONO_JIT_ICALL_count];
 } MonoJitICallInfos;
+MONO_RESTORE_WARNING
 
 extern MonoJitICallInfos mono_jit_icall_info;
 

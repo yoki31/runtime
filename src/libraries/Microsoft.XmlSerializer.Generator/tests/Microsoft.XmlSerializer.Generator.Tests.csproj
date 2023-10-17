@@ -1,8 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <DefineConstants>$(DefineConstants);XMLSERIALIZERGENERATORTESTS</DefineConstants>
-    <TargetFrameworks>$(NetCoreAppCurrent)</TargetFrameworks>
-    <SkipTestsOnPlatform Condition="'$(TargetsMobile)' == 'true' or '$(TargetOS)' == 'FreeBSD' or '$(TargetArchitecture)' == 'arm' or '$(TargetArchitecture)' == 'arm64' or '$(TargetArchitecture)' == 'armel' or '$(TargetArchitecture)' == 'wasm'">true</SkipTestsOnPlatform>
+    <TargetFramework>$(NetCoreAppCurrent)</TargetFramework>
+    <SkipTestsOnPlatform Condition="'$(TargetsMobile)' == 'true' or '$(TargetOS)' == 'freebsd' or '$(TargetArchitecture)' == 'arm' or '$(TargetArchitecture)' == 'arm64' or '$(TargetArchitecture)' == 'armel' or '$(TargetArchitecture)' == 'wasm'">true</SkipTestsOnPlatform>
   </PropertyGroup>
 
   <ItemGroup Condition="'$(SkipTestsOnPlatform)' != 'true'">

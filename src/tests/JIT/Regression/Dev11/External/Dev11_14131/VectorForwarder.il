@@ -30,7 +30,6 @@
   .ver 4:0:30513:0
 }
 .assembly extern xunit.core {}
-.module VectorForwarder.exe
 // MVID: {040B5898-B7A8-44DE-A50F-3465CCB7870F}
 .imagebase 0x00400000
 .file alignment 0x00000200
@@ -42,7 +41,7 @@
 
 // =============== CLASS MEMBERS DECLARATION ===================
 
-.class private abstract auto ansi sealed beforefieldinit VectorForwarder.App
+.class public abstract auto ansi sealed beforefieldinit VectorForwarder.App
        extends [mscorlib]System.Object
 {
   .class auto ansi nested private beforefieldinit CallTarget
@@ -243,7 +242,7 @@
     IL_002e:  ret
   } // end of method App::ForwardIndices
 
-  .method private hidebysig static int32 
+  .method public hidebysig static int32 
           Main() cil managed
   {
     .custom instance void [xunit.core]Xunit.FactAttribute::.ctor() = (

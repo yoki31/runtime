@@ -275,7 +275,6 @@
   .ver 0:0:0:0
 }
 .assembly extern xunit.core {}
-.module b473131_byte.exe
 // MVID: {93C4C3CC-5A75-464C-A0F3-61562010094F}
 .imagebase 0x00400000
 .file alignment 0x00000200
@@ -296,7 +295,7 @@
   .field /*04000004*/ public static literal valuetype mynamespace.e_t/*02000002*/ three = uint8(0x02)
 } // end of class mynamespace.e_t
 
-.class /*02000003*/ private auto ansi beforefieldinit mynamespace.myclass
+.class /*02000003*/ public auto ansi beforefieldinit mynamespace.myclass
        extends [mscorlib/*23000001*/]System.Object/*01000002*/
 {
   .method /*06000001*/ public hidebysig static 

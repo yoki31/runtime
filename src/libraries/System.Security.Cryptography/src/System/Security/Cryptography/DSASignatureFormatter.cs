@@ -11,23 +11,21 @@ namespace System.Security.Cryptography
 
         public DSASignatureFormatter(AsymmetricAlgorithm key) : this()
         {
-            if (key == null)
-                throw new ArgumentNullException(nameof(key));
+            ArgumentNullException.ThrowIfNull(key);
 
             _dsaKey = (DSA)key;
         }
 
         public override void SetKey(AsymmetricAlgorithm key)
         {
-            if (key == null)
-                throw new ArgumentNullException(nameof(key));
+            ArgumentNullException.ThrowIfNull(key);
 
             _dsaKey = (DSA)key;
         }
 
         public override void SetHashAlgorithm(string strName)
         {
-            if (strName.ToUpperInvariant() != HashAlgorithmNames.SHA1)
+            if (!strName.Equals(HashAlgorithmNames.SHA1, StringComparison.InvariantCultureIgnoreCase))
             {
                 // To match desktop, throw here
                 throw new CryptographicUnexpectedOperationException(SR.Cryptography_InvalidOperation);
@@ -36,8 +34,8 @@ namespace System.Security.Cryptography
 
         public override byte[] CreateSignature(byte[] rgbHash)
         {
-            if (rgbHash == null)
-                throw new ArgumentNullException(nameof(rgbHash));
+            ArgumentNullException.ThrowIfNull(rgbHash);
+
             if (_dsaKey == null)
                 throw new CryptographicUnexpectedOperationException(SR.Cryptography_FormatterMissingKey);
 

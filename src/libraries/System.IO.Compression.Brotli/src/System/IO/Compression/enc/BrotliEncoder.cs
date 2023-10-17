@@ -109,12 +109,14 @@ namespace System.IO.Compression
         /// <exception cref="System.ArgumentOutOfRangeException"><paramref name="inputSize" /> is less than 0, the minimum allowed input size, or greater than <see cref="int.MaxValue" /> - 515, the maximum allowed input size.</exception>
         public static int GetMaxCompressedLength(int inputSize)
         {
-            if (inputSize < 0 || inputSize > BrotliUtils.MaxInputSize)
-            {
-                throw new ArgumentOutOfRangeException(nameof(inputSize));
-            }
+            ArgumentOutOfRangeException.ThrowIfNegative(inputSize);
+            ArgumentOutOfRangeException.ThrowIfGreaterThan(inputSize, BrotliUtils.MaxInputSize);
+
             if (inputSize == 0)
+            {
                 return 1;
+            }
+
             int numLargeBlocks = inputSize >> 24;
             int tail = inputSize & 0xFFFFFF;
             int tailOverhead = (tail > (1 << 20)) ? 4 : 3;
@@ -129,7 +131,7 @@ namespace System.IO.Compression
         /// <param name="destination">When this method returns, a span of bytes where the compressed data will be stored.</param>
         /// <param name="bytesWritten">When this method returns, the total number of bytes that were written to <paramref name="destination" />.</param>
         /// <returns>One of the enumeration values that describes the status with which the operation finished.</returns>
-        public OperationStatus Flush(Span<byte> destination, out int bytesWritten) => Compress(ReadOnlySpan<byte>.Empty, destination, out int bytesConsumed, out bytesWritten, BrotliEncoderOperation.Flush);
+        public OperationStatus Flush(Span<byte> destination, out int bytesWritten) => Compress(ReadOnlySpan<byte>.Empty, destination, out _, out bytesWritten, BrotliEncoderOperation.Flush);
 
         internal OperationStatus Compress(ReadOnlyMemory<byte> source, Memory<byte> destination, out int bytesConsumed, out int bytesWritten, bool isFinalBlock) => Compress(source.Span, destination.Span, out bytesConsumed, out bytesWritten, isFinalBlock);
 

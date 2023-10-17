@@ -5,7 +5,6 @@ using System.Text;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Runtime.CompilerServices;
-using Internal.Runtime.CompilerServices;
 
 namespace System.Globalization
 {
@@ -54,13 +53,13 @@ namespace System.Globalization
                 return s;
             }
 
-            return string.Create(s.Length, (s, i), static (destination, state) =>
-            {
-                ReadOnlySpan<char> src = state.s;
-                src.Slice(0, state.i).CopyTo(destination);
-                InvariantModeCasing.ToLower(src.Slice(state.i), destination.Slice(state.i));
-            });
+            string result = string.FastAllocateString(s.Length);
+            var destination = new Span<char>(ref result.GetRawStringData(), result.Length);
+            ReadOnlySpan<char> src = s;
+            src.Slice(0, i).CopyTo(destination);
+            ToLower(src.Slice(i), destination.Slice(i));
 
+            return result;
         }
 
         internal static string ToUpper(string s)
@@ -100,12 +99,13 @@ namespace System.Globalization
                 return s;
             }
 
-            return string.Create(s.Length, (s, i), static (destination, state) =>
-            {
-                ReadOnlySpan<char> src = state.s;
-                src.Slice(0, state.i).CopyTo(destination);
-                InvariantModeCasing.ToUpper(src.Slice(state.i), destination.Slice(state.i));
-            });
+            string result = string.FastAllocateString(s.Length);
+            var destination = new Span<char>(ref result.GetRawStringData(), result.Length);
+            ReadOnlySpan<char> src = s;
+            src.Slice(0, i).CopyTo(destination);
+            ToUpper(src.Slice(i), destination.Slice(i));
+
+            return result;
         }
 
         internal static void ToUpper(ReadOnlySpan<char> source, Span<char> destination)

@@ -1,14 +1,16 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <OutputType>Exe</OutputType>
+    <!-- Test needs explicit Main for interop purposes -->
+    <RequiresProcessIsolation>true</RequiresProcessIsolation>
+    <ReferenceXUnitWrapperGenerator>false</ReferenceXUnitWrapperGenerator>
     <ApplicationManifest>App.manifest</ApplicationManifest>
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="TestInALC.cs" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="../../NativeServer/CMakeLists.txt" />
-    <ProjectReference Include="$(TestSourceDir)Common/CoreCLRTestLibrary/CoreCLRTestLibrary.csproj" />
+    <CMakeProjectReference Include="../../NativeServer/CMakeLists.txt" />
+    <ProjectReference Include="$(TestLibraryProjectPath)" />
     <ProjectReference Include="NETClientPrimitives.csproj" />
   </ItemGroup>
 </Project>

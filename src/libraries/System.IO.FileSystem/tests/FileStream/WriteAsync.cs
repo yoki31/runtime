@@ -123,9 +123,6 @@ namespace System.IO.Tests
                     // Ideally we'd be doing an Assert.Throws<OperationCanceledException>
                     // but since cancellation is a race condition we accept either outcome
                     Assert.Equal(cts.Token, oce.CancellationToken);
-
-                    Assert.Equal(0, fs.Length); // if write was cancelled, the file should be empty
-                    Assert.Equal(0, fs.Position); // if write was cancelled, the Position should remain unchanged
                 }
             }
         }
@@ -321,7 +318,6 @@ namespace System.IO.Tests
         }
     }
 
-    [ActiveIssue("https://github.com/dotnet/runtime/issues/34582", TestPlatforms.Windows, TargetFrameworkMonikers.Netcoreapp, TestRuntimes.Mono)]
     public class FileStream_WriteAsync_AsyncWrites : FileStream_AsyncWrites
     {
         protected override Task WriteAsync(FileStream stream, byte[] buffer, int offset, int count, CancellationToken cancellationToken) =>
@@ -368,7 +364,6 @@ namespace System.IO.Tests
         }
     }
 
-    [ActiveIssue("https://github.com/dotnet/runtime/issues/34582", TestPlatforms.Windows, TargetFrameworkMonikers.Netcoreapp, TestRuntimes.Mono)]
     public class FileStream_BeginEndWrite_AsyncWrites : FileStream_AsyncWrites
     {
         protected override Task WriteAsync(FileStream stream, byte[] buffer, int offset, int count, CancellationToken cancellationToken) =>

@@ -26,7 +26,28 @@ DumpWriter::OpenDump(const char* dumpFileName)
     m_fd = open(dumpFileName, O_WRONLY|O_CREAT|O_TRUNC, S_IWUSR | S_IRUSR);
     if (m_fd == -1)
     {
-        fprintf(stderr, "Could not open output %s: %d %s\n", dumpFileName, errno, strerror(errno));
+        printf_error("Could not create output file '%s': %s (%d)\n", dumpFileName, strerror(errno), errno);
+        return false;
+    }
+    return true;
+}
+
+bool
+DumpWriter::WriteDiagInfo(size_t size)
+{
+    // Write the diagnostics info header
+    SpecialDiagInfoHeader header = {
+        {SPECIAL_DIAGINFO_SIGNATURE},
+        SPECIAL_DIAGINFO_VERSION,
+        m_crashInfo.ExceptionRecord()
+    };
+    if (!WriteData(&header, sizeof(header))) {
+        return false;
+    }
+    size_t alignment = size - sizeof(header);
+    assert(alignment < sizeof(m_tempBuffer));
+    memset(m_tempBuffer, 0, alignment);
+    if (!WriteData(m_tempBuffer, alignment)) {
         return false;
     }
     return true;
@@ -46,7 +67,7 @@ DumpWriter::WriteData(int fd, const void* buffer, size_t length)
         } while (written == -1 && errno == EINTR);
 
         if (written < 1) {
-            fprintf(stderr, "WriteData FAILED %d %s\n", errno, strerror(errno));
+            printf_error("Error writing data to dump file: %s (%d)\n", strerror(errno), errno);
             return false;
         }
         done += written;

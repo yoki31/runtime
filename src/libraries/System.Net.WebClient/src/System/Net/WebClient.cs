@@ -1,17 +1,18 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
+using System.Buffers;
 using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
-using System.Globalization;
 using System.IO;
 using System.Net.Cache;
 using System.Security;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Web;
 
 namespace System.Net
 {
@@ -393,10 +394,8 @@ namespace System.Net
         public Stream OpenWrite(Uri address, string? method)
         {
             ArgumentNullException.ThrowIfNull(address);
-            if (method == null)
-            {
-                method = MapToDefaultMethod(address);
-            }
+
+            method ??= MapToDefaultMethod(address);
 
             WebRequest? request = null;
             StartOperation();
@@ -434,10 +433,8 @@ namespace System.Net
         {
             ArgumentNullException.ThrowIfNull(address);
             ArgumentNullException.ThrowIfNull(data);
-            if (method == null)
-            {
-                method = MapToDefaultMethod(address);
-            }
+
+            method ??= MapToDefaultMethod(address);
 
             StartOperation();
             try
@@ -511,7 +508,12 @@ namespace System.Net
                         "Content-Type: " + contentType + "\r\n" +
                         "\r\n";
                     formHeaderBytes = Encoding.UTF8.GetBytes(formHeader);
-                    boundaryBytes = Encoding.ASCII.GetBytes("\r\n--" + boundary + "--\r\n");
+
+                    boundaryBytes = new byte["\r\n--".Length + boundary.Length + "--\r\n".Length];
+                    "\r\n--"u8.CopyTo(boundaryBytes);
+                    "--\r\n"u8.CopyTo(boundaryBytes.AsSpan("\r\n--".Length + boundary.Length));
+                    OperationStatus conversionStatus = Ascii.FromUtf16(boundary, boundaryBytes.AsSpan("\r\n--".Length), out _);
+                    Debug.Assert(conversionStatus == OperationStatus.Done);
                 }
                 else
                 {
@@ -555,10 +557,8 @@ namespace System.Net
         {
             ArgumentNullException.ThrowIfNull(address);
             ArgumentNullException.ThrowIfNull(fileName);
-            if (method == null)
-            {
-                method = MapToDefaultMethod(address);
-            }
+
+            method ??= MapToDefaultMethod(address);
 
             FileStream? fs = null;
             WebRequest? request = null;
@@ -628,10 +628,8 @@ namespace System.Net
         {
             ArgumentNullException.ThrowIfNull(address);
             ArgumentNullException.ThrowIfNull(data);
-            if (method == null)
-            {
-                method = MapToDefaultMethod(address);
-            }
+
+            method ??= MapToDefaultMethod(address);
 
             WebRequest? request = null;
             StartOperation();
@@ -667,10 +665,8 @@ namespace System.Net
         {
             ArgumentNullException.ThrowIfNull(address);
             ArgumentNullException.ThrowIfNull(data);
-            if (method == null)
-            {
-                method = MapToDefaultMethod(address);
-            }
+
+            method ??= MapToDefaultMethod(address);
 
             StartOperation();
             try
@@ -945,7 +941,7 @@ namespace System.Net
         }
 
         private byte[] UploadBits(
-            WebRequest request, Stream? readStream, byte[] buffer, int chunkSize,
+            WebRequest request, FileStream? readStream, byte[] buffer, int chunkSize,
             byte[]? header, byte[]? footer)
         {
             try
@@ -1006,7 +1002,7 @@ namespace System.Net
         }
 
         private async void UploadBitsAsync(
-            WebRequest request, Stream? readStream, byte[] buffer, int chunkSize,
+            WebRequest request, FileStream? readStream, byte[] buffer, int chunkSize,
             byte[]? header, byte[]? footer,
             AsyncOperation asyncOp, Action<byte[]?, Exception?, AsyncOperation> completionDelegate)
         {
@@ -1086,24 +1082,6 @@ namespace System.Net
             }
         }
 
-        private static bool ByteArrayHasPrefix(byte[] prefix, byte[] byteArray)
-        {
-            if (prefix == null || byteArray == null || prefix.Length > byteArray.Length)
-            {
-                return false;
-            }
-
-            for (int i = 0; i < prefix.Length; i++)
-            {
-                if (prefix[i] != byteArray[i])
-                {
-                    return false;
-                }
-            }
-
-            return true;
-        }
-
         private static readonly char[] s_parseContentTypeSeparators = new char[] { ';', '=', ' ' };
         private static readonly Encoding[] s_knownEncodings = { Encoding.UTF8, Encoding.UTF32, Encoding.Unicode, Encoding.BigEndianUnicode };
 
@@ -1157,13 +1135,12 @@ namespace System.Net
             if (enc == null)
             {
                 // UTF32 must be tested before Unicode because it's BOM is the same but longer.
-                Encoding[] encodings = s_knownEncodings;
-                for (int i = 0; i < encodings.Length; i++)
+                foreach (Encoding encoding in s_knownEncodings)
                 {
-                    byte[] preamble = encodings[i].GetPreamble();
-                    if (ByteArrayHasPrefix(preamble, data))
+                    ReadOnlySpan<byte> preamble = encoding.Preamble;
+                    if (data.AsSpan().StartsWith(preamble))
                     {
-                        enc = encodings[i];
+                        enc = encoding;
                         bomLengthInData = preamble.Length;
                         break;
                     }
@@ -1171,16 +1148,13 @@ namespace System.Net
             }
 
             // Do we have an encoding guess?  If not, use default.
-            if (enc == null)
-            {
-                enc = Encoding;
-            }
+            enc ??= Encoding;
 
             // Calculate BOM length based on encoding guess.  Then check for it in the data.
             if (bomLengthInData == -1)
             {
-                byte[] preamble = enc.GetPreamble();
-                bomLengthInData = ByteArrayHasPrefix(preamble, data) ? preamble.Length : 0;
+                ReadOnlySpan<byte> preamble = enc.Preamble;
+                bomLengthInData = data.AsSpan().StartsWith(preamble) ? preamble.Length : 0;
             }
 
             // Convert byte array to string stripping off any BOM before calling Format().
@@ -1199,89 +1173,10 @@ namespace System.Net
                 "POST";
         }
 
-        [return: NotNullIfNotNull("str")]
-        private static string? UrlEncode(string? str)
-        {
-            if (str == null)
-                return null;
-            byte[] bytes = Encoding.UTF8.GetBytes(str);
-            return Encoding.ASCII.GetString(UrlEncodeBytesToBytesInternal(bytes, 0, bytes.Length, false));
-        }
-
-        private static byte[] UrlEncodeBytesToBytesInternal(byte[] bytes, int offset, int count, bool alwaysCreateReturnValue)
-        {
-            int cSpaces = 0;
-            int cUnsafe = 0;
-
-            // Count them first.
-            for (int i = 0; i < count; i++)
-            {
-                char ch = (char)bytes[offset + i];
-
-                if (ch == ' ')
-                {
-                    cSpaces++;
-                }
-                else if (!IsSafe(ch))
-                {
-                    cUnsafe++;
-                }
-            }
-
-            // If nothing to expand.
-            if (!alwaysCreateReturnValue && cSpaces == 0 && cUnsafe == 0)
-                return bytes;
-
-            // Expand not 'safe' characters into %XX, spaces to +.
-            byte[] expandedBytes = new byte[count + cUnsafe * 2];
-            int pos = 0;
-
-            for (int i = 0; i < count; i++)
-            {
-                byte b = bytes[offset + i];
-                char ch = (char)b;
-
-                if (IsSafe(ch))
-                {
-                    expandedBytes[pos++] = b;
-                }
-                else if (ch == ' ')
-                {
-                    expandedBytes[pos++] = (byte)'+';
-                }
-                else
-                {
-                    expandedBytes[pos++] = (byte)'%';
-                    expandedBytes[pos++] = (byte)HexConverter.ToCharLower(b >> 4);
-                    expandedBytes[pos++] = (byte)HexConverter.ToCharLower(b);
-                }
-            }
-
-            return expandedBytes;
-        }
-
-        private static bool IsSafe(char ch)
-        {
-            if (ch >= 'a' && ch <= 'z' || ch >= 'A' && ch <= 'Z' || ch >= '0' && ch <= '9')
-            {
-                return true;
-            }
-
-            switch (ch)
-            {
-                case '-':
-                case '_':
-                case '.':
-                case '!':
-                case '*':
-                case '\'':
-                case '(':
-                case ')':
-                    return true;
-            }
-
-            return false;
-        }
+        [return: NotNullIfNotNull(nameof(str))]
+        private static string? UrlEncode(string? str) =>
+            str is null ? null :
+            HttpUtility.UrlEncode(str);
 
         private void InvokeOperationCompleted(AsyncOperation asyncOp, SendOrPostCallback callback, AsyncCompletedEventArgs eventArgs)
         {
@@ -1336,10 +1231,8 @@ namespace System.Net
         public void OpenWriteAsync(Uri address, string? method, object? userToken)
         {
             ArgumentNullException.ThrowIfNull(address);
-            if (method == null)
-            {
-                method = MapToDefaultMethod(address);
-            }
+
+            method ??= MapToDefaultMethod(address);
 
             AsyncOperation asyncOp = StartAsyncOperation(userToken);
             try
@@ -1476,10 +1369,8 @@ namespace System.Net
         {
             ArgumentNullException.ThrowIfNull(address);
             ArgumentNullException.ThrowIfNull(data);
-            if (method == null)
-            {
-                method = MapToDefaultMethod(address);
-            }
+
+            method ??= MapToDefaultMethod(address);
 
             AsyncOperation asyncOp = StartAsyncOperation(userToken);
             try
@@ -1527,10 +1418,8 @@ namespace System.Net
         {
             ArgumentNullException.ThrowIfNull(address);
             ArgumentNullException.ThrowIfNull(data);
-            if (method == null)
-            {
-                method = MapToDefaultMethod(address);
-            }
+
+            method ??= MapToDefaultMethod(address);
 
             AsyncOperation asyncOp = StartAsyncOperation(userToken);
             try
@@ -1568,10 +1457,8 @@ namespace System.Net
         {
             ArgumentNullException.ThrowIfNull(address);
             ArgumentNullException.ThrowIfNull(fileName);
-            if (method == null)
-            {
-                method = MapToDefaultMethod(address);
-            }
+
+            method ??= MapToDefaultMethod(address);
 
             FileStream? fs = null;
             AsyncOperation asyncOp = StartAsyncOperation(userToken);
@@ -1607,10 +1494,8 @@ namespace System.Net
         {
             ArgumentNullException.ThrowIfNull(address);
             ArgumentNullException.ThrowIfNull(data);
-            if (method == null)
-            {
-                method = MapToDefaultMethod(address);
-            }
+
+            method ??= MapToDefaultMethod(address);
 
             AsyncOperation asyncOp = StartAsyncOperation(userToken);
             try

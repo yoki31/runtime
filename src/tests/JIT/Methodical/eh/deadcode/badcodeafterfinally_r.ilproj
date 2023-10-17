@@ -1,6 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk.IL">
   <PropertyGroup>
-    <OutputType>Exe</OutputType>
     <CLRTestPriority>1</CLRTestPriority>
     <!-- #2444 -->
     <DisableProjectBuild>true</DisableProjectBuild>
@@ -10,9 +9,10 @@
     <Optimize>False</Optimize>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="badcodeafterfinally_r.il" />
     <Compile Include="badcodeafterfinally.il" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\common\common.csproj" />
+    <ProjectReference Include="..\..\..\common\eh_common.csproj" />
   </ItemGroup>
 </Project>

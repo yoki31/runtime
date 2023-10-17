@@ -2,6 +2,7 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 using System.Collections;
+using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Runtime.Serialization;
 using System.Text;
@@ -53,11 +54,7 @@ namespace System.Security.Authentication.ExtendedProtection
             {
                 throw new ArgumentException(SR.security_ExtendedProtectionPolicy_UseDifferentConstructorForNever, nameof(policyEnforcement));
             }
-
-            if (customChannelBinding == null)
-            {
-                throw new ArgumentNullException(nameof(customChannelBinding));
-            }
+            ArgumentNullException.ThrowIfNull(customChannelBinding);
 
             _policyEnforcement = policyEnforcement;
             _protectionScenario = ProtectionScenario.TransportSelected;
@@ -71,6 +68,8 @@ namespace System.Security.Authentication.ExtendedProtection
             _protectionScenario = ProtectionScenario.TransportSelected;
         }
 
+        [Obsolete(Obsoletions.LegacyFormatterImplMessage, DiagnosticId = Obsoletions.LegacyFormatterImplDiagId, UrlFormat = Obsoletions.SharedUrlFormat)]
+        [EditorBrowsable(EditorBrowsableState.Never)]
         protected ExtendedProtectionPolicy(SerializationInfo info, StreamingContext context)
         {
             throw new PlatformNotSupportedException();
@@ -150,7 +149,7 @@ namespace System.Security.Authentication.ExtendedProtection
             get
             {
                 // .NET Core is supported only on Win7+ where ExtendedProtection is supported.
-                return true;
+                return OperatingSystem.IsWindows();
             }
         }
     }

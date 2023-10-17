@@ -16,16 +16,7 @@ public unsafe class Program
     public static class UnmanagedCallersOnlyDll
     {
         [DllImport(nameof(UnmanagedCallersOnlyDll))]
-        public static extern int DoubleImplNative(int n);
-
-        [DllImport(nameof(UnmanagedCallersOnlyDll))]
         public static extern int CallManagedProc(IntPtr callbackProc, int n);
-
-        [DllImport(nameof(UnmanagedCallersOnlyDll))]
-        public static extern int CallManagedProcMultipleTimes(int m, IntPtr callbackProc, int n);
-
-        [DllImport(nameof(UnmanagedCallersOnlyDll))]
-        public static extern int CallManagedProcOnNewThread(IntPtr callbackProc, int n);
 
         [DllImport(nameof(UnmanagedCallersOnlyDll))]
         // Returns -1 if exception was throw and caught.
@@ -35,14 +26,11 @@ public unsafe class Program
     private delegate int IntNativeMethodInvoker();
     private delegate void NativeMethodInvoker();
 
-    public static int Main(string[] args)
+    [Fact]
+    public static int TestEntryPoint()
     {
         try
         {
-            TestUnmanagedCallersOnlyValid();
-            TestUnmanagedCallersOnlyValid_OnNewNativeThread();
-            TestUnmanagedCallersOnlyValid_PrepareMethod();
-            TestUnmanagedCallersOnlyMultipleTimesValid();
             NegativeTest_NonStaticMethod();
             NegativeTest_ViaDelegate();
             NegativeTest_NonBlittable();
@@ -50,17 +38,13 @@ public unsafe class Program
             NegativeTest_FromInstantiatedGenericClass();
             TestUnmanagedCallersOnlyViaUnmanagedCalli();
             TestPInvokeMarkedWithUnmanagedCallersOnly();
+            TestUnmanagedCallersOnlyWithGeneric();
 
-            // Exception handling is only supported on Windows.
-            if (TestLibrary.Utilities.IsWindows)
+            // Exception handling is only supported on CoreCLR Windows.
+            if (TestLibrary.Utilities.IsWindows && !TestLibrary.Utilities.IsMonoRuntime)
             {
                 TestUnmanagedCallersOnlyValid_ThrowException();
                 TestUnmanagedCallersOnlyViaUnmanagedCalli_ThrowException();
-            }
-
-            if (args.Length != 0 && args[0].Equals("calli"))
-            {
-                NegativeTest_ViaCalli();
             }
         }
         catch (Exception e)
@@ -72,82 +56,9 @@ public unsafe class Program
         return 100;
     }
 
-    [UnmanagedCallersOnly]
-    public static int ManagedDoubleCallback(int n)
-    {
-        return DoubleImpl(n);
-    }
-
     private static int DoubleImpl(int n)
     {
         return 2 * n;
-    }
-
-    public static void TestUnmanagedCallersOnlyValid()
-    {
-        Console.WriteLine($"Running {nameof(TestUnmanagedCallersOnlyValid)}...");
-
-        int n = 12345;
-        int expected = DoubleImpl(n);
-        Assert.Equal(expected, UnmanagedCallersOnlyDll.CallManagedProc((IntPtr)(delegate* unmanaged<int, int>)&ManagedDoubleCallback, n));
-    }
-
-    public static void TestUnmanagedCallersOnlyValid_OnNewNativeThread()
-    {
-        Console.WriteLine($"Running {nameof(TestUnmanagedCallersOnlyValid_OnNewNativeThread)}...");
-
-        int n = 12345;
-        int expected = DoubleImpl(n);
-        Assert.Equal(expected, UnmanagedCallersOnlyDll.CallManagedProcOnNewThread((IntPtr)(delegate* unmanaged<int, int>)&ManagedDoubleCallback, n));
-    }
-
-    [UnmanagedCallersOnly]
-    public static int ManagedCallback_Prepared(int n)
-    {
-        return DoubleImpl(n);
-    }
-
-    // This test is about the interaction between Tiered Compilation and the UnmanagedCallersOnlyAttribute.
-    public static void TestUnmanagedCallersOnlyValid_PrepareMethod()
-    {
-        Console.WriteLine($"Running {nameof(TestUnmanagedCallersOnlyValid_PrepareMethod)}...");
-        // Prepare the managed callback.
-        var preparedCallback = typeof(Program).GetMethod(nameof(ManagedCallback_Prepared));
-        RuntimeHelpers.PrepareMethod(preparedCallback.MethodHandle);
-
-        UnmanagedCallersOnlyOnNewNativeThread(12345);
-
-        static void UnmanagedCallersOnlyOnNewNativeThread(int n)
-        {
-            // Call enough to attempt to trigger Tiered Compilation from a new thread.
-            for (int i = 0; i < 100; ++i)
-            {
-                UnmanagedCallersOnlyDll.CallManagedProcOnNewThread((IntPtr)(delegate* unmanaged<int, int>)&ManagedCallback_Prepared, n);
-            }
-        }
-    }
-
-    [UnmanagedCallersOnly]
-    public static int ManagedDoubleInNativeCallback(int n)
-    {
-        // This callback is designed to test if the JIT handles
-        // cases where a P/Invoke is inlined into a function
-        // marked with UnmanagedCallersOnly.
-        return UnmanagedCallersOnlyDll.DoubleImplNative(n);
-    }
-
-    public static void TestUnmanagedCallersOnlyMultipleTimesValid()
-    {
-        Console.WriteLine($"Running {nameof(TestUnmanagedCallersOnlyMultipleTimesValid)}...");
-
-        int callCount = 7;
-        int n = 12345;
-        int expected = 0;
-        for (int i = 0; i < callCount; ++i)
-        {
-            expected += DoubleImpl(n);
-        }
-        Assert.Equal(expected, UnmanagedCallersOnlyDll.CallManagedProcMultipleTimes(callCount, (IntPtr)(delegate* unmanaged<int, int>)&ManagedDoubleInNativeCallback, n));
     }
 
     private const int CallbackThrowsErrorCode = 27;
@@ -182,7 +93,6 @@ public unsafe class Program
         }
     }
 
-
     public static void NegativeTest_NonStaticMethod()
     {
         Console.WriteLine($"Running {nameof(NegativeTest_NonStaticMethod)}...");
@@ -205,6 +115,9 @@ public unsafe class Program
         int n = 12345;
         // Try invoking method
         Assert.Throws<InvalidProgramException>(() => { UnmanagedCallersOnlyDll.CallManagedProc((IntPtr)(delegate* unmanaged<bool, int>)&CallbackMethodNonBlittable, n); });
+        Assert.Throws<InvalidProgramException>(() => { UnmanagedCallersOnlyDll.CallManagedProc(UnmanagedCallersOnlyWithByRefs.GetWithByRefFunctionPointer(), n); });
+        Assert.Throws<InvalidProgramException>(() => { UnmanagedCallersOnlyDll.CallManagedProc(UnmanagedCallersOnlyWithByRefs.GetWithByRefInFunctionPointer(), n); });
+        Assert.Throws<InvalidProgramException>(() => { UnmanagedCallersOnlyDll.CallManagedProc(UnmanagedCallersOnlyWithByRefs.GetWithByRefOutFunctionPointer(), n); });
     }
 
     public static void NegativeTest_InstantiatedGenericArguments()
@@ -223,27 +136,6 @@ public unsafe class Program
         int n = 12345;
         // Try invoking method
         Assert.Throws<InvalidProgramException>(() => { UnmanagedCallersOnlyDll.CallManagedProc((IntPtr)(delegate* unmanaged<int, int>)&GenericClass<int>.CallbackMethod, n); });
-    }
-
-    [UnmanagedCallersOnly]
-    public static void CallbackViaCalli(int val)
-    {
-        Assert.True(false, $"Functions with attribute {nameof(UnmanagedCallersOnlyAttribute)} cannot be called via calli");
-    }
-
-    public static void NegativeTest_ViaCalli()
-    {
-        Console.WriteLine($"{nameof(NegativeTest_ViaCalli)} function via calli instruction. The CLR _will_ crash.");
-
-        // It is not possible to catch the resulting ExecutionEngineException exception.
-        // To observe the crashing behavior set a breakpoint in the ReversePInvokeBadTransition() function
-        // located in src/vm/dllimportcallback.cpp.
-        TestNativeMethod();
-
-        static void TestNativeMethod()
-        {
-            ((delegate*<int, void>)(delegate* unmanaged<int, void>)&CallbackViaCalli)(1234);
-        }
     }
 
     [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvStdcall) })]
@@ -301,4 +193,30 @@ public unsafe class Program
         int n = 1234;
         Assert.Throws<NotSupportedException>(() => ((delegate* unmanaged<int, int>)&CallingUnmanagedCallersOnlyDirectly.PInvokeMarkedWithUnmanagedCallersOnly)(n));
     }
+
+    public static void TestUnmanagedCallersOnlyWithGeneric()
+    {
+        Assert.Equal(0, ((delegate* unmanaged<Blittable<nint>, int>)&BlittableGenericStruct)(new Blittable<nint>()));
+
+        Assert.Equal(0, ((delegate* unmanaged<MaybeBlittable<nint>, int>)&MaybeBlittableGenericStruct)(new MaybeBlittable<nint>()));
+
+
+        Assert.Throws<InvalidProgramException>(()
+            => ((delegate* unmanaged<nint, int>)(void*)(delegate* unmanaged<NotBlittable<int>, int>)&InvalidGenericUnmanagedCallersOnlyParameters.GenericClass)((nint)1));
+
+        Assert.Throws<InvalidProgramException>(()
+            => ((delegate* unmanaged<nint, int>)(void*)(delegate* unmanaged<MaybeBlittable<object>, int>)&InvalidGenericUnmanagedCallersOnlyParameters.GenericStructWithObjectField)((nint)1));
+    }
+
+    internal struct Blittable<T> where T : unmanaged
+    {
+        T Value;
+    }
+
+
+    [UnmanagedCallersOnly]
+    internal static int BlittableGenericStruct(Blittable<nint> param) => 0;
+
+    [UnmanagedCallersOnly]
+    internal static int MaybeBlittableGenericStruct(MaybeBlittable<nint> param) => 0;
 }

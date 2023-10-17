@@ -4,6 +4,11 @@
 #include <xplatform.h>
 #include "MarshalArray.h"
 
+// MSVC versions before 19.38 generate incorrect code for this file when compiling with /O2 
+#if defined(_MSC_VER) && (_MSC_VER < 1938)
+#pragma optimize("", off)
+#endif
+
 #if defined(_MSC_VER)
 #define FUNCTIONNAME __FUNCSIG__
 #else
@@ -45,7 +50,7 @@ extern "C" DLL_EXPORT BOOL CStyle_Array_Int(int *pActual, int cActual)
 {
     CHECK_PARAM_NOT_EMPTY(pActual);
 
-    INIT_EXPECTED(int, ARRAY_SIZE);
+    INIT_EXPECTED(int, ARRAY_LENGTH);
 
     return EQUALS(pActual, cActual, expected);
 }
@@ -55,10 +60,10 @@ extern "C" DLL_EXPORT BOOL CStyle_Array_Object(VARIANT *pActual, int cActual)
 {
     CHECK_PARAM_NOT_EMPTY(pActual);
 
-    //VARIANT expected[ARRAY_SIZE];
-    size_t nullIdx = ARRAY_SIZE / 2;
+    //VARIANT expected[ARRAY_LENGTH];
+    size_t nullIdx = ARRAY_LENGTH / 2;
 
-    for (size_t i = 0; i < ARRAY_SIZE; ++i)
+    for (size_t i = 0; i < ARRAY_LENGTH; ++i)
     {
         //VariantInit(&expected[i]);
         if (i == nullIdx)
@@ -89,7 +94,7 @@ extern "C" DLL_EXPORT BOOL CStyle_Array_Uint(UINT *pActual, int cActual)
 {
     CHECK_PARAM_NOT_EMPTY(pActual);
 
-    INIT_EXPECTED(UINT, ARRAY_SIZE);
+    INIT_EXPECTED(UINT, ARRAY_LENGTH);
 
     return EQUALS(pActual, cActual, expected);
 }
@@ -98,7 +103,7 @@ extern "C" DLL_EXPORT BOOL CStyle_Array_Short(SHORT *pActual, int cActual)
 {
     CHECK_PARAM_NOT_EMPTY(pActual);
 
-    INIT_EXPECTED(SHORT, ARRAY_SIZE);
+    INIT_EXPECTED(SHORT, ARRAY_LENGTH);
 
     return EQUALS(pActual, cActual, expected);
 }
@@ -107,7 +112,7 @@ extern "C" DLL_EXPORT BOOL CStyle_Array_Word(WORD *pActual, int cActual)
 {
     CHECK_PARAM_NOT_EMPTY(pActual);
 
-    INIT_EXPECTED(WORD, ARRAY_SIZE);
+    INIT_EXPECTED(WORD, ARRAY_LENGTH);
 
     return EQUALS(pActual, cActual, expected);
 }
@@ -116,7 +121,7 @@ extern "C" DLL_EXPORT BOOL CStyle_Array_Long64(LONG64 *pActual, int cActual)
 {
     CHECK_PARAM_NOT_EMPTY(pActual);
 
-    INIT_EXPECTED(LONG64, ARRAY_SIZE);
+    INIT_EXPECTED(LONG64, ARRAY_LENGTH);
 
     return EQUALS(pActual, cActual, expected);
 }
@@ -125,7 +130,7 @@ extern "C" DLL_EXPORT BOOL CStyle_Array_ULong64(ULONG64 *pActual, int cActual)
 {
     CHECK_PARAM_NOT_EMPTY(pActual);
 
-    INIT_EXPECTED(ULONG64, ARRAY_SIZE);
+    INIT_EXPECTED(ULONG64, ARRAY_LENGTH);
 
     return EQUALS(pActual, cActual, expected);
 }
@@ -134,7 +139,7 @@ extern "C" DLL_EXPORT BOOL CStyle_Array_Double(DOUBLE *pActual, int cActual)
 {
     CHECK_PARAM_NOT_EMPTY(pActual);
 
-    INIT_EXPECTED(DOUBLE, ARRAY_SIZE);
+    INIT_EXPECTED(DOUBLE, ARRAY_LENGTH);
 
     return EQUALS(pActual, cActual, expected);
 }
@@ -143,7 +148,7 @@ extern "C" DLL_EXPORT BOOL CStyle_Array_Float(FLOAT *pActual, int cActual)
 {
     CHECK_PARAM_NOT_EMPTY(pActual);
 
-    INIT_EXPECTED(FLOAT, ARRAY_SIZE);
+    INIT_EXPECTED(FLOAT, ARRAY_LENGTH);
 
     return EQUALS(pActual, cActual, expected);
 }
@@ -152,7 +157,7 @@ extern "C" DLL_EXPORT BOOL CStyle_Array_Byte(BYTE *pActual, int cActual)
 {
     CHECK_PARAM_NOT_EMPTY(pActual);
 
-    INIT_EXPECTED(BYTE, ARRAY_SIZE);
+    INIT_EXPECTED(BYTE, ARRAY_LENGTH);
 
     return EQUALS(pActual, cActual, expected);
 }
@@ -161,7 +166,7 @@ extern "C" DLL_EXPORT BOOL CStyle_Array_Char(CHAR *pActual, int cActual)
 {
     CHECK_PARAM_NOT_EMPTY(pActual);
 
-    INIT_EXPECTED(CHAR, ARRAY_SIZE);
+    INIT_EXPECTED(CHAR, ARRAY_LENGTH);
 
     return EQUALS(pActual, cActual, expected);
 }
@@ -170,9 +175,9 @@ extern "C" DLL_EXPORT BOOL CStyle_Array_LPCSTR(LPCSTR *pActual, int cActual)
 {
     CHECK_PARAM_NOT_EMPTY(pActual);
 
-    LPSTR expected[ARRAY_SIZE];
-    size_t nullIdx = ARRAY_SIZE / 2;
-    for (size_t i = 0; i < ARRAY_SIZE; ++i)
+    LPSTR expected[ARRAY_LENGTH];
+    size_t nullIdx = ARRAY_LENGTH / 2;
+    for (size_t i = 0; i < ARRAY_LENGTH; ++i)
     {
         if (i == nullIdx)
         {
@@ -184,7 +189,7 @@ extern "C" DLL_EXPORT BOOL CStyle_Array_LPCSTR(LPCSTR *pActual, int cActual)
 
     int retval = EQUALS((LPSTR *)pActual, cActual, expected);
 
-    for (size_t i = 0; i < ARRAY_SIZE; ++i)
+    for (size_t i = 0; i < ARRAY_LENGTH; ++i)
     {
         if (i == nullIdx)
             continue;
@@ -206,8 +211,8 @@ extern "C" DLL_EXPORT BOOL CStyle_Array_Struct(TestStruct *pActual, int cActual)
 {
     CHECK_PARAM_NOT_EMPTY(pActual);
 
-    TestStruct expected[ARRAY_SIZE];
-    for (size_t i = 0; i < ARRAY_SIZE; ++i)
+    TestStruct expected[ARRAY_LENGTH];
+    for (size_t i = 0; i < ARRAY_LENGTH; ++i)
     {
         expected[i].x = (int)i;
         expected[i].d = (int)i;
@@ -222,8 +227,8 @@ extern "C" DLL_EXPORT BOOL CStyle_Array_Bool(BOOL *pActual, int cActual)
 {
     CHECK_PARAM_NOT_EMPTY(pActual);
 
-    BOOL expected[ARRAY_SIZE];
-    for (size_t i = 0; i < ARRAY_SIZE; ++i)
+    BOOL expected[ARRAY_LENGTH];
+    for (size_t i = 0; i < ARRAY_LENGTH; ++i)
     {
         if (i % 2 == 0)
             expected[i] = TRUE;

@@ -1,24 +1,17 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
-#if ES_BUILD_STANDALONE
-using System;
-using System.Diagnostics;
-#endif
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using System.Runtime.InteropServices;
 
-#if ES_BUILD_STANDALONE
-namespace Microsoft.Diagnostics.Tracing
-#else
 namespace System.Diagnostics.Tracing
-#endif
 {
     /// <summary>
     /// Holds property values of any type.  For common value types, we have inline storage so that we don't need
     /// to box the values.  For all other types, we store the value in a single object reference field.
     ///
-    /// To get the value of a property quickly, use a delegate produced by <see cref="PropertyValue.GetPropertyGetter(PropertyInfo)"/>.
+    /// To get the value of a property quickly, use a delegate produced by <see cref="GetPropertyGetter(PropertyInfo)"/>.
     /// </summary>
     internal readonly unsafe struct PropertyValue
     {
@@ -195,6 +188,8 @@ namespace System.Diagnostics.Tracing
         /// </summary>
         /// <param name="property"></param>
         /// <returns></returns>
+        [UnconditionalSuppressMessage("AotAnalysis", "IL3050:AotUnfriendlyApi",
+            Justification = "Instantiation over a reference type. See comments above.")]
         private static Func<PropertyValue, PropertyValue> GetReferenceTypePropertyGetter(PropertyInfo property)
         {
             var helper = (TypeHelper)Activator.CreateInstance(typeof(ReferenceTypeHelper<>).MakeGenericType(property.DeclaringType!))!;
@@ -205,6 +200,8 @@ namespace System.Diagnostics.Tracing
         {
             public abstract Func<PropertyValue, PropertyValue> GetPropertyGetter(PropertyInfo property);
 
+            [UnconditionalSuppressMessage("AotAnalysis", "IL3050:AotUnfriendlyApi",
+                Justification = "Instantiation over a reference type. See comments above.")]
             protected static Delegate GetGetMethod(PropertyInfo property, Type propertyType)
             {
                 return property.GetMethod!.CreateDelegate(typeof(Func<,>).MakeGenericType(property.DeclaringType!, propertyType));
@@ -214,11 +211,7 @@ namespace System.Diagnostics.Tracing
         private sealed class ReferenceTypeHelper<TContainer> : TypeHelper where TContainer : class
         {
             private static Func<TContainer, TProperty> GetGetMethod<TProperty>(PropertyInfo property) where TProperty : struct =>
-#if ES_BUILD_STANDALONE
-                (Func<TContainer, TProperty>)property.GetMethod!.CreateDelegate(typeof(Func<TContainer, TProperty>));
-#else
                 property.GetMethod!.CreateDelegate<Func<TContainer, TProperty>>();
-#endif
 
             public override Func<PropertyValue, PropertyValue> GetPropertyGetter(PropertyInfo property)
             {

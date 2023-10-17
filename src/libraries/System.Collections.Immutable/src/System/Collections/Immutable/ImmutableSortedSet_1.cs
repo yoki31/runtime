@@ -2,10 +2,10 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 using System.Collections.Generic;
-using System.ComponentModel;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
+using System.Runtime.CompilerServices;
 
 namespace System.Collections.Immutable
 {
@@ -17,9 +17,10 @@ namespace System.Collections.Immutable
     /// We implement <see cref="IReadOnlyList{T}"/> because it adds an ordinal indexer.
     /// We implement <see cref="IList{T}"/> because it gives us <see cref="IList{T}.IndexOf"/>, which is important for some folks.
     /// </devremarks>
+    [CollectionBuilder(typeof(ImmutableSortedSet), nameof(ImmutableSortedSet.Create))]
     [DebuggerDisplay("Count = {Count}")]
     [DebuggerTypeProxy(typeof(ImmutableEnumerableDebuggerProxy<>))]
-#if NET5_0_OR_GREATER
+#if NETCOREAPP
     public sealed partial class ImmutableSortedSet<T> : IImmutableSet<T>, ISortKeyCollection<T>, IReadOnlySet<T>, IReadOnlyList<T>, IList<T>, ISet<T>, IList, IStrongEnumerable<T, ImmutableSortedSet<T>.Enumerator>
 #else
     public sealed partial class ImmutableSortedSet<T> : IImmutableSet<T>, ISortKeyCollection<T>, IReadOnlyList<T>, IList<T>, ISet<T>, IList, IStrongEnumerable<T, ImmutableSortedSet<T>.Enumerator>
@@ -189,8 +190,7 @@ namespace System.Collections.Immutable
         /// </summary>
         public ImmutableSortedSet<T> Add(T value)
         {
-            bool mutated;
-            return this.Wrap(_root.Add(value, _comparer, out mutated));
+            return this.Wrap(_root.Add(value, _comparer, out _));
         }
 
         /// <summary>
@@ -198,8 +198,7 @@ namespace System.Collections.Immutable
         /// </summary>
         public ImmutableSortedSet<T> Remove(T value)
         {
-            bool mutated;
-            return this.Wrap(_root.Remove(value, _comparer, out mutated));
+            return this.Wrap(_root.Remove(value, _comparer, out _));
         }
 
         /// <summary>
@@ -236,8 +235,8 @@ namespace System.Collections.Immutable
         {
             Requires.NotNull(other, nameof(other));
 
-            var newSet = this.Clear();
-            foreach (var item in other.GetEnumerableDisposable<T, Enumerator>())
+            ImmutableSortedSet<T> newSet = this.Clear();
+            foreach (T item in other.GetEnumerableDisposable<T, Enumerator>())
             {
                 if (this.Contains(item))
                 {
@@ -256,7 +255,7 @@ namespace System.Collections.Immutable
         {
             Requires.NotNull(other, nameof(other));
 
-            var result = _root;
+            ImmutableSortedSet<T>.Node result = _root;
             foreach (T item in other.GetEnumerableDisposable<T, Enumerator>())
             {
                 bool mutated;
@@ -275,9 +274,9 @@ namespace System.Collections.Immutable
         {
             Requires.NotNull(other, nameof(other));
 
-            var otherAsSet = ImmutableSortedSet.CreateRange(_comparer, other);
+            ImmutableSortedSet<T> otherAsSet = ImmutableSortedSet.CreateRange(_comparer, other);
 
-            var result = this.Clear();
+            ImmutableSortedSet<T> result = this.Clear();
             foreach (T item in this)
             {
                 if (!otherAsSet.Contains(item))
@@ -340,12 +339,26 @@ namespace System.Collections.Immutable
         /// <summary>
         /// See the <see cref="IImmutableSet{T}"/> interface.
         /// </summary>
+        internal ImmutableSortedSet<T> Union(ReadOnlySpan<T> other)
+        {
+            if (this.IsEmpty || (this.Count + other.Length) * RefillOverIncrementalThreshold > this.Count)
+            {
+                // The payload being added is so large compared to this collection's current size
+                // that we likely won't see much memory reuse in the node tree by performing an
+                // incremental update.  So just recreate the entire node tree since that will
+                // likely be faster.
+                return this.LeafToRootRefill(other);
+            }
+
+            return this.UnionIncremental(other);
+        }
+
+        /// <summary>
+        /// See the <see cref="IImmutableSet{T}"/> interface.
+        /// </summary>
         public ImmutableSortedSet<T> WithComparer(IComparer<T>? comparer)
         {
-            if (comparer == null)
-            {
-                comparer = Comparer<T>.Default;
-            }
+            comparer ??= Comparer<T>.Default;
 
             if (comparer == _comparer)
             {
@@ -845,6 +858,13 @@ namespace System.Collections.Immutable
             throw new NotSupportedException();
         }
 
+        private static bool IsCompatibleObject(object? value)
+        {
+            // Non-null values are fine.  Only accept nulls if T is a class or Nullable<U>.
+            // Note that default(T) is not equal to null for value types except when T is Nullable<U>.
+            return (value is T) || (default(T) == null && value == null);
+        }
+
         /// <summary>
         /// Determines whether the <see cref="IList"/> contains a specific value.
         /// </summary>
@@ -854,7 +874,11 @@ namespace System.Collections.Immutable
         /// </returns>
         bool IList.Contains(object? value)
         {
-            return this.Contains((T)value!);
+            if (IsCompatibleObject(value))
+            {
+                return this.Contains((T)value!);
+            }
+            return false;
         }
 
         /// <summary>
@@ -866,7 +890,11 @@ namespace System.Collections.Immutable
         /// </returns>
         int IList.IndexOf(object? value)
         {
-            return this.IndexOf((T)value!);
+            if (IsCompatibleObject(value))
+            {
+                return this.IndexOf((T)value!);
+            }
+            return -1;
         }
 
         /// <summary>
@@ -991,8 +1019,7 @@ namespace System.Collections.Immutable
                 return true;
             }
 
-            var builder = sequence as Builder;
-            if (builder != null)
+            if (sequence is Builder builder)
             {
                 other = builder.ToImmutable();
                 return true;
@@ -1031,11 +1058,34 @@ namespace System.Collections.Immutable
 
             // Let's not implement in terms of ImmutableSortedSet.Add so that we're
             // not unnecessarily generating a new wrapping set object for each item.
-            var result = _root;
-            foreach (var item in items.GetEnumerableDisposable<T, Enumerator>())
+            ImmutableSortedSet<T>.Node result = _root;
+            foreach (T item in items.GetEnumerableDisposable<T, Enumerator>())
             {
-                bool mutated;
-                result = result.Add(item, _comparer, out mutated);
+                result = result.Add(item, _comparer, out _);
+            }
+
+            return this.Wrap(result);
+        }
+
+        /// <summary>
+        /// Adds items to this collection using the standard spine rewrite and tree rebalance technique.
+        /// </summary>
+        /// <param name="items">The items to add.</param>
+        /// <returns>The new collection.</returns>
+        /// <remarks>
+        /// This method is least demanding on memory, providing the great chance of memory reuse
+        /// and does not require allocating memory large enough to store all items contiguously.
+        /// It's performance is optimal for additions that do not significantly dwarf the existing
+        /// size of this collection.
+        /// </remarks>
+        private ImmutableSortedSet<T> UnionIncremental(ReadOnlySpan<T> items)
+        {
+            // Let's not implement in terms of ImmutableSortedSet.Add so that we're
+            // not unnecessarily generating a new wrapping set object for each item.
+            ImmutableSortedSet<T>.Node result = _root;
+            foreach (T item in items)
+            {
+                result = result.Add(item, _comparer, out _);
             }
 
             return this.Wrap(result);
@@ -1103,6 +1153,64 @@ namespace System.Collections.Immutable
                 list = new List<T>(this);
                 list.AddRange(addedItems);
             }
+            Debug.Assert(list.Count > 0);
+
+            // Sort the list and remove duplicate entries.
+            IComparer<T> comparer = this.KeyComparer;
+            list.Sort(comparer);
+            int index = 1;
+            for (int i = 1; i < list.Count; i++)
+            {
+                if (comparer.Compare(list[i], list[i - 1]) != 0)
+                {
+                    list[index++] = list[i];
+                }
+            }
+            list.RemoveRange(index, list.Count - index);
+
+            // Use the now sorted list of unique items to construct a new sorted set.
+            Node root = Node.NodeTreeFromList(list.AsOrderedCollection(), 0, list.Count);
+            return this.Wrap(root);
+        }
+
+        /// <summary>
+        /// Creates an immutable sorted set with the contents from this collection and a sequence of elements.
+        /// </summary>
+        /// <param name="addedItems">The sequence of elements to add to this set.</param>
+        /// <returns>The immutable sorted set.</returns>
+        private ImmutableSortedSet<T> LeafToRootRefill(ReadOnlySpan<T> addedItems)
+        {
+            // See comments in LeafToRootRefill(IEnumerable<T> addedItems)
+
+            // Produce the initial list containing all elements, including any duplicates.
+            List<T> list;
+            if (this.IsEmpty && addedItems.IsEmpty)
+            {
+                // If the additional items enumerable list is known to be empty, too,
+                // then just return this empty instance.
+                if (addedItems.IsEmpty)
+                {
+                    return this;
+                }
+
+                list = new List<T>(addedItems.Length);
+            }
+            else
+            {
+                // Build the list from this set and then add the additional items.
+                // Even if the additional items is empty, this set isn't, so we know
+                // the resulting list will not be empty.
+                list = new List<T>(this.Count + addedItems.Length);
+                list.AddRange(this);
+            }
+#if NET8_0_OR_GREATER
+            list.AddRange(addedItems);
+#else
+            foreach (var item in addedItems)
+            {
+                list.Add(item);
+            }
+#endif
             Debug.Assert(list.Count > 0);
 
             // Sort the list and remove duplicate entries.

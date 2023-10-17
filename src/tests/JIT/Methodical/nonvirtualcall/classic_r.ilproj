@@ -1,7 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk.IL">
   <PropertyGroup>
-    <OutputType>Exe</OutputType>
-    <RestorePackages>true</RestorePackages>
     <CLRTestPriority>1</CLRTestPriority>
   </PropertyGroup>
   <PropertyGroup>
@@ -9,6 +7,7 @@
     <Optimize>False</Optimize>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="classic_r.il" />
     <Compile Include="classic.il" />
   </ItemGroup>
 </Project>

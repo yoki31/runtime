@@ -472,18 +472,18 @@ void HelperMethodFrame::UpdateRegDisplay(const PREGDISPLAY pRD)
         pRD->pCurrentContext->Fp = (DWORD64)(pUnwoundState->captureX19_X29[10]);
         pRD->pCurrentContext->Lr = NULL; // Unwind again to get Caller's PC
 
-        pRD->pCurrentContextPointers->X19 = pUnwoundState->ptrX19_X29[0];
-        pRD->pCurrentContextPointers->X20 = pUnwoundState->ptrX19_X29[1];
-        pRD->pCurrentContextPointers->X21 = pUnwoundState->ptrX19_X29[2];
-        pRD->pCurrentContextPointers->X22 = pUnwoundState->ptrX19_X29[3];
-        pRD->pCurrentContextPointers->X23 = pUnwoundState->ptrX19_X29[4];
-        pRD->pCurrentContextPointers->X24 = pUnwoundState->ptrX19_X29[5];
-        pRD->pCurrentContextPointers->X25 = pUnwoundState->ptrX19_X29[6];
-        pRD->pCurrentContextPointers->X26 = pUnwoundState->ptrX19_X29[7];
-        pRD->pCurrentContextPointers->X27 = pUnwoundState->ptrX19_X29[8];
-        pRD->pCurrentContextPointers->X28 = pUnwoundState->ptrX19_X29[9];
-        pRD->pCurrentContextPointers->Fp = pUnwoundState->ptrX19_X29[10];
-        pRD->pCurrentContextPointers->Lr = NULL;
+        pRD->pCurrentContextPointers->X19 = &pRD->pCurrentContext->X19;
+        pRD->pCurrentContextPointers->X20 = &pRD->pCurrentContext->X20;
+        pRD->pCurrentContextPointers->X21 = &pRD->pCurrentContext->X21;
+        pRD->pCurrentContextPointers->X22 = &pRD->pCurrentContext->X22;
+        pRD->pCurrentContextPointers->X23 = &pRD->pCurrentContext->X23;
+        pRD->pCurrentContextPointers->X24 = &pRD->pCurrentContext->X24;
+        pRD->pCurrentContextPointers->X25 = &pRD->pCurrentContext->X25;
+        pRD->pCurrentContextPointers->X26 = &pRD->pCurrentContext->X26;
+        pRD->pCurrentContextPointers->X27 = &pRD->pCurrentContext->X27;
+        pRD->pCurrentContextPointers->X28 = &pRD->pCurrentContext->X28;
+        pRD->pCurrentContextPointers->Fp = &pRD->pCurrentContext->Fp;
+        pRD->pCurrentContextPointers->Lr = &pRD->pCurrentContext->Lr;
 
         return;
     }
@@ -543,93 +543,7 @@ void HelperMethodFrame::UpdateRegDisplay(const PREGDISPLAY pRD)
     ClearRegDisplayArgumentAndScratchRegisters(pRD);
 }
 
-TADDR FixupPrecode::GetMethodDesc()
-{
-    LIMITED_METHOD_DAC_CONTRACT;
-
-    // This lookup is also manually inlined in PrecodeFixupThunk assembly code
-    TADDR base = *PTR_TADDR(GetBase());
-    if (base == NULL)
-        return NULL;
-    return base + (m_MethodDescChunkIndex * MethodDesc::ALIGNMENT);
-}
-
-#ifdef DACCESS_COMPILE
-void FixupPrecode::EnumMemoryRegions(CLRDataEnumMemoryFlags flags)
-{
-	SUPPORTS_DAC;
-	DacEnumMemoryRegion(dac_cast<TADDR>(this), sizeof(FixupPrecode));
-
-	DacEnumMemoryRegion(GetBase(), sizeof(TADDR));
-}
-#endif // DACCESS_COMPILE
-
 #ifndef DACCESS_COMPILE
-void StubPrecode::Init(StubPrecode* pPrecodeRX, MethodDesc* pMD, LoaderAllocator *pLoaderAllocator)
-{
-    WRAPPER_NO_CONTRACT;
-
-    int n = 0;
-
-    m_rgCode[n++] = 0x10000089; // adr x9, #16
-    m_rgCode[n++] = 0xA940312A; // ldp x10,x12,[x9]
-    m_rgCode[n++] = 0xD61F0140; // br x10
-
-    _ASSERTE(n+1 == _countof(m_rgCode));
-
-    m_pTarget = GetPreStubEntryPoint();
-    m_pMethodDesc = (TADDR)pMD;
-}
-
-void NDirectImportPrecode::Init(NDirectImportPrecode* pPrecodeRX, MethodDesc* pMD, LoaderAllocator *pLoaderAllocator)
-{
-    WRAPPER_NO_CONTRACT;
-
-    int n = 0;
-
-    m_rgCode[n++] = 0x1000008B; // adr x11, #16
-    m_rgCode[n++] = 0xA940316A; // ldp x10,x12,[x11]
-    m_rgCode[n++] = 0xD61F0140; // br x10
-
-    _ASSERTE(n+1 == _countof(m_rgCode));
-
-    m_pTarget = GetEEFuncEntryPoint(NDirectImportThunk);
-    m_pMethodDesc = (TADDR)pMD;
-}
-
-void FixupPrecode::Init(FixupPrecode* pPrecodeRX, MethodDesc* pMD, LoaderAllocator *pLoaderAllocator, int iMethodDescChunkIndex /*=0*/, int iPrecodeChunkIndex /*=0*/)
-{
-    WRAPPER_NO_CONTRACT;
-
-    InitCommon();
-
-    // Initialize chunk indices only if they are not initialized yet. This is necessary to make MethodDesc::Reset work.
-    if (m_PrecodeChunkIndex == 0)
-    {
-        _ASSERTE(FitsInU1(iPrecodeChunkIndex));
-        m_PrecodeChunkIndex = static_cast<BYTE>(iPrecodeChunkIndex);
-    }
-
-    if (iMethodDescChunkIndex != -1)
-    {
-        if (m_MethodDescChunkIndex == 0)
-        {
-            _ASSERTE(FitsInU1(iMethodDescChunkIndex));
-            m_MethodDescChunkIndex = static_cast<BYTE>(iMethodDescChunkIndex);
-        }
-
-        if (*(void**)GetBase() == NULL)
-            *(void**)GetBase() = (BYTE*)pMD - (iMethodDescChunkIndex * MethodDesc::ALIGNMENT);
-    }
-
-    _ASSERTE(pPrecodeRX->GetMethodDesc() == (TADDR)pMD);
-
-    if (pLoaderAllocator != NULL)
-    {
-        m_pTarget = GetEEFuncEntryPoint(PrecodeFixupThunk);
-    }
-}
-
 void ThisPtrRetBufPrecode::Init(MethodDesc* pMD, LoaderAllocator *pLoaderAllocator)
 {
     WRAPPER_NO_CONTRACT;
@@ -645,51 +559,12 @@ void ThisPtrRetBufPrecode::Init(MethodDesc* pMD, LoaderAllocator *pLoaderAllocat
     _ASSERTE((UINT32*)&m_pTarget == &m_rgCode[n + 2]);
     m_rgCode[n++] = 0xd61f0200; // br  x16
     n++;                        // empty 4 bytes for data alignment below
-    _ASSERTE(n == _countof(m_rgCode));
+    _ASSERTE(n == ARRAY_SIZE(m_rgCode));
 
 
     m_pTarget = GetPreStubEntryPoint();
     m_pMethodDesc = (TADDR)pMD;
 }
-
-BOOL DoesSlotCallPrestub(PCODE pCode)
-{
-    PTR_DWORD pInstr = dac_cast<PTR_DWORD>(PCODEToPINSTR(pCode));
-
-    //FixupPrecode
-#if defined(HAS_FIXUP_PRECODE)
-    if (FixupPrecode::IsFixupPrecodeByASM(pCode))
-    {
-        PCODE pTarget = dac_cast<PTR_FixupPrecode>(pInstr)->m_pTarget;
-
-        if (isJump(pTarget))
-        {
-            pTarget = decodeJump(pTarget);
-        }
-
-        return pTarget == (TADDR)PrecodeFixupThunk;
-    }
-#endif
-
-    // StubPrecode
-    if (pInstr[0] == 0x10000089 && // adr x9, #16
-        pInstr[1] == 0xA940312A && // ldp x10,x12,[x9]
-        pInstr[2] == 0xD61F0140) // br x10
-    {
-        PCODE pTarget = dac_cast<PTR_StubPrecode>(pInstr)->m_pTarget;
-
-        if (isJump(pTarget))
-        {
-            pTarget = decodeJump(pTarget);
-        }
-
-        return pTarget == GetPreStubEntryPoint();
-    }
-
-    return FALSE;
-
-}
-
 
 #endif // !DACCESS_COMPILE
 
@@ -824,7 +699,7 @@ void InlinedCallFrame::UpdateRegDisplay(const PREGDISPLAY pRD)
     pRD->pCurrentContextPointers->X28 = NULL;
 
     pRD->ControlPC = m_pCallerReturnAddress;
-    pRD->SP = (DWORD) dac_cast<TADDR>(m_pCallSiteSP);
+    pRD->SP = (DWORD64) dac_cast<TADDR>(m_pCallSiteSP);
 
     // reset pContext; it's only valid for active (top-most) frame
     pRD->pContext = NULL;
@@ -983,10 +858,10 @@ static void UpdateWriteBarrierState(bool skipEphemeralCheck)
 {
     BYTE *writeBarrierCodeStart = GetWriteBarrierCodeLocation((void*)JIT_PatchedCodeStart);
     BYTE *writeBarrierCodeStartRW = writeBarrierCodeStart;
-    ExecutableWriterHolder<BYTE> writeBarrierWriterHolder;
+    ExecutableWriterHolderNoLog<BYTE> writeBarrierWriterHolder;
     if (IsWriteBarrierCopyEnabled())
     {
-        writeBarrierWriterHolder = ExecutableWriterHolder<BYTE>(writeBarrierCodeStart, (BYTE*)JIT_PatchedCodeLast - (BYTE*)JIT_PatchedCodeStart);
+        writeBarrierWriterHolder.AssignExecutableWriterHolder(writeBarrierCodeStart, (BYTE*)JIT_PatchedCodeLast - (BYTE*)JIT_PatchedCodeStart);
         writeBarrierCodeStartRW = writeBarrierWriterHolder.GetRW();
     }
     JIT_UpdateWriteBarrierState(GCHeapUtilities::IsServerHeap(), writeBarrierCodeStartRW - writeBarrierCodeStart);
@@ -1043,12 +918,6 @@ PTR_CONTEXT GetCONTEXTFromRedirectedStubStackFrame(T_CONTEXT * pContext)
     return *ppContext;
 }
 
-void RedirectForThreadAbort()
-{
-    // ThreadAbort is not supported in .net core
-    throw "NYI";
-}
-
 #if !defined(DACCESS_COMPILE)
 FaultingExceptionFrame *GetFrameFromRedirectedStubStackFrame (DISPATCHER_CONTEXT *pDispatcherContext)
 {
@@ -1076,10 +945,9 @@ AdjustContextForVirtualStub(
 
     PCODE f_IP = GetIP(pContext);
 
-    VirtualCallStubManager::StubKind sk;
-    VirtualCallStubManager::FindStubManager(f_IP, &sk);
+    StubCodeBlockKind sk = RangeSectionStubManager::GetStubKind(f_IP);
 
-    if (sk == VirtualCallStubManager::SK_DISPATCH)
+    if (sk == STUB_CODE_BLOCK_VSD_DISPATCH_STUB)
     {
         if (*PTR_DWORD(f_IP) != DISPATCH_STUB_FIRST_DWORD)
         {
@@ -1088,7 +956,7 @@ AdjustContextForVirtualStub(
         }
     }
     else
-    if (sk == VirtualCallStubManager::SK_RESOLVE)
+    if (sk == STUB_CODE_BLOCK_VSD_RESOLVE_STUB)
     {
         if (*PTR_DWORD(f_IP) != RESOLVE_STUB_FIRST_DWORD)
         {
@@ -1310,7 +1178,7 @@ void StubLinkerCPU::EmitProlog(unsigned short cIntRegArgs, unsigned short cVecRe
 
 
 
-    // N.B Despite the range of a jump with a sub sp is 4KB, we're limiting to 504 to save from emiting right prolog that's
+    // N.B Despite the range of a jump with a sub sp is 4KB, we're limiting to 504 to save from emitting right prolog that's
     // expressable in unwind codes efficiently. The largest offset in typical unwindinfo encodings that we use is 504.
     // so allocations larger than 504 bytes would require setting the SP in multiple strides, which would complicate both
     // prolog and epilog generation as well as unwindinfo generation.
@@ -1561,7 +1429,7 @@ void StubLinkerCPU::EmitMovReg(IntReg Xd, IntReg Xm)
     else
     {
         //  MOV <Xd>, <Xm>
-        // which is eqivalent to
+        // which is equivalent to
         //  ORR <Xd>. XZR, <Xm>
         // Encoding: sf|0|1|0|1|0|1|0|shift(2)|0|Xm|imm(6)|Xn|Xd
         // where
@@ -1732,6 +1600,7 @@ VOID StubLinkerCPU::EmitComputedInstantiatingMethodStub(MethodDesc* pSharedMD, s
 
     // Tail call the real target.
     EmitCallManagedMethod(pSharedMD, TRUE /* tail call */);
+    SetTargetMethod(pSharedMD);
 }
 
 void StubLinkerCPU::EmitCallLabel(CodeLabel *target, BOOL fTailCall, BOOL fIndirect)
@@ -2156,7 +2025,7 @@ PCODE DynamicHelpers::CreateDictionaryLookupHelper(LoaderAllocator * pAllocator,
                 *(DWORD*)p = 0xd280000a | ((UINT32)slotOffset << 5); p += 4;
                 dataOffset -= 4;
 
-                // cmp x9,x10
+                // cmp x11,x10
                 *(DWORD*)p = 0xeb0a017f; p += 4;
                 dataOffset -= 4;
 

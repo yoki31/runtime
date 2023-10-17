@@ -7,7 +7,7 @@
   .publickeytoken = (B0 3F 5F 7F 11 D5 0A 3A )
   .ver 4:0:0:0
 }
-.assembly test_3b { }
+.assembly 'b72699' { }
 .assembly extern xunit.core {}
 .namespace JitTest
 {
@@ -16,7 +16,7 @@
   {
   		.field public float64 m_fld
   }
-  .class private auto ansi beforefieldinit TestClass
+  .class public auto ansi beforefieldinit TestClass
          extends [mscorlib]System.Object
   {
     .method private hidebysig static 
@@ -48,7 +48,7 @@
       ret
     } // end of method TestClass::TestFunc1
 
-    .method private hidebysig static 
+    .method public hidebysig static 
             int32 Main() il managed
     {
       .custom instance void [xunit.core]Xunit.FactAttribute::.ctor() = (

@@ -126,8 +126,6 @@ struct sigcontext {
 #define MONO_ARCH_USE_SHARED_FP_SIMD_BANK 1
 #endif
 
-
-
 #if defined(__APPLE__)
 #define MONO_ARCH_SIGNAL_STACK_SIZE MINSIGSTKSZ
 #else
@@ -164,8 +162,6 @@ struct sigcontext {
 #define MONO_ARCH_CALLEE_REGS AMD64_CALLEE_REGS
 #define MONO_ARCH_CALLEE_SAVED_REGS AMD64_CALLEE_SAVED_REGS
 
-#define MONO_ARCH_USE_FPSTACK FALSE
-
 #define MONO_ARCH_INST_FIXED_REG(desc) ((desc == '\0') ? -1 : ((desc == 'i' ? -1 : ((desc == 'a') ? AMD64_RAX : ((desc == 's') ? AMD64_RCX : ((desc == 'd') ? AMD64_RDX : ((desc == 'A') ? MONO_AMD64_ARG_REG1 : -1)))))))
 
 /* RDX is clobbered by the opcode implementation before accessing sreg2 */
@@ -176,12 +172,12 @@ struct sigcontext {
 
 #define MONO_ARCH_FRAME_ALIGNMENT 16
 
-/* fixme: align to 16byte instead of 32byte (we align to 32byte to get 
+/* fixme: align to 16byte instead of 32byte (we align to 32byte to get
  * reproduceable results for benchmarks */
 #define MONO_ARCH_CODE_ALIGNMENT 32
 
 struct MonoLMF {
-	/* 
+	/*
 	 * The rsp field points to the stack location where the caller ip is saved.
 	 * If the second lowest bit is set, then this is a MonoLMFExt structure, and
 	 * the other fields are not valid.
@@ -256,10 +252,10 @@ typedef struct {
 	gpointer addr;
 	/* The trampoline reads this, so keep the size explicit */
 	int ret_marshal;
-	/* If ret_marshal != NONE, this is the reg of the vret arg, else -1 (used in out case) */
+	/* If ret_marshal != NONE, this is the reg of the vret arg, else -1 (used bu "out" case) */
 	/* Equivalent of vret_arg_slot in the x86 implementation. */
 	int vret_arg_reg;
-	/* The stack slot where the return value will be stored (used in in case) */
+	/* The stack slot where the return value will be stored (used by "in" case) */
 	int vret_slot;
 	int stack_usage, map_count;
 	/* If not -1, then make a virtual call using this vtable offset */
@@ -306,12 +302,12 @@ typedef enum {
 
 typedef struct {
 	gint16 offset;
-	gint8  reg;
+	guint8  reg;
 	ArgStorage storage : 8;
 
 	/* Only if storage == ArgValuetypeInReg */
 	ArgStorage pair_storage [2];
-	gint8 pair_regs [2];
+	guint8 pair_regs [2];
 	/* The size of each pair (bytes) */
 	int pair_size [2];
 	int nregs;
@@ -364,7 +360,7 @@ typedef struct {
 
 #else
 
-/* 
+/*
  * __builtin_frame_address () is broken on some older gcc versions in the presence of
  * frame pointer elimination, see bug #82095.
  */
@@ -382,7 +378,7 @@ typedef struct {
 
 #define MONO_ARCH_USE_SIGACTION 1
 
-#ifdef HAVE_WORKING_SIGALTSTACK
+#ifdef ENABLE_SIGALTSTACK
 
 #define MONO_ARCH_SIGSEGV_ON_ALTSTACK
 
@@ -435,8 +431,6 @@ typedef struct {
 #define MONO_ARCH_AOT_SUPPORTED 1
 #define MONO_ARCH_SOFT_DEBUG_SUPPORTED 1
 
-#define MONO_ARCH_SUPPORT_TASKLETS 1
-
 #define MONO_ARCH_GSHARED_SUPPORTED 1
 #define MONO_ARCH_DYN_CALL_SUPPORTED 1
 #define MONO_ARCH_DYN_CALL_PARAM_AREA 0
@@ -486,21 +480,11 @@ typedef struct {
 /* Used for optimization, not complete */
 #define MONO_ARCH_IS_OP_MEMBASE(opcode) ((opcode) == OP_X86_PUSH_MEMBASE)
 
-#define MONO_ARCH_EMIT_BOUNDS_CHECK(cfg, array_reg, offset, index_reg, ex_name) do { \
-            MonoInst *inst; \
-            MONO_INST_NEW ((cfg), inst, OP_AMD64_ICOMPARE_MEMBASE_REG); \
-            inst->inst_basereg = array_reg; \
-            inst->inst_offset = offset; \
-            inst->sreg2 = index_reg; \
-            MONO_ADD_INS ((cfg)->cbb, inst); \
-            MONO_EMIT_NEW_COND_EXC (cfg, LE_UN, ex_name); \
-       } while (0)
-
 // Does the ABI have a volatile non-parameter register, so tailcall
 // can pass context to generics or interfaces?
 #define MONO_ARCH_HAVE_VOLATILE_NON_PARAM_REGISTER 1
 
-void 
+void
 mono_amd64_patch (unsigned char* code, gpointer target);
 
 void
@@ -644,5 +628,5 @@ mono_arch_unwindinfo_validate_size (GSList *unwind_ops, guint max_size)
 
 CallInfo* mono_arch_get_call_info (MonoMemPool *mp, MonoMethodSignature *sig);
 
-#endif /* __MONO_MINI_AMD64_H__ */  
+#endif /* __MONO_MINI_AMD64_H__ */
 

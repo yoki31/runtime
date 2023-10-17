@@ -6,13 +6,12 @@
 .assembly extern xunit.core {}
 .assembly extern mscorlib { auto }
 
-.assembly MCCTest {}
-.module mcc_i77.exe
+.assembly 'mcc_i77' {}
 
 
 .namespace MCCTest
 {
-  .class MyClass
+  .class public MyClass
   {
     .method assembly static pinvokeimpl("native_i7s" as "#1" stdcall)
         valuetype MCCTest.VType7 Sum(unsigned int64, valuetype MCCTest.VType7, float64,	valuetype MCCTest.VType7, float32, valuetype MCCTest.VType7,
@@ -125,7 +124,7 @@
       ret
     } // end of method MyClass::.ctor
 
-    .method private static int32 Main(string[] args)
+    .method public static int32 Main()
     {
       .custom instance void [xunit.core]Xunit.FactAttribute::.ctor() = (
           01 00 00 00

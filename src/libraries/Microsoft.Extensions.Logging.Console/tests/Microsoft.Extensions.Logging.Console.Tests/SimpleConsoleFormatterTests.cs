@@ -10,11 +10,10 @@ namespace Microsoft.Extensions.Logging.Console.Test
     public class SimpleConsoleFormatterTests : ConsoleFormatterTests
     {
         [ConditionalTheory(typeof(PlatformDetection), nameof(PlatformDetection.IsThreadingSupported))]
+        [ActiveIssue("https://github.com/dotnet/runtime/issues/91538", typeof(PlatformDetection), nameof(PlatformDetection.IsWasmThreadingSupported))]
         [InlineData(LoggerColorBehavior.Default)]
         [InlineData(LoggerColorBehavior.Enabled)]
         [InlineData(LoggerColorBehavior.Disabled)]
-        [ActiveIssue("https://github.com/dotnet/runtime/issues/50575", TestPlatforms.Android)]
-        [ActiveIssue("https://github.com/dotnet/runtime/issues/51398", TestPlatforms.iOS | TestPlatforms.tvOS | TestPlatforms.MacCatalyst)]
         public void Log_WritingScopes_LogsWithCorrectColorsWhenColorEnabled(LoggerColorBehavior colorBehavior)
         {
             // Arrange
@@ -56,6 +55,7 @@ namespace Microsoft.Extensions.Logging.Console.Test
         }
 
         [ConditionalFact(typeof(PlatformDetection), nameof(PlatformDetection.IsThreadingSupported))]
+        [ActiveIssue("https://github.com/dotnet/runtime/issues/91538", typeof(PlatformDetection), nameof(PlatformDetection.IsWasmThreadingSupported))]
         public void Log_NoLogScope_DoesNotWriteAnyScopeContentToOutput()
         {
             // Arrange
@@ -111,6 +111,7 @@ namespace Microsoft.Extensions.Logging.Console.Test
         }
 
         [ConditionalFact(typeof(PlatformDetection), nameof(PlatformDetection.IsThreadingSupported))]
+        [ActiveIssue("https://github.com/dotnet/runtime/issues/91538", typeof(PlatformDetection), nameof(PlatformDetection.IsWasmThreadingSupported))]
         public void Log_SingleLine_LogsWhenBothMessageAndExceptionProvided()
         {
             // Arrange

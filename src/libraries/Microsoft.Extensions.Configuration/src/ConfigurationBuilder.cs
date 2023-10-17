@@ -11,10 +11,12 @@ namespace Microsoft.Extensions.Configuration
     /// </summary>
     public class ConfigurationBuilder : IConfigurationBuilder
     {
+        private readonly List<IConfigurationSource> _sources = new();
+
         /// <summary>
         /// Returns the sources used to obtain configuration values.
         /// </summary>
-        public IList<IConfigurationSource> Sources { get; } = new List<IConfigurationSource>();
+        public IList<IConfigurationSource> Sources => _sources;
 
         /// <summary>
         /// Gets a key/value collection that can be used to share data between the <see cref="IConfigurationBuilder"/>
@@ -29,12 +31,9 @@ namespace Microsoft.Extensions.Configuration
         /// <returns>The same <see cref="IConfigurationBuilder"/>.</returns>
         public IConfigurationBuilder Add(IConfigurationSource source)
         {
-            if (source == null)
-            {
-                throw new ArgumentNullException(nameof(source));
-            }
+            ThrowHelper.ThrowIfNull(source);
 
-            Sources.Add(source);
+            _sources.Add(source);
             return this;
         }
 
@@ -46,7 +45,7 @@ namespace Microsoft.Extensions.Configuration
         public IConfigurationRoot Build()
         {
             var providers = new List<IConfigurationProvider>();
-            foreach (IConfigurationSource source in Sources)
+            foreach (IConfigurationSource source in _sources)
             {
                 IConfigurationProvider provider = source.Build(this);
                 providers.Add(provider);

@@ -17,14 +17,13 @@
   .publickeytoken = (B7 7A 5C 56 19 34 E0 89 )                         // .z\V.4..
   .ver 2:0:0:0
 }
-.assembly 'valuetype'
+.assembly ASSEMBLY_NAME
 {
   .custom instance void [mscorlib]System.Runtime.CompilerServices.CompilationRelaxationsAttribute::.ctor(int32) = ( 01 00 08 00 00 00 00 00 ) 
   .hash algorithm 0x00008004
   .ver 0:0:0:0
 }
 .assembly extern xunit.core {}
-.module valuetype.exe
 // MVID: {AF04A73C-C896-4A00-97F2-959EE06A9394}
 .imagebase 0x00400000
 .file alignment 0x00000200
@@ -33,10 +32,10 @@
 .corflags 0x00000001    //  ILONLY
 // Image base: 0x02EC0000
 
-
+.namespace Test_valuetype {
 // =============== CLASS MEMBERS DECLARATION ===================
 
-.class public sequential ansi sealed beforefieldinit Test_valuetype.Dummy
+.class public sequential ansi sealed beforefieldinit Dummy
        extends [mscorlib]System.ValueType
 {
   .pack 0
@@ -58,7 +57,7 @@
 
 } // end of class Test.Dummy
 
-.class public auto ansi sealed Test_valuetype.TestMethod
+.class public auto ansi sealed TestMethod
        extends [mscorlib]System.MulticastDelegate
 {
   .method public hidebysig specialname rtspecialname 
@@ -86,7 +85,7 @@
 
 } // end of class Test.TestMethod
 
-.class public abstract auto ansi sealed beforefieldinit Test_valuetype.Program
+.class public abstract auto ansi sealed beforefieldinit Program
        extends [mscorlib]System.Object
 {
   .method public hidebysig static void  CallDummy() cil managed
@@ -115,7 +114,7 @@
     IL_0037:  ret
   } // end of method Program::CallDummy
 
-  .method public hidebysig static int32  Main(string[] args) cil managed
+  .method public hidebysig static int32  Main() cil managed
   {
     .custom instance void [xunit.core]Xunit.FactAttribute::.ctor() = (
         01 00 00 00
@@ -161,7 +160,7 @@
 
 } // end of class Test.Program
 
-.class public abstract auto ansi sealed beforefieldinit Test_valuetype.Assert
+.class public abstract auto ansi sealed beforefieldinit Assert
        extends [mscorlib]System.Object
 {
   .method public hidebysig static void  AreEqual(string left,
@@ -237,9 +236,4 @@
   } // end of method Assert::AreEqual
 
 } // end of class Test.Assert
-
-
-// =============================================================
-
-// *********** DISASSEMBLY COMPLETE ***********************
-// WARNING: Created Win32 resource file valuetype.res
+}

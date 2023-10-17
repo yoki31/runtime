@@ -12,12 +12,6 @@
 #include "clrnt.h"
 #include "contract.h"
 
-#if defined __llvm__
-#  if defined(__has_feature) && __has_feature(address_sanitizer)
-#    define HAS_ADDRESS_SANITIZER
-#  endif
-#endif
-
 #ifdef _DEBUG_IMPL
 
 //
@@ -38,14 +32,10 @@ void DisableThrowCheck()
     dbg_fDisableThrowCheck = TRUE;
 }
 
-#ifdef HAS_ADDRESS_SANITIZER
-// use the functionality from address santizier (which does not throw exceptions)
-#else
-
 #define CLRThrowsExceptionWorker() RealCLRThrowsExceptionWorker(__FUNCTION__, __FILE__, __LINE__)
 
-static void RealCLRThrowsExceptionWorker(__in_z const char *szFunction,
-                                         __in_z const char *szFile,
+static void RealCLRThrowsExceptionWorker(_In_z_ const char *szFunction,
+                                         _In_z_ const char *szFile,
                                          int lineNum)
 {
     WRAPPER_NO_CONTRACT;
@@ -58,7 +48,6 @@ static void RealCLRThrowsExceptionWorker(__in_z const char *szFunction,
     CONTRACT_THROWSEX(szFunction, szFile, lineNum);
 }
 
-#endif // HAS_ADDRESS_SANITIZER
 #endif //_DEBUG_IMPL
 
 #if defined(_DEBUG_IMPL) && defined(ENABLE_CONTRACTS_IMPL)
@@ -216,7 +205,7 @@ ClrDebugState *CLRInitDebugState()
 const NoThrow nothrow = { 0 };
 
 #if defined(HAS_ADDRESS_SANITIZER) || defined(DACCESS_COMPILE)
-// use standard heap functions for address santizier
+// use standard heap functions for address sanitizer
 #else
 
 #ifdef _DEBUG
@@ -350,7 +339,7 @@ operator new[](size_t n)
 void * __cdecl operator new(size_t n, const NoThrow&) NOEXCEPT
 {
 #if defined(HAS_ADDRESS_SANITIZER) || defined(DACCESS_COMPILE)
-    // use standard heap functions for address santizier (which doesn't provide for NoThrow)
+    // use standard heap functions for address sanitizer (which doesn't provide for NoThrow)
 	void * result = operator new(n);
 #else
     STATIC_CONTRACT_NOTHROW;
@@ -369,7 +358,7 @@ void * __cdecl operator new(size_t n, const NoThrow&) NOEXCEPT
 void * __cdecl operator new[](size_t n, const NoThrow&) NOEXCEPT
 {
 #if defined(HAS_ADDRESS_SANITIZER) || defined(DACCESS_COMPILE)
-    // use standard heap functions for address santizier (which doesn't provide for NoThrow)
+    // use standard heap functions for address sanitizer (which doesn't provide for NoThrow)
 	void * result = operator new[](n);
 #else
     STATIC_CONTRACT_NOTHROW;
@@ -386,7 +375,7 @@ void * __cdecl operator new[](size_t n, const NoThrow&) NOEXCEPT
 }
 
 #if defined(HAS_ADDRESS_SANITIZER) || defined(DACCESS_COMPILE)
-// use standard heap functions for address santizier
+// use standard heap functions for address sanitizer
 #else
 void __cdecl
 operator delete(void *p) NOEXCEPT

@@ -24,11 +24,6 @@ namespace System.Threading
             if (mutexHandle.IsInvalid)
             {
                 mutexHandle.SetHandleAsInvalid();
-#if TARGET_UNIX || TARGET_BROWSER
-                if (errorCode == Interop.Errors.ERROR_FILENAME_EXCED_RANGE)
-                    // On Unix, length validation is done by CoreCLR's PAL after converting to utf-8
-                    throw new ArgumentException(SR.Argument_WaitHandleNameTooLong, nameof(name));
-#endif
                 if (errorCode == Interop.Errors.ERROR_INVALID_HANDLE)
                     throw new WaitHandleCannotBeOpenedException(SR.Format(SR.Threading_WaitHandleCannotBeOpenedException_InvalidHandle, name));
 
@@ -41,15 +36,7 @@ namespace System.Threading
 
         private static OpenExistingResult OpenExistingWorker(string name, out Mutex? result)
         {
-            if (name == null)
-            {
-                throw new ArgumentNullException(nameof(name));
-            }
-
-            if (name.Length == 0)
-            {
-                throw new ArgumentException(SR.Argument_EmptyName, nameof(name));
-            }
+            ArgumentException.ThrowIfNullOrEmpty(name);
 
             result = null;
             // To allow users to view & edit the ACL's, call OpenMutex
@@ -61,13 +48,9 @@ namespace System.Threading
             if (myHandle.IsInvalid)
             {
                 int errorCode = Marshal.GetLastPInvokeError();
-#if TARGET_UNIX || TARGET_BROWSER
-                if (errorCode == Interop.Errors.ERROR_FILENAME_EXCED_RANGE)
-                {
-                    // On Unix, length validation is done by CoreCLR's PAL after converting to utf-8
-                    throw new ArgumentException(SR.Argument_WaitHandleNameTooLong, nameof(name));
-                }
-#endif
+
+                myHandle.Dispose();
+
                 if (Interop.Errors.ERROR_FILE_NOT_FOUND == errorCode || Interop.Errors.ERROR_INVALID_NAME == errorCode)
                     return OpenExistingResult.NameNotFound;
                 if (Interop.Errors.ERROR_PATH_NOT_FOUND == errorCode)

@@ -5,7 +5,7 @@ using System;
 using System.Linq;
 using Xunit;
 
-namespace System.IO.FileSystem.DriveInfoTests
+namespace System.IO.FileSystem.Tests
 {
     public partial class DriveInfoUnixTests
     {
@@ -24,7 +24,6 @@ namespace System.IO.FileSystem.DriveInfoTests
 
         [Fact]
         [PlatformSpecific(TestPlatforms.AnyUnix)]
-        [ActiveIssue("https://github.com/dotnet/runtime/issues/60586", TestPlatforms.iOS | TestPlatforms.tvOS)]
         public void TestGetDrives()
         {
             var drives = DriveInfo.GetDrives();
@@ -42,7 +41,7 @@ namespace System.IO.FileSystem.DriveInfoTests
         }
 
         [Fact]
-        [PlatformSpecific(TestPlatforms.AnyUnix & ~TestPlatforms.Browser)]
+        [PlatformSpecific(TestPlatforms.AnyUnix & ~TestPlatforms.Browser)]
         public void PropertiesOfInvalidDrive()
         {
             string invalidDriveName = "NonExistentDriveName";
@@ -64,7 +63,7 @@ namespace System.IO.FileSystem.DriveInfoTests
         [PlatformSpecific(TestPlatforms.AnyUnix)]
         public void PropertiesOfValidDrive()
         {
-            var driveName = PlatformDetection.IsAndroid ? "/data" : "/";
+            var driveName = PlatformDetection.IsAndroid || PlatformDetection.IsLinuxBionic ? "/data" : "/";
             var driveInfo = new DriveInfo(driveName);
             var format = driveInfo.DriveFormat;
             Assert.Equal(PlatformDetection.IsBrowser ? DriveType.Unknown : DriveType.Fixed, driveInfo.DriveType);

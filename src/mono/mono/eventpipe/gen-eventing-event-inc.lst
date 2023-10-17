@@ -4,8 +4,12 @@ AppDomainDCEnd_V1
 AssemblyDCEnd_V1
 AssemblyLoad_V1
 AssemblyUnload_V1
+BulkType
+ContentionLockCreated
 ContentionStart_V1
+ContentionStart_V2
 ContentionStop
+ContentionStop_V1
 DCEndComplete_V1
 DCEndInit_V1
 DomainModuleDCEnd_V1
@@ -20,6 +24,13 @@ ExceptionFinallyStart
 ExceptionFinallyStop
 ExceptionThrown_V1
 ExceptionThrownStop
+GCBulkEdge
+GCBulkNode
+GCBulkRootConditionalWeakTableElementEdge
+GCBulkRootEdge
+GCBulkRootStaticVar
+GCEnd_V1
+GCStart_V2
 MethodDCEndILToNativeMap
 MethodDCEnd_V1
 MethodDCEndVerbose_V1
@@ -28,6 +39,7 @@ MethodJitMemoryAllocatedForCode
 MethodJittingStarted_V1
 MethodLoad_V1
 MethodLoadVerbose_V1
+MethodDetails
 ModuleDCEnd_V2
 ModuleLoad_V2
 ModuleUnload_V2
@@ -35,6 +47,7 @@ RuntimeInformationDCStart
 ThreadCreated
 ThreadPoolIODequeue
 ThreadPoolIOEnqueue
+ThreadPoolMinMaxThreads
 ThreadPoolWorkerThreadAdjustmentAdjustment
 ThreadPoolWorkerThreadAdjustmentSample
 ThreadPoolWorkerThreadAdjustmentStats
@@ -42,6 +55,7 @@ ThreadPoolWorkerThreadStart
 ThreadPoolWorkerThreadStop
 ThreadPoolWorkerThreadWait
 ThreadPoolWorkingThreadCount
+ThreadPoolIOPack
 ThreadTerminated
 TypeLoadStart
 TypeLoadStop

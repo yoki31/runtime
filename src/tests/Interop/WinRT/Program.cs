@@ -11,12 +11,13 @@ namespace WinRT
     [WindowsRuntimeImport]
     interface I {}
 
-    class Program
+    public class Program
     {
         [MethodImpl(MethodImplOptions.NoInlining)]
         private static bool ObjectIsI(object o) => o is I;
 
-        public static int Main(string[] args)
+        [Fact]
+        public static int TestEntryPoint()
         {
             try
             {

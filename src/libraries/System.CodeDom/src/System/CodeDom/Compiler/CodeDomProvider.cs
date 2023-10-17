@@ -88,7 +88,7 @@ namespace System.CodeDom.Compiler
 
         private static CompilerInfo GetCompilerInfoForLanguageNoThrow(string language)
         {
-            if (language == null)
+            if (language is null)
             {
                 throw new ArgumentNullException(nameof(language));
             }
@@ -100,7 +100,7 @@ namespace System.CodeDom.Compiler
 
         private static CompilerInfo GetCompilerInfoForExtensionNoThrow(string extension)
         {
-            if (extension == null)
+            if (extension is null)
             {
                 throw new ArgumentNullException(nameof(extension));
             }
@@ -215,10 +215,6 @@ namespace System.CodeDom.Compiler
         private sealed class ConfigurationErrorsException : SystemException
         {
             public ConfigurationErrorsException(string message) : base(message) { }
-            public ConfigurationErrorsException(SerializationInfo info, StreamingContext context) : base(info, context)
-            {
-                throw new PlatformNotSupportedException();
-            }
         }
     }
 }

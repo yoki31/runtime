@@ -10,6 +10,7 @@ using System.Threading;
 
 namespace System.Linq.Expressions.Compiler
 {
+    [RequiresDynamicCode("Assembly generation requires dynamic code generation.")]
     internal sealed class AssemblyGen
     {
         private static AssemblyGen? s_assembly;
@@ -40,8 +41,8 @@ namespace System.Linq.Expressions.Compiler
 
         private TypeBuilder DefineType(string name, [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.All)] Type parent, TypeAttributes attr)
         {
-            ContractUtils.RequiresNotNull(name, nameof(name));
-            ContractUtils.RequiresNotNull(parent, nameof(parent));
+            ArgumentNullException.ThrowIfNull(name);
+            ArgumentNullException.ThrowIfNull(parent);
 
             StringBuilder sb = new StringBuilder(name);
 

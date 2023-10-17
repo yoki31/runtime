@@ -21,7 +21,7 @@ class UTSemReadWrite;
         }                                                   \
         else                                                \
         {                                                   \
-            int cbBuffer = ((int)wcslen(wszInput) * 3) + 1; \
+            int cbBuffer = ((int)u16_strlen(wszInput) * 3) + 1; \
             (szOutput) = (char *)_alloca(cbBuffer);         \
             Unicode2UTF((wszInput), (szOutput), cbBuffer);  \
         }                                                   \
@@ -33,7 +33,7 @@ class UTSemReadWrite;
 void
 Unicode2UTF(
     LPCWSTR wszSrc, // The string to convert.
-  __out_ecount(cbDst)
+  _Out_writes_(cbDst)
     LPUTF8  szDst,  // Buffer for the output UTF8 string.
     int     cbDst); // Size of the buffer for UTF8 string.
 

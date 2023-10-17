@@ -10,38 +10,29 @@ namespace System.Text.Json.Serialization.Metadata
 {
     internal sealed class ReflectionMemberAccessor : MemberAccessor
     {
-        private sealed class ConstructorContext
-        {
-            [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
-            private readonly Type _type;
-
-            public ConstructorContext([DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] Type type)
-                => _type = type;
-
-            public object? CreateInstance()
-                => Activator.CreateInstance(_type, nonPublic: false);
-        }
-
-        public override JsonTypeInfo.ConstructorDelegate? CreateConstructor(
-            [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] Type type)
+        public override Func<object>? CreateParameterlessConstructor(
+            [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] Type type,
+            ConstructorInfo? ctorInfo)
         {
             Debug.Assert(type != null);
-            ConstructorInfo? realMethod = type.GetConstructor(BindingFlags.Public | BindingFlags.Instance, binder: null, Type.EmptyTypes, modifiers: null);
+            Debug.Assert(ctorInfo is null || ctorInfo.GetParameters().Length == 0);
 
             if (type.IsAbstract)
             {
                 return null;
             }
 
-            if (realMethod == null && !type.IsValueType)
+            if (ctorInfo is null)
             {
-                return null;
+                return type.IsValueType
+                    ? () => Activator.CreateInstance(type, nonPublic: false)!
+                    : null;
             }
 
-            return new ConstructorContext(type).CreateInstance;
+            return () => ctorInfo.Invoke(null);
         }
 
-        public override Func<object[], T>? CreateParameterizedConstructor<T>(ConstructorInfo constructor)
+        public override Func<object[], T> CreateParameterizedConstructor<T>(ConstructorInfo constructor)
         {
             Type type = typeof(T);
 
@@ -49,11 +40,6 @@ namespace System.Text.Json.Serialization.Metadata
             Debug.Assert(constructor.DeclaringType == type && constructor.IsPublic && !constructor.IsStatic);
 
             int parameterCount = constructor.GetParameters().Length;
-
-            if (parameterCount > JsonConstants.MaxParameterCount)
-            {
-                return null;
-            }
 
             return (arguments) =>
             {
@@ -137,6 +123,7 @@ namespace System.Text.Json.Serialization.Metadata
         }
 
         [RequiresUnreferencedCode(IEnumerableConverterFactoryHelpers.ImmutableConvertersUnreferencedCodeMessage)]
+        [RequiresDynamicCode(IEnumerableConverterFactoryHelpers.ImmutableConvertersUnreferencedCodeMessage)]
         public override Func<IEnumerable<TElement>, TCollection> CreateImmutableEnumerableCreateRangeDelegate<TCollection, TElement>()
         {
             MethodInfo createRange = typeof(TCollection).GetImmutableEnumerableCreateRangeMethod(typeof(TElement));
@@ -145,6 +132,7 @@ namespace System.Text.Json.Serialization.Metadata
         }
 
         [RequiresUnreferencedCode(IEnumerableConverterFactoryHelpers.ImmutableConvertersUnreferencedCodeMessage)]
+        [RequiresDynamicCode(IEnumerableConverterFactoryHelpers.ImmutableConvertersUnreferencedCodeMessage)]
         public override Func<IEnumerable<KeyValuePair<TKey, TValue>>, TCollection> CreateImmutableDictionaryCreateRangeDelegate<TCollection, TKey, TValue>()
         {
             MethodInfo createRange = typeof(TCollection).GetImmutableDictionaryCreateRangeMethod(typeof(TKey), typeof(TValue));

@@ -36,9 +36,9 @@ int ns::GetFullLength(                  // Number of chars in full name.
 
     int iLen = 1;                       // Null terminator.
     if (szNameSpace)
-        iLen += (int)wcslen(szNameSpace);
+        iLen += (int)u16_strlen(szNameSpace);
     if (szName)
-        iLen += (int)wcslen(szName);
+        iLen += (int)u16_strlen(szName);
     if (szNameSpace && *szNameSpace && szName && *szName)
         ++iLen;
     return iLen;
@@ -81,7 +81,7 @@ WCHAR *ns::FindSep(                     // Pointer to separator or null.
     STATIC_CONTRACT_FORBID_FAULT;
 
     _ASSERTE(szPath);
-    WCHAR *ptr = (WCHAR*)wcsrchr(szPath, NAMESPACE_SEPARATOR_WCHAR);
+    WCHAR *ptr = (WCHAR*)u16_strrchr(szPath, NAMESPACE_SEPARATOR_WCHAR);
     if((ptr == NULL) || (ptr == szPath)) return NULL;
     if(*(ptr - 1) == NAMESPACE_SEPARATOR_WCHAR) // here ptr is at least szPath+1
         --ptr;
@@ -196,9 +196,9 @@ void ns::SplitInline(
 //*****************************************************************************
 int ns::SplitPath(                      // true ok, false trunction.
     const WCHAR *szPath,                // Path to split.
-    __out_ecount(cchNameSpace) WCHAR *szNameSpace,           // Output for namespace value.
+    _Out_writes_(cchNameSpace) WCHAR *szNameSpace,           // Output for namespace value.
     int         cchNameSpace,           // Max chars for output.
-    __out_ecount(cchName)      WCHAR *szName,                // Output for name.
+    _Out_writes_(cchName)      WCHAR *szName,                // Output for name.
     int         cchName)                // Max chars for output.
 {
     STATIC_CONTRACT_NOTHROW;
@@ -229,7 +229,7 @@ int ns::SplitPath(                      // true ok, false trunction.
             ++ptr;
         else
             ptr = szPath;
-        iLen = (int)wcslen(ptr);
+        iLen = (int)u16_strlen(ptr);
         iCopyMax = min(iCopyMax, iLen);
         wcsncpy_s(szName, cchName, ptr, iCopyMax);
         szName[iCopyMax] = 0;
@@ -243,9 +243,9 @@ int ns::SplitPath(                      // true ok, false trunction.
 
 int ns::SplitPath(                      // true ok, false trunction.
     LPCUTF8     szPath,                 // Path to split.
-    __out_ecount_opt (cchNameSpace) LPUTF8      szNameSpace,            // Output for namespace value.
+    _Out_writes_opt_ (cchNameSpace) LPUTF8      szNameSpace,            // Output for namespace value.
     int         cchNameSpace,           // Max chars for output.
-    __out_ecount_opt (cchName) LPUTF8      szName,                 // Output for name.
+    _Out_writes_opt_ (cchName) LPUTF8      szName,                 // Output for name.
     int         cchName)                // Max chars for output.
 {
     STATIC_CONTRACT_NOTHROW;
@@ -293,7 +293,7 @@ int ns::SplitPath(                      // true ok, false trunction.
 // correct separator.
 //*****************************************************************************
 int ns::MakePath(                       // true ok, false truncation.
-    __out_ecount(cchChars) WCHAR       *szOut,                 // output path for name.
+    _Out_writes_(cchChars) WCHAR       *szOut,                 // output path for name.
     int         cchChars,               // max chars for output path.
     const WCHAR *szNameSpace,           // Namespace.
     const WCHAR *szName)                // Name.
@@ -335,7 +335,7 @@ int ns::MakePath(                       // true ok, false truncation.
 }   // int ns::MakePath()
 
 int ns::MakePath(                       // true ok, false truncation.
-    __out_ecount(cchChars) LPUTF8      szOut,                  // output path for name.
+    _Out_writes_(cchChars) LPUTF8      szOut,                  // output path for name.
     int         cchChars,               // max chars for output path.
     LPCUTF8     szNameSpace,            // Namespace.
     LPCUTF8     szName)                 // Name.
@@ -378,7 +378,7 @@ int ns::MakePath(                       // true ok, false truncation.
 }   // int ns::MakePath()
 
 int ns::MakePath(                       // true ok, false truncation.
-    __out_ecount(cchChars) WCHAR       *szOut,                 // output path for name.
+    _Out_writes_(cchChars) WCHAR       *szOut,                 // output path for name.
     int         cchChars,               // max chars for output path.
     LPCUTF8     szNamespace,            // Namespace.
     LPCUTF8     szName)                 // Name.
@@ -473,9 +473,9 @@ int ns::MakePath(                       // true ok, false out of memory
 
     int iLen = 2;
     if (szNameSpace)
-        iLen += (int)wcslen(szNameSpace);
+        iLen += (int)u16_strlen(szNameSpace);
     if (szName)
-        iLen += (int)wcslen(szName);
+        iLen += (int)u16_strlen(szName);
     WCHAR *szOut = (WCHAR *) qb.AllocNoThrow(iLen * sizeof(WCHAR));
     if (!szOut)
         return false;
@@ -513,7 +513,7 @@ void ns::MakePath(                      // throws on out of memory
 }
 
 bool ns::MakeAssemblyQualifiedName(                                        // true ok, false truncation
-                                   __out_ecount(dwBuffer) WCHAR* pBuffer,  // Buffer to recieve the results
+                                   _Out_writes_(dwBuffer) WCHAR* pBuffer,  // Buffer to receive the results
                                    int    dwBuffer,                        // Number of characters total in buffer
                                    const WCHAR *szTypeName,                // Namespace for name.
                                    int   dwTypeName,                       // Number of characters (not including null)
@@ -586,9 +586,9 @@ bool ns::MakeAssemblyQualifiedName(                                        // tr
     int iTypeName = 0;
     int iAssemblyName = 0;
     if (szTypeName)
-        iTypeName = (int)wcslen(szTypeName);
+        iTypeName = (int)u16_strlen(szTypeName);
     if (szAssemblyName)
-        iAssemblyName = (int)wcslen(szAssemblyName);
+        iAssemblyName = (int)u16_strlen(szAssemblyName);
 
     int iLen = ASSEMBLY_SEPARATOR_LEN + iTypeName + iAssemblyName + 1; // Space for null terminator
     WCHAR *szOut = (WCHAR *) qb.AllocNoThrow(iLen * sizeof(WCHAR));
@@ -621,7 +621,7 @@ int ns::MakeNestedTypeName(             // true ok, false out of memory
 }   // int ns::MakeNestedTypeName()
 
 int ns::MakeNestedTypeName(             // true ok, false truncation.
-    __out_ecount (cchChars) LPUTF8      szOut,                  // output path for name.
+    _Out_writes_ (cchChars) LPUTF8      szOut,                  // output path for name.
     int         cchChars,               // max chars for output path.
     LPCUTF8     szEnclosingName,        // Full name for enclosing type
     LPCUTF8     szNestedName)           // Full name for nested type

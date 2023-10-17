@@ -15,46 +15,61 @@ CONTEXT_CONTROL equ 1h
 CONTEXT_INTEGER equ 2h
 CONTEXT_FLOATING_POINT equ 8h
 
-; Signature: EXTERN_C void STDCALL ClrRestoreNonvolatileContext(PCONTEXT ContextRecord);
-NESTED_ENTRY ClrRestoreNonvolatileContext, _TEXT
+; Signature: EXTERN_C void STDCALL ClrRestoreNonvolatileContextWorker(PCONTEXT ContextRecord, DWORD64 ssp);
+NESTED_ENTRY ClrRestoreNonvolatileContextWorker, _TEXT
         push_nonvol_reg rbp
         set_frame rbp, 0
         END_PROLOGUE
     
-        test    byte ptr [rcx + OFFSETOF__CONTEXT__ContextFlags], CONTEXT_FLOATING_POINT
+        mov     r10, rcx
+        mov     r11, rdx
+
+        test    byte ptr [r10 + OFFSETOF__CONTEXT__ContextFlags], CONTEXT_FLOATING_POINT
         je      Done_Restore_CONTEXT_FLOATING_POINT
-        fxrstor [rcx + OFFSETOF__CONTEXT__FltSave]
+        fxrstor [r10 + OFFSETOF__CONTEXT__FltSave]
     Done_Restore_CONTEXT_FLOATING_POINT:
     
-        test    byte ptr [rcx + OFFSETOF__CONTEXT__ContextFlags], CONTEXT_INTEGER
+        test    byte ptr [r10 + OFFSETOF__CONTEXT__ContextFlags], CONTEXT_INTEGER
         je      Done_Restore_CONTEXT_INTEGER
-        mov     rbx, [rcx + OFFSETOF__CONTEXT__Rbx]
-        mov     rbp, [rcx + OFFSETOF__CONTEXT__Rbp]
-        mov     rsi, [rcx + OFFSETOF__CONTEXT__Rsi]
-        mov     rdi, [rcx + OFFSETOF__CONTEXT__Rdi]
-        mov     r12, [rcx + OFFSETOF__CONTEXT__R12]
-        mov     r13, [rcx + OFFSETOF__CONTEXT__R13]
-        mov     r14, [rcx + OFFSETOF__CONTEXT__R14]
-        mov     r15, [rcx + OFFSETOF__CONTEXT__R15]
+        mov     rbx, [r10 + OFFSETOF__CONTEXT__Rbx]
+        mov     rcx, [r10 + OFFSETOF__CONTEXT__Rcx]
+        mov     rdx, [r10 + OFFSETOF__CONTEXT__Rdx]
+        mov     r8, [r10 + OFFSETOF__CONTEXT__R8]
+        mov     r9, [r10 + OFFSETOF__CONTEXT__R9]
+        mov     rbp, [r10 + OFFSETOF__CONTEXT__Rbp]
+        mov     rsi, [r10 + OFFSETOF__CONTEXT__Rsi]
+        mov     rdi, [r10 + OFFSETOF__CONTEXT__Rdi]
+        mov     r12, [r10 + OFFSETOF__CONTEXT__R12]
+        mov     r13, [r10 + OFFSETOF__CONTEXT__R13]
+        mov     r14, [r10 + OFFSETOF__CONTEXT__R14]
+        mov     r15, [r10 + OFFSETOF__CONTEXT__R15]
     Done_Restore_CONTEXT_INTEGER:
     
-        test    byte ptr [rcx + OFFSETOF__CONTEXT__ContextFlags], CONTEXT_CONTROL
+        test    byte ptr [r10 + OFFSETOF__CONTEXT__ContextFlags], CONTEXT_CONTROL
         je      Done_Restore_CONTEXT_CONTROL
-    
+
+        test    r11, r11
+        je      No_Ssp_Update
+        rdsspq  rax
+        sub     r11, rax
+        shr     r11, 3
+        incsspq r11
+    No_Ssp_Update:
+
         ; When user-mode shadow stacks are enabled, and for example the intent is to continue execution in managed code after
         ; exception handling, iret and ret can't be used because their shadow stack enforcement would not allow that transition,
         ; and using them would require writing to the shadow stack, which is not preferable. Instead, iret is partially
         ; simulated.
-        mov     eax, [rcx + OFFSETOF__CONTEXT__EFlags]
+        mov     eax, [r10 + OFFSETOF__CONTEXT__EFlags]
         push    rax
         popfq
-        mov     rsp, [rcx + OFFSETOF__CONTEXT__Rsp]
-        jmp     qword ptr [rcx + OFFSETOF__CONTEXT__Rip]
+        mov     rsp, [r10 + OFFSETOF__CONTEXT__Rsp]
+        jmp     qword ptr [r10 + OFFSETOF__CONTEXT__Rip]
     Done_Restore_CONTEXT_CONTROL:
     
         ; The function was not asked to restore the control registers so we return back to the caller
         pop     rbp
         ret
-NESTED_END ClrRestoreNonvolatileContext, _TEXT
+NESTED_END ClrRestoreNonvolatileContextWorker, _TEXT
 
 end

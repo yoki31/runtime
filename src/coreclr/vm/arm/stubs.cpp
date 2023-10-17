@@ -280,13 +280,8 @@ void StubLinkerCPU::Init(void)
 // value of the global into a register.
 struct WriteBarrierDescriptor
 {
-#ifdef TARGET_UNIX
     DWORD   m_funcStartOffset;              // Offset to the start of the barrier function relative to this struct address
     DWORD   m_funcEndOffset;                // Offset to the end of the barrier function relative to this struct address
-#else // TARGET_UNIX
-    BYTE *  m_pFuncStart;                   // Pointer to the start of the barrier function
-    BYTE *  m_pFuncEnd;                     // Pointer to the end of the barrier function
-#endif // TARGET_UNIX
     DWORD   m_dw_g_lowest_address_offset;   // Offset of the instruction reading g_lowest_address
     DWORD   m_dw_g_highest_address_offset;  // Offset of the instruction reading g_highest_address
     DWORD   m_dw_g_ephemeral_low_offset;    // Offset of the instruction reading g_ephemeral_low
@@ -348,10 +343,10 @@ void CopyWriteBarrier(PCODE dstCode, PCODE srcCode, PCODE endCode)
 
     size_t size = (PBYTE)end - (PBYTE)src;
 
-    ExecutableWriterHolder<void> writeBarrierWriterHolder;
+    ExecutableWriterHolderNoLog<void> writeBarrierWriterHolder;
     if (IsWriteBarrierCopyEnabled())
     {
-        writeBarrierWriterHolder = ExecutableWriterHolder<void>((void*)dst, size);
+        writeBarrierWriterHolder.AssignExecutableWriterHolder((void*)dst, size);
         dst = (TADDR)writeBarrierWriterHolder.GetRW();
     }
 
@@ -361,7 +356,7 @@ void CopyWriteBarrier(PCODE dstCode, PCODE srcCode, PCODE endCode)
 #if _DEBUG
 void ValidateWriteBarriers()
 {
-    // Post-grow WB are bigger than pre-grow so validating that target WB has space to accomodate those
+    // Post-grow WB are bigger than pre-grow so validating that target WB has space to accommodate those
     _ASSERTE( ((PBYTE)JIT_WriteBarrier_End - (PBYTE)JIT_WriteBarrier) >= ((PBYTE)JIT_WriteBarrier_MP_Post_End - (PBYTE)JIT_WriteBarrier_MP_Post));
     _ASSERTE( ((PBYTE)JIT_WriteBarrier_End - (PBYTE)JIT_WriteBarrier) >= ((PBYTE)JIT_WriteBarrier_SP_Post_End - (PBYTE)JIT_WriteBarrier_SP_Post));
 
@@ -440,28 +435,19 @@ void UpdateGCWriteBarriers(bool postGrow = false)
     // Iterate through the write barrier patch table created in the .clrwb section
     // (see write barrier asm code)
     WriteBarrierDescriptor * pDesc = &g_rgWriteBarrierDescriptors;
-#ifdef TARGET_UNIX
     while (pDesc->m_funcStartOffset)
-#else // TARGET_UNIX
-    while (pDesc->m_pFuncStart)
-#endif // TARGET_UNIX
     {
         // If the write barrier is being currently used (as in copied over to the patchable site)
         // then read the patch location from the table and use the offset to patch the target asm code
-#ifdef TARGET_UNIX
         PBYTE to = FindWBMapping((BYTE *)pDesc + pDesc->m_funcStartOffset);
         size_t barrierSize = pDesc->m_funcEndOffset - pDesc->m_funcStartOffset;
-#else // TARGET_UNIX
-        PBYTE to = FindWBMapping(pDesc->m_pFuncStart);
-        size_t barrierSize = pDesc->m_pFuncEnd - pDesc->m_pFuncStart;
-#endif // TARGET_UNIX
         if(to)
         {
             to = (PBYTE)PCODEToPINSTR((PCODE)GetWriteBarrierCodeLocation(to));
-            ExecutableWriterHolder<BYTE> barrierWriterHolder;
+            ExecutableWriterHolderNoLog<BYTE> barrierWriterHolder;
             if (IsWriteBarrierCopyEnabled())
             {
-                barrierWriterHolder = ExecutableWriterHolder<BYTE>(to, barrierSize);
+                barrierWriterHolder.AssignExecutableWriterHolder(to, barrierSize);
                 to = barrierWriterHolder.GetRW();
             }
             GWB_PATCH_OFFSET(g_lowest_address);
@@ -564,9 +550,6 @@ void LazyMachState::unwindLazyState(LazyMachState* baseState,
 
     do
     {
-#ifndef TARGET_UNIX
-        pvControlPc = Thread::VirtualUnwindCallFrame(&ctx, &nonVolRegPtrs);
-#else // !TARGET_UNIX
 #ifdef DACCESS_COMPILE
         HRESULT hr = DacVirtualUnwind(threadId, &ctx, &nonVolRegPtrs);
         if (FAILED(hr))
@@ -582,7 +565,6 @@ void LazyMachState::unwindLazyState(LazyMachState* baseState,
         }
 #endif // DACCESS_COMPILE
         pvControlPc = GetIP(&ctx);
-#endif // !TARGET_UNIX
         if (funCallDepth > 0)
         {
             --funCallDepth;
@@ -689,6 +671,16 @@ void HelperMethodFrame::UpdateRegDisplay(const PREGDISPLAY pRD)
         pRD->pCurrentContext->R10 = (DWORD)(pUnwoundState->captureR4_R11[6]);
         pRD->pCurrentContext->R11 = (DWORD)(pUnwoundState->captureR4_R11[7]);
 
+        pRD->pCurrentContextPointers->R4 = &pRD->pCurrentContext->R4;
+        pRD->pCurrentContextPointers->R5 = &pRD->pCurrentContext->R5;
+        pRD->pCurrentContextPointers->R6 = &pRD->pCurrentContext->R6;
+        pRD->pCurrentContextPointers->R7 = &pRD->pCurrentContext->R7;
+        pRD->pCurrentContextPointers->R8 = &pRD->pCurrentContext->R8;
+        pRD->pCurrentContextPointers->R9 = &pRD->pCurrentContext->R9;
+        pRD->pCurrentContextPointers->R10 = &pRD->pCurrentContext->R10;
+        pRD->pCurrentContextPointers->R11 = &pRD->pCurrentContext->R11;
+        pRD->pCurrentContextPointers->Lr = &pRD->pCurrentContext->Lr;
+
         return;
     }
 #endif // DACCESS_COMPILE
@@ -721,97 +713,7 @@ void HelperMethodFrame::UpdateRegDisplay(const PREGDISPLAY pRD)
     pRD->pCurrentContextPointers->Lr = NULL;
 }
 
-TADDR FixupPrecode::GetMethodDesc()
-{
-    LIMITED_METHOD_DAC_CONTRACT;
-
-    // This lookup is also manually inlined in PrecodeFixupThunk assembly code
-    TADDR base = *PTR_TADDR(GetBase());
-    if (base == NULL)
-        return NULL;
-    return base + (m_MethodDescChunkIndex * MethodDesc::ALIGNMENT);
-}
-
-#ifdef DACCESS_COMPILE
-void FixupPrecode::EnumMemoryRegions(CLRDataEnumMemoryFlags flags)
-{
-    SUPPORTS_DAC;
-    DacEnumMemoryRegion(dac_cast<TADDR>(this), sizeof(FixupPrecode));
-
-    DacEnumMemoryRegion(GetBase(), sizeof(TADDR));
-}
-#endif // DACCESS_COMPILE
-
 #ifndef DACCESS_COMPILE
-
-void StubPrecode::Init(StubPrecode* pPrecodeRX, MethodDesc* pMD, LoaderAllocator *pLoaderAllocator)
-{
-    WRAPPER_NO_CONTRACT;
-
-    int n = 0;
-
-    m_rgCode[n++] = 0xf8df; // ldr r12, [pc, #8]
-    m_rgCode[n++] = 0xc008;
-    m_rgCode[n++] = 0xf8df; // ldr pc, [pc, #0]
-    m_rgCode[n++] = 0xf000;
-
-    _ASSERTE(n == _countof(m_rgCode));
-
-    m_pTarget = GetPreStubEntryPoint();
-    m_pMethodDesc = (TADDR)pMD;
-}
-
-void NDirectImportPrecode::Init(NDirectImportPrecode* pPrecodeRX, MethodDesc* pMD, LoaderAllocator *pLoaderAllocator)
-{
-    WRAPPER_NO_CONTRACT;
-
-    int n = 0;
-
-    m_rgCode[n++] = 0xf8df; // ldr r12, [pc, #4]
-    m_rgCode[n++] = 0xc004;
-    m_rgCode[n++] = 0xf8df; // ldr pc, [pc, #4]
-    m_rgCode[n++] = 0xf004;
-
-    _ASSERTE(n == _countof(m_rgCode));
-
-    m_pMethodDesc = (TADDR)pMD;
-    m_pTarget = GetEEFuncEntryPoint(NDirectImportThunk);
-}
-
-void FixupPrecode::Init(FixupPrecode* pPrecodeRX, MethodDesc* pMD, LoaderAllocator *pLoaderAllocator, int iMethodDescChunkIndex /*=0*/, int iPrecodeChunkIndex /*=0*/)
-{
-    WRAPPER_NO_CONTRACT;
-
-    m_rgCode[0] = 0x46fc;   // mov r12, pc
-    m_rgCode[1] = 0xf8df;   // ldr pc, [pc, #4]
-    m_rgCode[2] = 0xf004;
-
-    // Initialize chunk indices only if they are not initialized yet. This is necessary to make MethodDesc::Reset work.
-    if (m_PrecodeChunkIndex == 0)
-    {
-        _ASSERTE(FitsInU1(iPrecodeChunkIndex));
-        m_PrecodeChunkIndex = static_cast<BYTE>(iPrecodeChunkIndex);
-    }
-
-    if (iMethodDescChunkIndex != -1)
-    {
-        if (m_MethodDescChunkIndex == 0)
-        {
-            _ASSERTE(FitsInU1(iMethodDescChunkIndex));
-            m_MethodDescChunkIndex = static_cast<BYTE>(iMethodDescChunkIndex);
-        }
-
-        if (*(void**)GetBase() == NULL)
-            *(void**)GetBase() = (BYTE*)pMD - (iMethodDescChunkIndex * MethodDesc::ALIGNMENT);
-    }
-
-    _ASSERTE(GetMethodDesc() == (TADDR)pMD);
-
-    if (pLoaderAllocator != NULL)
-    {
-        m_pTarget = GetEEFuncEntryPoint(PrecodeFixupThunk);
-    }
-}
 
 void ThisPtrRetBufPrecode::Init(MethodDesc* pMD, LoaderAllocator *pLoaderAllocator)
 {
@@ -826,7 +728,7 @@ void ThisPtrRetBufPrecode::Init(MethodDesc* pMD, LoaderAllocator *pLoaderAllocat
     m_rgCode[n++] = 0xf8df; // ldr pc, [pc, #0]
     m_rgCode[n++] = 0xf000;
 
-    _ASSERTE(n == _countof(m_rgCode));
+    _ASSERTE(n == ARRAY_SIZE(m_rgCode));
 
     m_pTarget = GetPreStubEntryPoint();
     m_pMethodDesc = (TADDR)pMD;
@@ -1205,53 +1107,6 @@ void ResolveHolder::Initialize(ResolveHolder* pResolveHolderRX,
     _ASSERTE(patcherTarget == NULL);
 }
 
-BOOL DoesSlotCallPrestub(PCODE pCode)
-{
-    PTR_WORD pInstr = dac_cast<PTR_WORD>(PCODEToPINSTR(pCode));
-
-#ifdef HAS_COMPACT_ENTRYPOINTS
-    if (MethodDescChunk::GetMethodDescFromCompactEntryPoint(pCode, TRUE) != NULL)
-    {
-        return TRUE;
-    }
-#endif // HAS_COMPACT_ENTRYPOINTS
-
-    // FixupPrecode
-    if (pInstr[0] == 0x46fc && // // mov r12, pc
-        pInstr[1] == 0xf8df &&
-        pInstr[2] == 0xf004)
-    {
-        PCODE pTarget = dac_cast<PTR_FixupPrecode>(pInstr)->m_pTarget;
-
-        // Check for jump stub (NGen case)
-        if (isJump(pTarget))
-        {
-            pTarget = decodeJump(pTarget);
-        }
-
-        return pTarget == (TADDR)PrecodeFixupThunk;
-    }
-
-    // StubPrecode
-    if (pInstr[0] == 0xf8df && // ldr r12, [pc + 8]
-        pInstr[1] == 0xc008 &&
-        pInstr[2] == 0xf8df && // ldr pc, [pc]
-        pInstr[3] == 0xf000)
-    {
-        PCODE pTarget = dac_cast<PTR_StubPrecode>(pInstr)->m_pTarget;
-
-        // Check for jump stub (NGen case)
-        if (isJump(pTarget))
-        {
-            pTarget = decodeJump(pTarget);
-        }
-
-        return pTarget == GetPreStubEntryPoint();
-    }
-
-    return FALSE;
-}
-
 Stub *GenerateInitPInvokeFrameHelper()
 {
     CONTRACT(Stub*)
@@ -1278,21 +1133,17 @@ Stub *GenerateInitPInvokeFrameHelper()
     ThumbReg regScratch = ThumbReg(6);
     ThumbReg regR9 = ThumbReg(9);
 
-#ifdef TARGET_UNIX
     // Erect frame to perform call to GetThread
     psl->ThumbEmitProlog(1, sizeof(ArgumentRegisters), FALSE); // Save r4 for aligned stack
 
     // Save argument registers around the GetThread call. Don't bother with using ldm/stm since this inefficient path anyway.
     for (int reg = 0; reg < 4; reg++)
         psl->ThumbEmitStoreRegIndirect(ThumbReg(reg), thumbRegSp, offsetof(ArgumentRegisters, r) + sizeof(*ArgumentRegisters::r) * reg);
-#endif
 
     psl->ThumbEmitGetThread(regThread);
 
-#ifdef TARGET_UNIX
     for (int reg = 0; reg < 4; reg++)
         psl->ThumbEmitLoadRegIndirect(ThumbReg(reg), thumbRegSp, offsetof(ArgumentRegisters, r) + sizeof(*ArgumentRegisters::r) * reg);
-#endif
 
     // mov [regFrame + FrameInfo.offsetOfGSCookie], GetProcessGSCookie()
     psl->ThumbEmitMovConstant(regScratch, GetProcessGSCookie());
@@ -1317,27 +1168,16 @@ Stub *GenerateInitPInvokeFrameHelper()
     psl->ThumbEmitMovConstant(regScratch, 0);
     psl->ThumbEmitStoreRegIndirect(regScratch, regFrame, FrameInfo.offsetOfReturnAddress - negSpace);
 
-#ifdef TARGET_UNIX
     DWORD cbSavedRegs = sizeof(ArgumentRegisters) + 2 * 4; // r0-r3, r4, lr
     psl->ThumbEmitAdd(regScratch, thumbRegSp, cbSavedRegs);
     psl->ThumbEmitStoreRegIndirect(regScratch, regFrame, FrameInfo.offsetOfCallSiteSP - negSpace);
-#else
-    // str SP, [regFrame + FrameInfo.offsetOfCallSiteSP]
-    psl->ThumbEmitStoreRegIndirect(thumbRegSp, regFrame, FrameInfo.offsetOfCallSiteSP - negSpace);
-#endif
 
     // mov [regThread + offsetof(Thread, m_pFrame)], regFrame
     psl->ThumbEmitStoreRegIndirect(regFrame, regThread, offsetof(Thread, m_pFrame));
 
     // leave current Thread in R4
 
-#ifdef TARGET_UNIX
     psl->ThumbEmitEpilog();
-#else
-    // Return. The return address has been restored into LR at this point.
-    // bx lr
-    psl->ThumbEmitJumpRegister(thumbRegLr);
-#endif
 
     // A single process-wide stub that will never unload
     RETURN psl->Link(SystemDomain::GetGlobalLoaderAllocator()->GetStubHeap());
@@ -1345,8 +1185,6 @@ Stub *GenerateInitPInvokeFrameHelper()
 
 void StubLinkerCPU::ThumbEmitGetThread(ThumbReg dest)
 {
-#ifdef TARGET_UNIX
-
     ThumbEmitMovConstant(ThumbReg(0), (TADDR)GetThreadHelper);
 
     ThumbEmitCallRegister(ThumbReg(0));
@@ -1355,20 +1193,6 @@ void StubLinkerCPU::ThumbEmitGetThread(ThumbReg dest)
     {
         ThumbEmitMovRegReg(dest, ThumbReg(0));
     }
-
-#else // TARGET_UNIX
-
-    // mrc p15, 0, dest, c13, c0, 2
-    Emit16(0xee1d);
-    Emit16((WORD)(0x0f50 | (dest << 12)));
-
-    ThumbEmitLoadRegIndirect(dest, dest, offsetof(TEB, ThreadLocalStoragePointer));
-
-    ThumbEmitLoadRegIndirect(dest, dest, sizeof(void *) * _tls_index);
-
-    ThumbEmitLoadRegIndirect(dest, dest, (int)Thread::GetOffsetOfThreadStatic(&gCurrentThreadInfo));
-
-#endif // TARGET_UNIX
 }
 
 
@@ -1442,7 +1266,7 @@ VOID StubLinkerCPU::EmitShuffleThunk(ShuffleEntry *pShuffleEntryArray)
     // reserved our one remaining volatile register, r12, to store the eventual target method address. So
     // we're going to generate a hybrid-tail call. Using a tail call has the advantage that we don't need to
     // erect and link an explicit CLR frame to enable crawling of this thunk. Additionally re-writing the
-    // stack can be more peformant in some scenarios than copying the stack (in the presence of floating point
+    // stack can be more performant in some scenarios than copying the stack (in the presence of floating point
     // or arguments requieing 64-bit alignment we might not have to move some or even most of the values).
     // The hybrid nature is that we'll erect a standard native frame (with a proper prolog and epilog) so we
     // can save some non-volatile registers to act as temporaries. Once we've performed the stack re-write
@@ -1504,7 +1328,9 @@ VOID StubLinkerCPU::EmitShuffleThunk(ShuffleEntry *pShuffleEntryArray)
             DWORD dwSrcIndex = pEntry->srcofs & ShuffleEntry::OFSMASK;
             if (dwSrcIndex != (dwLastSrcIndex + 1))
             {
-                _ASSERTE(dwSrcIndex > dwLastSrcIndex);
+                // If the gap is at the very beginning, then dwLastSrcIndex is still -1, so we need to allow
+                // for that. Note that the calculation below handles this properly, due to DWORD wrapping.
+                _ASSERTE((dwLastSrcIndex == (DWORD)-1) || (dwSrcIndex > dwLastSrcIndex));
 
                 // add r4, #gap_size
                 ThumbEmitIncrement(ThumbReg(4), (dwSrcIndex - dwLastSrcIndex - 1) * 4);
@@ -1528,7 +1354,9 @@ VOID StubLinkerCPU::EmitShuffleThunk(ShuffleEntry *pShuffleEntryArray)
                 DWORD dwDstIndex = pEntry->dstofs & ShuffleEntry::OFSMASK;
                 if (dwDstIndex != (dwLastDstIndex + 1))
                 {
-                    _ASSERTE(dwDstIndex > dwLastDstIndex);
+                    // If the gap is at the very beginning, then dwLastDstIndex is still -1, so we need to allow
+                    // for that. Note that the calculation below handles this properly, due to DWORD wrapping.
+                    _ASSERTE((dwLastDstIndex == (DWORD)-1) || (dwDstIndex > dwLastDstIndex));
 
                     // add r5, #gap_size
                     ThumbEmitIncrement(ThumbReg(5), (dwDstIndex - dwLastDstIndex - 1) * 4);
@@ -1634,6 +1462,7 @@ VOID StubLinkerCPU::EmitComputedInstantiatingMethodStub(MethodDesc* pSharedMD, s
     }
 
     ThumbEmitTailCallManagedMethod(pSharedMD);
+    SetTargetMethod(pSharedMD);
 }
 
 
@@ -1756,6 +1585,7 @@ void InlinedCallFrame::UpdateRegDisplay(const PREGDISPLAY pRD)
     pRD->pContext = NULL;
 
     *(pRD->pPC) = m_pCallerReturnAddress;
+    pRD->ControlPC = m_pCallerReturnAddress;
     pRD->SP = (DWORD) dac_cast<TADDR>(m_pCallSiteSP);
 
     pRD->IsCallerContextValid = FALSE;
@@ -1950,34 +1780,6 @@ VOID ResetCurrentContext()
 }
 #endif // !DACCESS_COMPILE
 
-
-#ifdef FEATURE_COMINTEROP
-void emitCOMStubCall (ComCallMethodDesc *pCOMMethodRX, ComCallMethodDesc *pCOMMethodRW, PCODE target)
-{
-    WRAPPER_NO_CONTRACT;
-
-    // mov r12, pc
-    // ldr pc, [pc, #0]
-    // dcd 0
-    // dcd target
-    WORD rgCode[] = {
-        0x46fc,
-        0xf8df, 0xf004
-    };
-
-    BYTE *pBufferRX = (BYTE*)pCOMMethodRX - COMMETHOD_CALL_PRESTUB_SIZE;
-    BYTE *pBufferRW = (BYTE*)pCOMMethodRW - COMMETHOD_CALL_PRESTUB_SIZE;
-
-    memcpy(pBufferRW, rgCode, sizeof(rgCode));
-    *((PCODE*)(pBufferRW + sizeof(rgCode) + 2)) = target;
-
-    // Ensure that the updated instructions get actually written
-    ClrFlushInstructionCache(pBufferRX, COMMETHOD_CALL_PRESTUB_SIZE);
-
-    _ASSERTE(IS_ALIGNED(pBufferRX + COMMETHOD_CALL_PRESTUB_ADDRESS_OFFSET, sizeof(void*)) &&
-             *((PCODE*)(pBufferRX + COMMETHOD_CALL_PRESTUB_ADDRESS_OFFSET)) == target);
-}
-#endif // FEATURE_COMINTEROP
 
 void MovRegImm(BYTE* p, int reg, TADDR imm)
 {

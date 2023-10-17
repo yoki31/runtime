@@ -8,7 +8,7 @@ using Microsoft.Win32.SafeHandles;
 
 namespace System.Security.Cryptography
 {
-    public partial class ECDsa : AsymmetricAlgorithm
+    public partial class ECDsa : ECAlgorithm
     {
         /// <summary>
         /// Creates an instance of the platform specific implementation of the cref="ECDsa" algorithm.
@@ -37,7 +37,7 @@ namespace System.Security.Cryptography
         /// </param>
         public static partial ECDsa Create(ECParameters parameters)
         {
-            ECDsa ec = new ECDsaImplementation.ECDsaAndroid();
+            var ec = new ECDsaImplementation.ECDsaAndroid();
             ec.ImportParameters(parameters);
             return ec;
         }

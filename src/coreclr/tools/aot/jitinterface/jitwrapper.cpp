@@ -5,8 +5,10 @@
 #include <stdlib.h>
 #include <stdint.h>
 
+#include <minipal/cpufeatures.h>
+
 #include "dllexport.h"
-#include "jitinterface.h"
+#include "jitinterface_generated.h"
 
 DLL_EXPORT int JitCompileMethod(
     CorInfoExceptionClass **ppException,
@@ -25,8 +27,6 @@ DLL_EXPORT int JitCompileMethod(
     if (memcmp(&versionId, &JITEEVersionIdentifier, sizeof(GUID)) != 0)
     {
         // JIT and the compiler disagree on how the interface looks like.
-        // Either get a matching version of the JIT from the CoreCLR repo or update the interface
-        // on the CoreRT side. Under no circumstances should you comment this line out.
         return 1;
     }
 
@@ -53,9 +53,7 @@ DLL_EXPORT void JitProcessShutdownWork(ICorJitCompiler * pJit)
     return pJit->ProcessShutdownWork(nullptr);
 }
 
-DLL_EXPORT unsigned GetMaxIntrinsicSIMDVectorLength(
-    ICorJitCompiler * pJit,
-    CORJIT_FLAGS * flags)
+DLL_EXPORT int JitGetProcessorFeatures()
 {
-    return pJit->getMaxIntrinsicSIMDVectorLength(*flags);
+    return minipal_getcpufeatures();
 }

@@ -10,6 +10,14 @@ namespace System.Security.Cryptography
     {
         private const int BitsPerByte = 8;
 
+        public DesImplementation()
+        {
+            // Default CFB to CFB8. .NET Framework uses 8 as the default for DESCryptoServiceProvider which
+            // was used for DES.Create(), and .NET doesn't support anything other than 8 for the feedback size for DES,
+            // so also default it to the only value that works.
+            FeedbackSizeValue = 8;
+        }
+
         public override ICryptoTransform CreateDecryptor()
         {
             return CreateTransform(Key, IV, encrypting: false);
@@ -47,12 +55,11 @@ namespace System.Security.Cryptography
             KeyValue = key;
         }
 
-        private ICryptoTransform CreateTransform(byte[] rgbKey, byte[]? rgbIV, bool encrypting)
+        private UniversalCryptoTransform CreateTransform(byte[] rgbKey, byte[]? rgbIV, bool encrypting)
         {
-            // note: rgbIV is guaranteed to be cloned before this method, so no need to clone it again
+            ArgumentNullException.ThrowIfNull(rgbKey);
 
-            if (rgbKey == null)
-                throw new ArgumentNullException(nameof(rgbKey));
+            // note: rgbIV is guaranteed to be cloned before this method, so no need to clone it again
 
             long keySize = rgbKey.Length * (long)BitsPerByte;
             if (keySize > int.MaxValue || !((int)keySize).IsLegalSize(LegalKeySizes))
@@ -94,7 +101,6 @@ namespace System.Security.Cryptography
         {
             ILiteSymmetricCipher cipher = CreateLiteCipher(
                 CipherMode.ECB,
-                paddingMode,
                 Key,
                 iv: null,
                 blockSize: BlockSize / BitsPerByte,
@@ -116,7 +122,6 @@ namespace System.Security.Cryptography
         {
             ILiteSymmetricCipher cipher = CreateLiteCipher(
                 CipherMode.ECB,
-                paddingMode,
                 Key,
                 iv: null,
                 blockSize: BlockSize / BitsPerByte,
@@ -139,7 +144,6 @@ namespace System.Security.Cryptography
         {
             ILiteSymmetricCipher cipher = CreateLiteCipher(
                 CipherMode.CBC,
-                paddingMode,
                 Key,
                 iv,
                 blockSize: BlockSize / BitsPerByte,
@@ -162,7 +166,6 @@ namespace System.Security.Cryptography
         {
             ILiteSymmetricCipher cipher = CreateLiteCipher(
                 CipherMode.CBC,
-                paddingMode,
                 Key,
                 iv,
                 blockSize: BlockSize / BitsPerByte,
@@ -188,7 +191,6 @@ namespace System.Security.Cryptography
 
             ILiteSymmetricCipher cipher = CreateLiteCipher(
                 CipherMode.CFB,
-                paddingMode,
                 Key,
                 iv,
                 blockSize: BlockSize / BitsPerByte,
@@ -214,7 +216,6 @@ namespace System.Security.Cryptography
 
             ILiteSymmetricCipher cipher = CreateLiteCipher(
                 CipherMode.CFB,
-                paddingMode,
                 Key,
                 iv,
                 blockSize: BlockSize / BitsPerByte,
@@ -233,7 +234,7 @@ namespace System.Security.Cryptography
             // only 8bits feedback is available on all platforms
             if (feedback != 8)
             {
-                throw new CryptographicException(string.Format(SR.Cryptography_CipherModeFeedbackNotSupported, feedback, CipherMode.CFB));
+                throw new CryptographicException(SR.Format(SR.Cryptography_CipherModeFeedbackNotSupported, feedback, CipherMode.CFB));
             }
         }
     }

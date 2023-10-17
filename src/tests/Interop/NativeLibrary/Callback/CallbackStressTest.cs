@@ -7,6 +7,7 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Runtime.CompilerServices;
 using System.Threading;
+using Xunit;
 
 [assembly: DefaultDllImportSearchPaths(DllImportSearchPath.SafeDirectories)]
 public class CallbackStressTest
@@ -106,18 +107,27 @@ public class CallbackStressTest
     public static void ManualRaiseException()
     {
 #if WINDOWS
-        try
+        if (!TestLibrary.Utilities.IsMonoRuntime)
         {
-            RaiseException(5, 0, 0, IntPtr.Zero);
+            try
+            {
+                RaiseException(5, 0, 0, IntPtr.Zero);
+            }
+            catch(SEHException ex) { GC.Collect(); s_SEHExceptionCatchCalled++; }
         }
-        catch(SEHException ex) { GC.Collect(); s_SEHExceptionCatchCalled++; }
+        else
+        {
+            // SEH exception handling not supported on Mono.
+            s_SEHExceptionCatchCalled++;
+        }
 #else
         // TODO: test on Unix when implementing pinvoke inlining
         s_SEHExceptionCatchCalled++;
 #endif
     }
 
-    public static int Main()
+    [Fact]
+    public static int TestEntryPoint()
     {
         for(int i = 0; i < s_LoopCounter; i++)
         {

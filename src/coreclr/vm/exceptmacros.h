@@ -116,10 +116,16 @@ struct _EXCEPTION_REGISTRATION_RECORD;
 class Thread;
 class Frame;
 class Exception;
+struct REGDISPLAY;
+
+#ifdef FEATURE_EH_FUNCLETS
+struct ExInfo;
+#endif
 
 VOID DECLSPEC_NORETURN RealCOMPlusThrowOM();
 
 #include <excepcpu.h>
+#include <runtimeexceptionkind.h>
 
 //==========================================================================
 // Macros to allow catching exceptions from within the EE. These are lightweight
@@ -182,7 +188,7 @@ VOID DECLSPEC_NORETURN RealCOMPlusThrowOM();
 
 
 //==========================================================================
-// Helpful macros to declare exception handlers, their implementaiton,
+// Helpful macros to declare exception handlers, their implementation,
 // and to call them.
 //==========================================================================
 
@@ -240,7 +246,16 @@ VOID DECLSPEC_NORETURN RealCOMPlusThrowOM();
 
 #endif // !defined(FEATURE_EH_FUNCLETS)
 
-LONG WINAPI CLRVectoredExceptionHandler(PEXCEPTION_POINTERS pExceptionInfo);
+enum VEH_ACTION
+{
+    VEH_NO_ACTION = -3,
+    VEH_EXECUTE_HANDLE_MANAGED_EXCEPTION = -2,
+    VEH_CONTINUE_EXECUTION = EXCEPTION_CONTINUE_EXECUTION,
+    VEH_CONTINUE_SEARCH = EXCEPTION_CONTINUE_SEARCH,
+    VEH_EXECUTE_HANDLER = EXCEPTION_EXECUTE_HANDLER
+};
+
+VEH_ACTION CLRVectoredExceptionHandler(PEXCEPTION_POINTERS pExceptionInfo);
 
 // Actual UEF worker prototype for use by GCUnhandledExceptionFilter.
 extern LONG InternalUnhandledExceptionFilter_Worker(PEXCEPTION_POINTERS pExceptionInfo);
@@ -252,12 +267,12 @@ VOID DECLSPEC_NORETURN RaiseTheExceptionInternalOnly(OBJECTREF throwable, BOOL r
 #define INSTALL_UNWIND_AND_CONTINUE_HANDLER
 #define UNINSTALL_UNWIND_AND_CONTINUE_HANDLER
 
-#define INSTALL_UNWIND_AND_CONTINUE_HANDLER_NO_PROBE
-#define UNINSTALL_UNWIND_AND_CONTINUE_HANDLER_NO_PROBE
+#define INSTALL_UNWIND_AND_CONTINUE_HANDLER_EX
+#define UNINSTALL_UNWIND_AND_CONTINUE_HANDLER_EX
 #else // DACCESS_COMPILE
 
 void UnwindAndContinueRethrowHelperInsideCatch(Frame* pEntryFrame, Exception* pException);
-VOID DECLSPEC_NORETURN UnwindAndContinueRethrowHelperAfterCatch(Frame* pEntryFrame, Exception* pException);
+VOID DECLSPEC_NORETURN UnwindAndContinueRethrowHelperAfterCatch(Frame* pEntryFrame, Exception* pException, bool nativeRethrow);
 
 #ifdef TARGET_UNIX
 VOID DECLSPEC_NORETURN DispatchManagedException(PAL_SEHException& ex, bool isHardwareException);
@@ -301,24 +316,25 @@ VOID DECLSPEC_NORETURN DispatchManagedException(PAL_SEHException& ex, bool isHar
 
 #define INSTALL_MANAGED_EXCEPTION_DISPATCHER
 #define UNINSTALL_MANAGED_EXCEPTION_DISPATCHER
+
 #define INSTALL_UNHANDLED_MANAGED_EXCEPTION_TRAP
 #define UNINSTALL_UNHANDLED_MANAGED_EXCEPTION_TRAP
 
 #endif // TARGET_UNIX
 
-#define INSTALL_UNWIND_AND_CONTINUE_HANDLER_NO_PROBE                                        \
+#define INSTALL_UNWIND_AND_CONTINUE_HANDLER_EX                                        \
     {                                                                                       \
         MAKE_CURRENT_THREAD_AVAILABLE();                                                    \
         Exception* __pUnCException  = NULL;                                                 \
         Frame*     __pUnCEntryFrame = CURRENT_THREAD->GetFrame();                           \
-        bool       __fExceptionCatched = false;                                             \
+        bool       __fExceptionCaught = false;                                             \
         SCAN_EHMARKER();                                                                    \
         if (true) PAL_CPP_TRY {                                                             \
             SCAN_EHMARKER_TRY();                                                            \
             DEBUG_ASSURE_NO_RETURN_BEGIN(IUACH)
 
 #define INSTALL_UNWIND_AND_CONTINUE_HANDLER                                                 \
-    INSTALL_UNWIND_AND_CONTINUE_HANDLER_NO_PROBE                                            \
+    INSTALL_UNWIND_AND_CONTINUE_HANDLER_EX                                            \
     /* The purpose of the INSTALL_UNWIND_AND_CONTINUE_HANDLER is to translate an exception to a managed */ \
     /* exception before it hits managed code. */
 
@@ -327,13 +343,13 @@ VOID DECLSPEC_NORETURN DispatchManagedException(PAL_SEHException& ex, bool isHar
     {                                                                                       \
         Exception* __pUnCException  = NULL;                                                 \
         Frame*     __pUnCEntryFrame = (pHelperFrame);                                       \
-        bool       __fExceptionCatched = false;                                             \
+        bool       __fExceptionCaught = false;                                             \
         SCAN_EHMARKER();                                                                    \
         if (true) PAL_CPP_TRY {                                                             \
             SCAN_EHMARKER_TRY();                                                            \
             DEBUG_ASSURE_NO_RETURN_BEGIN(IUACH);
 
-#define UNINSTALL_UNWIND_AND_CONTINUE_HANDLER_NO_PROBE                                      \
+#define UNINSTALL_UNWIND_AND_CONTINUE_HANDLER_EX(nativeRethrow)                      \
             DEBUG_ASSURE_NO_RETURN_END(IUACH)                                               \
             SCAN_EHMARKER_END_TRY();                                                        \
         }                                                                                   \
@@ -343,19 +359,19 @@ VOID DECLSPEC_NORETURN DispatchManagedException(PAL_SEHException& ex, bool isHar
             CONSISTENCY_CHECK(NULL != __pException);                                        \
             __pUnCException = __pException;                                                 \
             UnwindAndContinueRethrowHelperInsideCatch(__pUnCEntryFrame, __pUnCException);   \
-            __fExceptionCatched = true;                                                     \
+            __fExceptionCaught = true;                                                     \
             SCAN_EHMARKER_END_CATCH();                                                      \
         }                                                                                   \
         PAL_CPP_ENDTRY                                                                      \
-        if (__fExceptionCatched)                                                            \
+        if (__fExceptionCaught)                                                            \
         {                                                                                   \
             SCAN_EHMARKER_CATCH();                                                          \
-            UnwindAndContinueRethrowHelperAfterCatch(__pUnCEntryFrame, __pUnCException);    \
+            UnwindAndContinueRethrowHelperAfterCatch(__pUnCEntryFrame, __pUnCException, nativeRethrow);    \
         }                                                                                   \
     }                                                                                       \
 
 #define UNINSTALL_UNWIND_AND_CONTINUE_HANDLER                                               \
-    UNINSTALL_UNWIND_AND_CONTINUE_HANDLER_NO_PROBE;
+    UNINSTALL_UNWIND_AND_CONTINUE_HANDLER_EX(false);
 
 #endif // DACCESS_COMPILE
 
@@ -502,11 +518,11 @@ LPCWSTR GetPathForErrorMessagesT(T *pImgObj)
     }
 }
 
-VOID ThrowBadFormatWorker(UINT resID, LPCWSTR imageName DEBUGARG(__in_z const char *cond));
+VOID ThrowBadFormatWorker(UINT resID, LPCWSTR imageName DEBUGARG(_In_z_ const char *cond));
 
 template <typename T>
 NOINLINE
-VOID ThrowBadFormatWorkerT(UINT resID, T * pImgObj DEBUGARG(__in_z const char *cond))
+VOID ThrowBadFormatWorkerT(UINT resID, T * pImgObj DEBUGARG(_In_z_ const char *cond))
 {
 #ifdef DACCESS_COMPILE
     ThrowBadFormatWorker(resID, nullptr DEBUGARG(cond));

@@ -7,12 +7,13 @@ using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
-using Internal.Runtime.CompilerServices;
 
 namespace System.Reflection
 {
     public abstract partial class MethodBase : MemberInfo
     {
+        internal const int MaxStackAllocArgCount = 4;
+
         protected MethodBase() { }
 
         public abstract ParameterInfo[] GetParameters();
@@ -71,12 +72,11 @@ namespace System.Reflection
             // so it can become a simple test
             if (right is null)
             {
-                // return true/false not the test result https://github.com/dotnet/runtime/issues/4207
-                return (left is null) ? true : false;
+                return left is null;
             }
 
             // Try fast reference equality and opposite null check prior to calling the slower virtual Equals
-            if ((object?)left == (object)right)
+            if (ReferenceEquals(left, right))
             {
                 return true;
             }
@@ -123,73 +123,124 @@ namespace System.Reflection
             }
         }
 
-        private protected void ValidateInvokeTarget(object? target)
+        internal virtual Type[] GetParameterTypes()
         {
-            // Confirm member invocation has an instance and is of the correct type
-            if (!IsStatic)
+            ReadOnlySpan<ParameterInfo> paramInfo = GetParametersAsSpan();
+            if (paramInfo.Length == 0)
             {
-                if (target == null)
-                {
-                    throw new TargetException(SR.RFLCT_Targ_StatMethReqTarg);
-                }
-
-                if (!DeclaringType!.IsInstanceOfType(target))
-                {
-                    throw new TargetException(SR.RFLCT_Targ_ITargMismatch);
-                }
+                return Type.EmptyTypes;
             }
+
+            Type[] parameterTypes = new Type[paramInfo.Length];
+            for (int i = 0; i < paramInfo.Length; i++)
+                parameterTypes[i] = paramInfo[i].ParameterType;
+
+            return parameterTypes;
         }
 
-        private protected Span<object?> CheckArguments(ref StackAllocedArguments stackArgs, ReadOnlySpan<object?> parameters, Binder? binder,
-            BindingFlags invokeAttr, CultureInfo? culture, RuntimeType[] sigTypes)
+#if !NATIVEAOT
+        internal static object? HandleTypeMissing(ParameterInfo paramInfo, RuntimeType sigType)
         {
-            Debug.Assert(Unsafe.SizeOf<StackAllocedArguments>() == StackAllocedArguments.MaxStackAllocArgCount * Unsafe.SizeOf<object>(),
-                "MaxStackAllocArgCount not properly defined.");
-            Debug.Assert(!parameters.IsEmpty);
-
-            // We need to perform type safety validation against the incoming arguments, but we also need
-            // to be resilient against the possibility that some other thread (or even the binder itself!)
-            // may mutate the array after we've validated the arguments but before we've properly invoked
-            // the method. The solution is to copy the arguments to a different, not-user-visible buffer
-            // as we validate them. n.b. This disallows use of ArrayPool, as ArrayPool-rented arrays are
-            // considered user-visible to threads which may still be holding on to returned instances.
-
-            Span<object?> copyOfParameters = (parameters.Length <= StackAllocedArguments.MaxStackAllocArgCount)
-                    ? MemoryMarshal.CreateSpan(ref stackArgs._arg0, parameters.Length)
-                    : new Span<object?>(new object?[parameters.Length]);
-
-            ParameterInfo[]? p = null;
-            for (int i = 0; i < parameters.Length; i++)
+            if (paramInfo.DefaultValue == DBNull.Value)
             {
-                object? arg = parameters[i];
-                RuntimeType argRT = sigTypes[i];
-
-                if (arg == Type.Missing)
-                {
-                    p ??= GetParametersNoCopy();
-                    if (p[i].DefaultValue == System.DBNull.Value)
-                        throw new ArgumentException(SR.Arg_VarMissNull, nameof(parameters));
-                    arg = p[i].DefaultValue!;
-                }
-                copyOfParameters[i] = argRT.CheckValue(arg, binder, culture, invokeAttr);
+                throw new ArgumentException(SR.Arg_VarMissNull, "parameters");
             }
 
-            return copyOfParameters;
+            object? arg = paramInfo.DefaultValue;
+
+            if (sigType.IsNullableOfT)
+            {
+                if (arg is not null)
+                {
+                    // For nullable Enum types, the ParameterInfo.DefaultValue returns a raw value which
+                    // needs to be parsed to the Enum type, for more info: https://github.com/dotnet/runtime/issues/12924
+                    Type argumentType = sigType.GetGenericArguments()[0];
+                    if (argumentType.IsEnum)
+                    {
+                        arg = Enum.ToObject(argumentType, arg);
+                    }
+                }
+            }
+
+            return arg;
+        }
+
+        [Flags]
+        internal enum InvokerStrategy : int
+        {
+            HasBeenInvoked_ObjSpanArgs = 0x1,
+            StrategyDetermined_ObjSpanArgs = 0x2,
+
+            HasBeenInvoked_Obj4Args = 0x4,
+            StrategyDetermined_Obj4Args = 0x8,
+
+            HasBeenInvoked_RefArgs = 0x10,
+            StrategyDetermined_RefArgs = 0x20,
+        }
+
+        [Flags]
+        internal enum InvokerArgFlags : int
+        {
+            IsValueType = 0x1,
+            IsValueType_ByRef_Or_Pointer = 0x2,
+            IsNullableOfT = 0x4,
+        }
+
+        [InlineArray(MaxStackAllocArgCount)]
+        internal struct ArgumentData<T>
+        {
+            private T _arg0;
+
+            [UnscopedRef]
+            public Span<T> AsSpan(int length)
+            {
+                Debug.Assert((uint)length <= MaxStackAllocArgCount);
+                return new Span<T>(ref _arg0, length);
+            }
+
+            public void Set(int index, T value)
+            {
+                Debug.Assert((uint)index < MaxStackAllocArgCount);
+                Unsafe.Add(ref _arg0, index) = value;
+            }
         }
 
         // Helper struct to avoid intermediate object[] allocation in calls to the native reflection stack.
-        // Typical usage is to define a local of type default(StackAllocedArguments), then pass 'ref theLocal'
-        // as the first parameter to CheckArguments. CheckArguments will try to utilize storage within this
-        // struct instance if there's sufficient space; otherwise CheckArguments will allocate a temp array.
-        private protected struct StackAllocedArguments
+        // When argument count <= MaxStackAllocArgCount, define a local of these helper structs.
+        // For argument count > MaxStackAllocArgCount, do a stackalloc of void* pointers along with
+        // GCReportingRegistration to safely track references.
+        [StructLayout(LayoutKind.Sequential)]
+        internal ref struct StackAllocatedArguments
         {
-            internal const int MaxStackAllocArgCount = 4;
-            internal object? _arg0;
-#pragma warning disable CA1823, CS0169, IDE0051 // accessed via 'CheckArguments' ref arithmetic
-            private object? _arg1;
-            private object? _arg2;
-            private object? _arg3;
-#pragma warning restore CA1823, CS0169, IDE0051
+            public StackAllocatedArguments(object? obj1, object? obj2, object? obj3, object? obj4)
+            {
+                _args.Set(0, obj1);
+                _args.Set(1, obj2);
+                _args.Set(2, obj3);
+                _args.Set(3, obj4);
+            }
+
+            internal ArgumentData<object?> _args;
         }
+
+        [StructLayout(LayoutKind.Sequential)]
+        internal ref struct StackAllocatedArgumentsWithCopyBack
+        {
+            internal ArgumentData<object?> _args;
+            internal ArgumentData<bool> _shouldCopyBack;
+        }
+
+        // Helper struct to avoid intermediate IntPtr[] allocation and RegisterForGCReporting in calls to the native reflection stack.
+        [InlineArray(MaxStackAllocArgCount)]
+        internal ref struct StackAllocatedByRefs
+        {
+            // We're intentionally taking advantage of the runtime functionality, even if the language functionality won't work
+            // CS9184: 'Inline arrays' language feature is not supported for inline array types with element field which is either a 'ref' field, or has type that is not valid as a type argument.
+
+#pragma warning disable CS9184
+            internal ref byte _arg0;
+#pragma warning restore CS9184
+        }
+#endif
     }
 }

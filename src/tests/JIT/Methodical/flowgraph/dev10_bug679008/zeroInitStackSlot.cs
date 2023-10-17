@@ -8,7 +8,10 @@
 
 using System;
 using System.Runtime.CompilerServices;
+using Xunit;
 
+namespace Test_zeroInitStackSlot_cs
+{
 internal struct SqlBinary
 {
     private byte[] _value;
@@ -29,12 +32,12 @@ internal class WarehouseResultDatabase : IDisposable
 
 internal delegate bool WarehouseRowVersionQueryDelegate(WarehouseResultDatabase database, SqlBinary waterMark);
 
-internal class Repro
+public class Repro
 {
-    private static int Main()
+    [Fact]
+    public static void TestEntryPoint()
     {
         new Repro().ProcessResults(Query);
-        return 100;
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]
@@ -64,4 +67,5 @@ internal class Repro
             moreDataAvailable = result;
         }
     }
+}
 }

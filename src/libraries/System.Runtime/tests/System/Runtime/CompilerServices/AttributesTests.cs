@@ -48,6 +48,14 @@ namespace System.Runtime.CompilerServices.Tests
         }
 
         [Fact]
+        public static void CollectionBuilderAttributeTests()
+        {
+            var attr = new CollectionBuilderAttribute(typeof(AttributesTests), "Create");
+            Assert.Same(typeof(AttributesTests), attr.BuilderType);
+            Assert.Equal("Create", attr.MethodName);
+        }
+
+        [Fact]
         public static void CompilationRelaxationsAttributeTests()
         {
             var attr1 = new CompilationRelaxationsAttribute(42);
@@ -193,6 +201,41 @@ namespace System.Runtime.CompilerServices.Tests
         }
 
         [Fact]
+        public static void NullableAttributeTests()
+        {
+            var attr = new NullableAttribute(42);
+            Assert.Equal(new byte[] { 42 }, attr.NullableFlags);
+
+            attr = new NullableAttribute(new byte[] { 1, 2, 3 });
+            Assert.Equal(new byte[] { 1, 2, 3 }, attr.NullableFlags);
+        }
+
+        [Fact]
+        public static void NullableContextAttributeTests()
+        {
+            var attr = new NullableContextAttribute(42);
+            Assert.Equal(42, attr.Flag);
+        }
+
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public static void NullablePublicOnlyAttributeTests(bool includeInternals)
+        {
+            var attr = new NullablePublicOnlyAttribute(includeInternals);
+            Assert.Equal(includeInternals, attr.IncludesInternals);
+        }
+
+        [Theory]
+        [InlineData(-1)]
+        [InlineData(42)]
+        public static void RefSafetyRulesAttributeTests(int version)
+        {
+            var attr = new RefSafetyRulesAttribute(version);
+            Assert.Equal(version, attr.Version);
+        }
+
+        [Fact]
         public static void ReferenceAssemblyAttributeTests()
         {
             var attr1 = new ReferenceAssemblyAttribute(null);
@@ -249,7 +292,7 @@ namespace System.Runtime.CompilerServices.Tests
             Assert.Equal(assemblyFullName, attr.AssemblyFullName);
 
             AssertExtensions.Throws<ArgumentNullException>("assemblyFullName", () => new TypeForwardedFromAttribute(null));
-            AssertExtensions.Throws<ArgumentNullException>("assemblyFullName", () => new TypeForwardedFromAttribute(""));
+            AssertExtensions.Throws<ArgumentException>("assemblyFullName", () => new TypeForwardedFromAttribute(""));
         }
 
         [Fact]
@@ -291,6 +334,12 @@ namespace System.Runtime.CompilerServices.Tests
         }
 
         [Fact]
+        public static void IsUnmanagedAttributeTests()
+        {
+            new IsUnmanagedAttribute();
+        }
+
+        [Fact]
         public static void EnumeratorCancellationAttributeTests()
         {
             new EnumeratorCancellationAttribute();
@@ -319,6 +368,36 @@ namespace System.Runtime.CompilerServices.Tests
             Assert.Same(arguments, attr2.Arguments);
             Assert.Equal(firstParameterName, attr2.Arguments[0]);
             Assert.Equal("param2", attr2.Arguments[1]);
+        }
+
+        [Fact]
+        public static void RequiredMemberAttributeTests()
+        {
+            new RequiredMemberAttribute();
+        }
+
+        [Fact]
+        public static void ScopedRefAttributeTests()
+        {
+            new ScopedRefAttribute();
+        }
+
+        [Fact]
+        public static void CompilerFeatureRequiredTests()
+        {
+            var attr1 = new CompilerFeatureRequiredAttribute("feature1");
+            Assert.Equal("feature1", attr1.FeatureName);
+            Assert.False(attr1.IsOptional);
+
+            var attr2 = new CompilerFeatureRequiredAttribute("feature2") { IsOptional = true };
+            Assert.Equal("feature2", attr2.FeatureName);
+            Assert.True(attr2.IsOptional);
+        }
+
+        [Fact]
+        public static void RequiresLocationAttributeTests()
+        {
+            new RequiresLocationAttribute();
         }
     }
 }

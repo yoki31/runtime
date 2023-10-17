@@ -314,7 +314,7 @@ namespace System.Threading.Tasks.Tests
                         if (_postRunSyncAction == PostRunSyncAction.Wait)
                             _task.Wait(0);
                         if (_workloadType == WorkloadType.ThrowException)
-                            Assert.True(false, string.Format("expected failure is not propogated out of Wait"));
+                            Assert.True(false, string.Format("expected failure is not propagated out of Wait"));
                     }
                     catch (AggregateException ae)
                     {
@@ -524,6 +524,7 @@ namespace System.Threading.Tasks.Tests
         }
 
         [ConditionalFact(typeof(PlatformDetection), nameof(PlatformDetection.IsThreadingSupported))]
+        [ActiveIssue("https://github.com/dotnet/runtime/issues/89921", typeof(PlatformDetection), nameof(PlatformDetection.IsAlpine), nameof(PlatformDetection.IsMonoRuntime))]
         [OuterLoop]
         public static void TaskRunSyncTest15()
         {
@@ -541,6 +542,7 @@ namespace System.Threading.Tasks.Tests
         }
 
         [ConditionalFact(typeof(PlatformDetection), nameof(PlatformDetection.IsThreadingSupported))]
+        [ActiveIssue("https://github.com/dotnet/runtime/issues/89921", typeof(PlatformDetection), nameof(PlatformDetection.IsAlpine), nameof(PlatformDetection.IsMonoRuntime))]
         [OuterLoop]
         public static void TaskRunSyncTest17()
         {
@@ -550,6 +552,7 @@ namespace System.Threading.Tasks.Tests
         }
 
         [ConditionalFact(typeof(PlatformDetection), nameof(PlatformDetection.IsThreadingSupported))]
+        [ActiveIssue("https://github.com/dotnet/runtime/issues/89921", typeof(PlatformDetection), nameof(PlatformDetection.IsAlpine), nameof(PlatformDetection.IsMonoRuntime))]
         [OuterLoop]
         public static void TaskRunSyncTest18()
         {
@@ -558,6 +561,7 @@ namespace System.Threading.Tasks.Tests
             test.RealRun();
         }
         [ConditionalFact(typeof(PlatformDetection), nameof(PlatformDetection.IsThreadingSupported))]
+        [ActiveIssue("https://github.com/dotnet/runtime/issues/89921", typeof(PlatformDetection), nameof(PlatformDetection.IsAlpine), nameof(PlatformDetection.IsMonoRuntime))]
         [OuterLoop]
         public static void TaskRunSyncTest19()
         {
@@ -567,6 +571,7 @@ namespace System.Threading.Tasks.Tests
         }
 
         [ConditionalFact(typeof(PlatformDetection), nameof(PlatformDetection.IsThreadingSupported))]
+        [ActiveIssue("https://github.com/dotnet/runtime/issues/89921", typeof(PlatformDetection), nameof(PlatformDetection.IsAlpine), nameof(PlatformDetection.IsMonoRuntime))]
         [OuterLoop]
         public static void TaskRunSyncTest20()
         {
@@ -591,6 +596,7 @@ namespace System.Threading.Tasks.Tests
         }
 
         [ConditionalFact(typeof(PlatformDetection), nameof(PlatformDetection.IsThreadingSupported))]
+        [ActiveIssue("https://github.com/dotnet/runtime/issues/89921", typeof(PlatformDetection), nameof(PlatformDetection.IsAlpine), nameof(PlatformDetection.IsMonoRuntime))]
         [OuterLoop]
         public static void TaskRunSyncTest23()
         {

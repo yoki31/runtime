@@ -1,11 +1,6 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
-// ==++==
-//
-
-//
-// ==--==
 #include "unixasmmacros.inc"
 #include "asmconstants.h"
 
@@ -76,6 +71,7 @@ LOCAL_LABEL(LNoFloatingPoint):
         // Note that remoting expect target in r4.
         ldr     r4, [r5,#CallDescrData__pTarget]
         blx     r4
+LOCAL_LABEL(CallDescrWorkerInternalReturnAddress):
 
         ldr     r3, [r5,#CallDescrData__fpReturnSize]
 
@@ -130,6 +126,9 @@ LOCAL_LABEL(LReturnDone):
 
         EPILOG_STACK_RESTORE_OFFSET   r7, #8
         EPILOG_POP              "{r4,r5,r7,pc}"
+
+PATCH_LABEL CallDescrWorkerInternalReturnAddressOffset
+    .word LOCAL_LABEL(CallDescrWorkerInternalReturnAddress) - C_FUNC(CallDescrWorkerInternal)
 
         NESTED_END CallDescrWorkerInternal,_TEXT
 
@@ -262,29 +261,6 @@ ThePreStubPatchLabel:
         NESTED_END NDirectImportThunk, _TEXT
 
 // ------------------------------------------------------------------
-// The call in fixup precode initally points to this function.
-// The pupose of this function is to load the MethodDesc and forward the call the prestub.
-        NESTED_ENTRY PrecodeFixupThunk, _TEXT, NoHandler
-
-        // r12 = FixupPrecode *
-
-        PROLOG_PUSH     "{r0-r1}"
-
-        // Inline computation done by FixupPrecode::GetMethodDesc()
-        ldrb    r0, [r12, #3]           // m_PrecodeChunkIndex
-        ldrb    r1, [r12, #2]           // m_MethodDescChunkIndex
-
-        add     r12,r12,r0,lsl #3
-        add     r0,r12,r0,lsl #2
-        ldr     r0, [r0,#8]
-        add     r12,r0,r1,lsl #2
-
-        EPILOG_POP      "{r0-r1}"
-        b C_FUNC(ThePreStub)
-
-        NESTED_END PrecodeFixupThunk, _TEXT
-
-// ------------------------------------------------------------------
 // void ResolveWorkerAsmStub(r0, r1, r2, r3, r4:IndirectionCellAndFlags, r12:DispatchToken)
 //
 // The stub dispatch thunk which transfers control to VSD_ResolveWorker.
@@ -366,11 +342,8 @@ LEAF_ENTRY JIT_ProfilerEnterLeaveTailcallStub, _TEXT
     bx lr
 LEAF_END JIT_ProfilerEnterLeaveTailcallStub, _TEXT
 
-#define PROFILE_ENTER    1
-#define PROFILE_LEAVE    2
-#define PROFILE_TAILCALL 4
 // size of profiler data structure plus alignment padding
-#define SIZEOF__PROFILE_PLATFORM_SPECIFIC_DATA 104+4
+#define PADDED_SIZEOF__PROFILE_PLATFORM_SPECIFIC_DATA  SIZEOF__PROFILE_PLATFORM_SPECIFIC_DATA+4
 
 // typedef struct _PROFILE_PLATFORM_SPECIFIC_DATA
 // {
@@ -409,23 +382,23 @@ NESTED_ENTRY \helper\()Naked, _TEXT, NoHandler
     CHECK_STACK_ALIGNMENT
 
     // set the other args, starting with functionID
-    str         r0, [sp, #80]
+    str         r0, [sp, PROFILE_PLATFORM_SPECIFIC_DATA__functionId]
 
     // probeSp is the original sp when this stub was called
-    add         r2, sp, SIZEOF__PROFILE_PLATFORM_SPECIFIC_DATA+20
-    str         r2, [sp, #84] 
+    add         r2, sp, PADDED_SIZEOF__PROFILE_PLATFORM_SPECIFIC_DATA+20
+    str         r2, [sp, PROFILE_PLATFORM_SPECIFIC_DATA__probeSp]
 
     // get the address of the arguments from the frame pointer, store in profiledSp
     add         r2, r11, #8
-    str         r2, [sp, #88]
+    str         r2, [sp, PROFILE_PLATFORM_SPECIFIC_DATA__profiledSp]
 
     // clear hiddenArg
     movw        r2, #0
-    str         r2, [sp, #92]
+    str         r2, [sp, PROFILE_PLATFORM_SPECIFIC_DATA__hiddenArg]
     
     // set the flag to indicate what hook this is
     movw        r2, \flags
-    str         r2, [sp, #96]
+    str         r2, [sp, PROFILE_PLATFORM_SPECIFIC_DATA__flags]
 
     // sp is the address of PROFILE_PLATFORM_SPECIFIC_DATA, then call to C++
     mov         r1, sp
@@ -590,43 +563,6 @@ LOCAL_LABEL(stackProbe_loop):
     sub r4,sp,r12
     bx lr
     NESTED_END stackProbe, _TEXT
-
-//------------------------------------------------
-// ExternalMethodFixupStub
-//
-// In NGEN images, calls to cross-module external methods initially
-// point to a jump thunk that calls into the following function that will
-// call into a VM helper. The VM helper is responsible for patching up the
-// thunk, upon executing the precode, so that all subsequent calls go directly
-// to the actual method body.
-//
-// This is done lazily for performance reasons.
-//
-// On entry:
-//
-// R12 = Address of thunk + 4
-
-    NESTED_ENTRY ExternalMethodFixupStub, _TEXT, NoHandler
-
-    PROLOG_WITH_TRANSITION_BLOCK
-
-    add         r0, sp, #__PWTB_TransitionBlock // pTransitionBlock
-
-    // Adjust (read comment above for details) and pass the address of the thunk
-    sub         r1, r12, #4                     // pThunk
-
-    mov         r2, #0  // sectionIndex
-    mov         r3, #0  // pModule
-    bl          C_FUNC(ExternalMethodFixupWorker)
-
-    // mov the address we patched to in R12 so that we can tail call to it
-    mov         r12, r0
-
-    EPILOG_WITH_TRANSITION_BLOCK_TAILCALL
-    PATCH_LABEL ExternalMethodFixupPatchLabel
-    bx r12
-
-    NESTED_END ExternalMethodFixupStub, _TEXT
 
 //------------------------------------------------
 // JIT_RareDisableHelper
@@ -936,8 +872,8 @@ DelayLoad_MethodCall:
 
     EPILOG_WITH_TRANSITION_BLOCK_TAILCALL
 
-    // Share the patch label
-    b C_FUNC(ExternalMethodFixupPatchLabel)
+    PATCH_LABEL ExternalMethodFixupPatchLabel
+    bx r12
 
     NESTED_END DelayLoad_MethodCall_FakeProlog, _TEXT
 

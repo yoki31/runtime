@@ -10,7 +10,7 @@ namespace System.Security.Cryptography
     {
         public sealed partial class ECDiffieHellmanSecurityTransforms : ECDiffieHellman
         {
-            private readonly EccSecurityTransforms _ecc = new EccSecurityTransforms(nameof(ECDiffieHellman));
+            private readonly EccSecurityTransforms _ecc = new EccSecurityTransforms(typeof(ECDiffieHellman));
 
             public ECDiffieHellmanSecurityTransforms()
             {
@@ -27,18 +27,8 @@ namespace System.Security.Cryptography
                 KeySizeValue = _ecc.SetKeyAndGetSize(SecKeyPair.PublicPrivatePair(publicKey, privateKey));
             }
 
-            public override KeySizes[] LegalKeySizes
-            {
-                get
-                {
-                    // Return the three sizes that can be explicitly set (for backwards compatibility)
-                    return new[]
-                    {
-                        new KeySizes(minSize: 256, maxSize: 384, skipSize: 128),
-                        new KeySizes(minSize: 521, maxSize: 521, skipSize: 0),
-                    };
-                }
-            }
+            // Return the three sizes that can be explicitly set (for backwards compatibility)
+            public override KeySizes[] LegalKeySizes => s_defaultKeySizes.CloneKeySizesArray();
 
             public override int KeySize
             {
@@ -77,6 +67,11 @@ namespace System.Security.Cryptography
             public override ECParameters ExportParameters(bool includePrivateParameters)
             {
                 return _ecc.ExportParameters(includePrivateParameters, KeySize);
+            }
+
+            internal bool TryExportDataKeyParameters(bool includePrivateParameters, ref ECParameters ecParameters)
+            {
+                return _ecc.TryExportDataKeyParameters(includePrivateParameters, KeySize, ref ecParameters);
             }
 
             public override void ImportParameters(ECParameters parameters)
@@ -121,10 +116,8 @@ namespace System.Security.Cryptography
                 byte[]? secretPrepend,
                 byte[]? secretAppend)
             {
-                if (otherPartyPublicKey == null)
-                    throw new ArgumentNullException(nameof(otherPartyPublicKey));
-                if (string.IsNullOrEmpty(hashAlgorithm.Name))
-                    throw new ArgumentException(SR.Cryptography_HashAlgorithmNameNullOrEmpty, nameof(hashAlgorithm));
+                ArgumentNullException.ThrowIfNull(otherPartyPublicKey);
+                ArgumentException.ThrowIfNullOrEmpty(hashAlgorithm.Name, nameof(hashAlgorithm));
 
                 ThrowIfDisposed();
 
@@ -133,7 +126,7 @@ namespace System.Security.Cryptography
                     hashAlgorithm,
                     secretPrepend,
                     secretAppend,
-                    (pubKey, hasher) => DeriveSecretAgreement(pubKey, hasher));
+                    DeriveSecretAgreement);
             }
 
             public override byte[] DeriveKeyFromHmac(
@@ -143,10 +136,8 @@ namespace System.Security.Cryptography
                 byte[]? secretPrepend,
                 byte[]? secretAppend)
             {
-                if (otherPartyPublicKey == null)
-                    throw new ArgumentNullException(nameof(otherPartyPublicKey));
-                if (string.IsNullOrEmpty(hashAlgorithm.Name))
-                    throw new ArgumentException(SR.Cryptography_HashAlgorithmNameNullOrEmpty, nameof(hashAlgorithm));
+                ArgumentNullException.ThrowIfNull(otherPartyPublicKey);
+                ArgumentException.ThrowIfNullOrEmpty(hashAlgorithm.Name, nameof(hashAlgorithm));
 
                 ThrowIfDisposed();
 
@@ -156,18 +147,14 @@ namespace System.Security.Cryptography
                     hmacKey,
                     secretPrepend,
                     secretAppend,
-                    (pubKey, hasher) => DeriveSecretAgreement(pubKey, hasher));
+                    DeriveSecretAgreement);
             }
 
-            public override byte[] DeriveKeyTls(ECDiffieHellmanPublicKey otherPartyPublicKey, byte[] prfLabel,
-                byte[] prfSeed)
+            public override byte[] DeriveKeyTls(ECDiffieHellmanPublicKey otherPartyPublicKey, byte[] prfLabel, byte[] prfSeed)
             {
-                if (otherPartyPublicKey == null)
-                    throw new ArgumentNullException(nameof(otherPartyPublicKey));
-                if (prfLabel == null)
-                    throw new ArgumentNullException(nameof(prfLabel));
-                if (prfSeed == null)
-                    throw new ArgumentNullException(nameof(prfSeed));
+                ArgumentNullException.ThrowIfNull(otherPartyPublicKey);
+                ArgumentNullException.ThrowIfNull(prfLabel);
+                ArgumentNullException.ThrowIfNull(prfSeed);
 
                 ThrowIfDisposed();
 
@@ -175,7 +162,17 @@ namespace System.Security.Cryptography
                     otherPartyPublicKey,
                     prfLabel,
                     prfSeed,
-                    (pubKey, hasher) => DeriveSecretAgreement(pubKey, hasher));
+                    DeriveSecretAgreement);
+            }
+
+            public override byte[] DeriveRawSecretAgreement(ECDiffieHellmanPublicKey otherPartyPublicKey)
+            {
+                ArgumentNullException.ThrowIfNull(otherPartyPublicKey);
+                ThrowIfDisposed();
+
+                byte[]? secretAgreement = DeriveSecretAgreement(otherPartyPublicKey, hasher: null);
+                Debug.Assert(secretAgreement is not null);
+                return secretAgreement;
             }
 
             private byte[]? DeriveSecretAgreement(ECDiffieHellmanPublicKey otherPartyPublicKey, IncrementalHash? hasher)
@@ -251,16 +248,18 @@ namespace System.Security.Cryptography
 
             private sealed class ECDiffieHellmanSecurityTransformsPublicKey : ECDiffieHellmanPublicKey
             {
-                private EccSecurityTransforms _ecc;
+                private readonly EccSecurityTransforms _ecc;
 
                 public ECDiffieHellmanSecurityTransformsPublicKey(ECParameters ecParameters)
                 {
                     Debug.Assert(ecParameters.D == null);
-                    _ecc = new EccSecurityTransforms(nameof(ECDiffieHellmanPublicKey));
+                    _ecc = new EccSecurityTransforms(typeof(ECDiffieHellmanPublicKey));
                     _ecc.ImportParameters(ecParameters);
                 }
 
+#pragma warning disable 0672 // Member overrides an obsolete member.
                 public override string ToXmlString()
+#pragma warning restore 0672
                 {
                     throw new PlatformNotSupportedException();
                 }
@@ -269,7 +268,9 @@ namespace System.Security.Cryptography
                 /// There is no key blob format for OpenSSL ECDH like there is for Cng ECDH. Instead of allowing
                 /// this to return a potentially confusing empty byte array, we opt to throw instead.
                 /// </summary>
+#pragma warning disable 0672 // Member overrides an obsolete member.
                 public override byte[] ToByteArray()
+#pragma warning restore 0672
                 {
                     throw new PlatformNotSupportedException();
                 }

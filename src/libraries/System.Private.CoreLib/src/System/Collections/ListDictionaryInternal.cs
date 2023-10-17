@@ -1,23 +1,18 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
-/*============================================================
-**
-**
-**
-**
-**
-** Purpose: List for exceptions.
-**
-**
-===========================================================*/
+using System.Diagnostics;
+using System.Runtime.CompilerServices;
 
 namespace System.Collections
 {
-    ///    This is a simple implementation of IDictionary using a singly linked list. This
-    ///    will be smaller and faster than a Hashtable if the number of elements is 10 or less.
-    ///    This should not be used if performance is important for large numbers of elements.
+    /// <summary>
+    /// Implements <see cref="IDictionary"/> using a singly linked list.
+    /// Recommended for collections that typically include fewer than 10 items.
+    /// </summary>
+    [DebuggerDisplay("Count = {count}")]
+    [DebuggerTypeProxy(typeof(ListDictionaryInternalDebugView))]
     [Serializable]
-    [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
+    [TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     // Needs to be public to support binary serialization compatibility
     public class ListDictionaryInternal : IDictionary
     {
@@ -33,10 +28,8 @@ namespace System.Collections
         {
             get
             {
-                if (key == null)
-                {
-                    throw new ArgumentNullException(nameof(key), SR.ArgumentNull_Key);
-                }
+                ArgumentNullException.ThrowIfNull(key);
+
                 DictionaryNode? node = head;
 
                 while (node != null)
@@ -51,10 +44,7 @@ namespace System.Collections
             }
             set
             {
-                if (key == null)
-                {
-                    throw new ArgumentNullException(nameof(key), SR.ArgumentNull_Key);
-                }
+                ArgumentNullException.ThrowIfNull(key);
 
                 version++;
                 DictionaryNode? last = null;
@@ -105,10 +95,7 @@ namespace System.Collections
 
         public void Add(object key, object? value)
         {
-            if (key == null)
-            {
-                throw new ArgumentNullException(nameof(key), SR.ArgumentNull_Key);
-            }
+            ArgumentNullException.ThrowIfNull(key);
 
             version++;
             DictionaryNode? last = null;
@@ -145,10 +132,8 @@ namespace System.Collections
 
         public bool Contains(object key)
         {
-            if (key == null)
-            {
-                throw new ArgumentNullException(nameof(key), SR.ArgumentNull_Key);
-            }
+            ArgumentNullException.ThrowIfNull(key);
+
             for (DictionaryNode? node = head; node != null; node = node.next)
             {
                 if (node.key.Equals(key))
@@ -161,17 +146,15 @@ namespace System.Collections
 
         public void CopyTo(Array array, int index)
         {
-            if (array == null)
-                throw new ArgumentNullException(nameof(array));
+            ArgumentNullException.ThrowIfNull(array);
 
             if (array.Rank != 1)
                 throw new ArgumentException(SR.Arg_RankMultiDimNotSupported);
 
-            if (index < 0)
-                throw new ArgumentOutOfRangeException(nameof(index), SR.ArgumentOutOfRange_NeedNonNegNum);
+            ArgumentOutOfRangeException.ThrowIfNegative(index);
 
             if (array.Length - index < this.Count)
-                throw new ArgumentException(SR.ArgumentOutOfRange_Index, nameof(index));
+                throw new ArgumentException(SR.ArgumentOutOfRange_IndexMustBeLessOrEqual, nameof(index));
 
             for (DictionaryNode? node = head; node != null; node = node.next)
             {
@@ -192,10 +175,8 @@ namespace System.Collections
 
         public void Remove(object key)
         {
-            if (key == null)
-            {
-                throw new ArgumentNullException(nameof(key), SR.ArgumentNull_Key);
-            }
+            ArgumentNullException.ThrowIfNull(key);
+
             version++;
             DictionaryNode? last = null;
             DictionaryNode? node;
@@ -320,14 +301,13 @@ namespace System.Collections
 
             void ICollection.CopyTo(Array array, int index)
             {
-                if (array == null)
-                    throw new ArgumentNullException(nameof(array));
+                ArgumentNullException.ThrowIfNull(array);
+
                 if (array.Rank != 1)
                     throw new ArgumentException(SR.Arg_RankMultiDimNotSupported);
-                if (index < 0)
-                    throw new ArgumentOutOfRangeException(nameof(index), SR.ArgumentOutOfRange_NeedNonNegNum);
+                ArgumentOutOfRangeException.ThrowIfNegative(index);
                 if (array.Length - index < list.Count)
-                    throw new ArgumentException(SR.ArgumentOutOfRange_Index, nameof(index));
+                    throw new ArgumentException(SR.ArgumentOutOfRange_IndexMustBeLessOrEqual, nameof(index));
                 for (DictionaryNode? node = list.head; node != null; node = node.next)
                 {
                     array.SetValue(isKeys ? node.key : node.value, index);
@@ -425,6 +405,32 @@ namespace System.Collections
             public object key = null!;
             public object? value;
             public DictionaryNode? next;
+        }
+
+        private sealed class ListDictionaryInternalDebugView
+        {
+            private readonly ListDictionaryInternal _list;
+
+            public ListDictionaryInternalDebugView(ListDictionaryInternal list)
+            {
+                ArgumentNullException.ThrowIfNull(list);
+                _list = list;
+            }
+
+            [DebuggerBrowsable(DebuggerBrowsableState.RootHidden)]
+            public KeyValuePairs[] Items
+            {
+                get
+                {
+                    var array = new KeyValuePairs[_list.count];
+                    int index = 0;
+                    for (DictionaryNode? node = _list.head; node != null; node = node.next)
+                    {
+                        array[index++] = new KeyValuePairs(node.key, node.value);
+                    }
+                    return array;
+                }
+            }
         }
     }
 }

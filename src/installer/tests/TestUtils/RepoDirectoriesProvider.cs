@@ -7,21 +7,26 @@ using System.Linq;
 
 namespace Microsoft.DotNet.CoreSetup.Test
 {
-    public class RepoDirectoriesProvider
+    public sealed class RepoDirectoriesProvider
     {
+        public static readonly RepoDirectoriesProvider Default = new RepoDirectoriesProvider();
+
         public string BuildRID { get; }
         public string BuildArchitecture { get; }
         public string TargetRID { get; }
         public string MicrosoftNETCoreAppVersion { get; }
+        public string Tfm { get; }
         public string TestAssetsFolder { get; }
         public string Configuration { get; }
         public string RepoRoot { get; }
         public string BaseArtifactsFolder { get; }
         public string Artifacts { get; }
         public string HostArtifacts { get; }
+        public string HostTestArtifacts { get; }
         public string BuiltDotnet { get; }
         public string NugetPackages { get; }
         public string DotnetSDK { get; }
+        public string TestAssetsOutput { get; }
 
         private string _testContextVariableFilePath { get; }
         private ImmutableDictionary<string, string> _testContextVariables { get; }
@@ -47,13 +52,16 @@ namespace Microsoft.DotNet.CoreSetup.Test
             BuildRID = GetTestContextVariable("BUILDRID");
             BuildArchitecture = GetTestContextVariable("BUILD_ARCHITECTURE");
             MicrosoftNETCoreAppVersion = microsoftNETCoreAppVersion ?? GetTestContextVariable("MNA_VERSION");
+            Tfm = GetTestContextVariable("MNA_TFM");
             TestAssetsFolder = GetTestContextVariable("TEST_ASSETS");
+            TestAssetsOutput = GetTestContextVariable("TEST_ASSETS_OUTPUT");
 
             Configuration = GetTestContextVariable("BUILD_CONFIGURATION");
 
             string osPlatformConfig = $"{BuildRID}.{Configuration}";
             Artifacts = Path.Combine(BaseArtifactsFolder, "bin", osPlatformConfig);
             HostArtifacts = Path.Combine(Artifacts, "corehost");
+            HostTestArtifacts = Path.Combine(Artifacts, "corehost_test");
 
             DotnetSDK = GetTestContextVariable("DOTNET_SDK_PATH");
             if (!Directory.Exists(DotnetSDK))

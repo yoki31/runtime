@@ -1,9 +1,10 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
+
+using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
-using System.Runtime.Serialization;
-using Internal.Runtime.CompilerServices;
 using System.Diagnostics.Tracing;
+using System.Runtime.Serialization;
 
 namespace System.Runtime.CompilerServices
 {
@@ -11,14 +12,24 @@ namespace System.Runtime.CompilerServices
     {
         public static void InitializeArray(Array array, RuntimeFieldHandle fldHandle)
         {
-            if (array == null)
-                throw new ArgumentNullException(nameof(array));
-            if (fldHandle.Value == IntPtr.Zero)
-                throw new ArgumentNullException(nameof(fldHandle));
+            ArgumentNullException.ThrowIfNull(array);
+            ArgumentNullException.ThrowIfNull(fldHandle.Value, nameof(fldHandle));
 
             InitializeArray(array, fldHandle.Value);
         }
 
+        private static unsafe void* GetSpanDataFrom(
+            RuntimeFieldHandle fldHandle,
+            RuntimeTypeHandle targetTypeHandle,
+            out int count)
+        {
+            fixed (int *pCount = &count)
+            {
+                return (void*)GetSpanDataFrom(fldHandle.Value, targetTypeHandle.Value, new IntPtr(pCount));
+            }
+        }
+
+        [Obsolete("OffsetToStringData has been deprecated. Use string.GetPinnableReference() instead.")]
         public static int OffsetToStringData
         {
             [Intrinsic]
@@ -28,9 +39,30 @@ namespace System.Runtime.CompilerServices
         [MethodImplAttribute(MethodImplOptions.InternalCall)]
         private static extern int InternalGetHashCode(object? o);
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static int GetHashCode(object? o)
         {
+            // NOTE: the interpreter does not run this code.  It intrinsifies the whole RuntimeHelpers.GetHashCode function
+            if (Threading.ObjectHeader.TryGetHashCode (o, out int hash))
+                return hash;
             return InternalGetHashCode(o);
+        }
+
+        /// <summary>
+        /// If a hash code has been assigned to the object, it is returned. Otherwise zero is
+        /// returned.
+        /// </summary>
+        /// <remarks>
+        /// The advantage of this over <see cref="GetHashCode" /> is that it avoids assigning a hash
+        /// code to the object if it does not already have one.
+        /// </remarks>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static int TryGetHashCode(object? o)
+        {
+            // NOTE: the interpreter does not run this code.  It intrinsifies the whole RuntimeHelpers.TryGetHashCode function
+            if (Threading.ObjectHeader.TryGetHashCode (o, out int hash))
+                return hash;
+            return 0;
         }
 
         public static new bool Equals(object? o1, object? o2)
@@ -54,7 +86,7 @@ namespace System.Runtime.CompilerServices
         public static void RunClassConstructor(RuntimeTypeHandle type)
         {
             if (type.Value == IntPtr.Zero)
-                throw new ArgumentException("Handle is not initialized.", nameof(type));
+                throw new ArgumentException(SR.InvalidOperation_HandleIsNotInitialized, nameof(type));
 
             RunClassConstructor(type.Value);
         }
@@ -104,7 +136,7 @@ namespace System.Runtime.CompilerServices
         public static void RunModuleConstructor(ModuleHandle module)
         {
             if (module == ModuleHandle.EmptyHandle)
-                throw new ArgumentException("Handle is not initialized.", nameof(module));
+                throw new ArgumentException(SR.InvalidOperation_HandleIsNotInitialized, nameof(module));
 
             RunModuleConstructor(module.Value);
         }
@@ -130,7 +162,7 @@ namespace System.Runtime.CompilerServices
         internal static bool ObjectHasReferences(object obj)
         {
             // TODO: Missing intrinsic in interpreter
-            return RuntimeTypeHandle.HasReferences(obj.GetType() as RuntimeType);
+            return RuntimeTypeHandle.HasReferences((obj.GetType() as RuntimeType)!);
         }
 
         public static object GetUninitializedObject(
@@ -144,10 +176,7 @@ namespace System.Runtime.CompilerServices
         {
             if (type is not RuntimeType rt)
             {
-                if (type is null)
-                {
-                    throw new ArgumentNullException(nameof(type), SR.ArgumentNull_Type);
-                }
+                ArgumentNullException.ThrowIfNull(type);
 
                 throw new SerializationException(SR.Format(SR.Serialization_InvalidType, type));
             }
@@ -164,6 +193,12 @@ namespace System.Runtime.CompilerServices
 
         [MethodImplAttribute(MethodImplOptions.InternalCall)]
         private static extern void InitializeArray(Array array, IntPtr fldHandle);
+
+        [MethodImplAttribute(MethodImplOptions.InternalCall)]
+        private static extern unsafe IntPtr GetSpanDataFrom(
+            IntPtr fldHandle,
+            IntPtr targetTypeHandle,
+            IntPtr count);
 
         [MethodImplAttribute(MethodImplOptions.InternalCall)]
         private static extern void RunClassConstructor(IntPtr type);

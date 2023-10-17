@@ -1,19 +1,15 @@
-<?xml version="1.0"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
+<!-- https://learn.microsoft.com/en-us/dotnet/fundamentals/package-validation/diagnostic-ids -->
 <Suppressions xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <!-- net6.0 and net7.0 aren't supported by the current package and any errors should be suppressed. -->
   <Suppression>
-    <DiagnosticId>PKV006</DiagnosticId>
-    <Target>.NETFramework,Version=v4.6</Target>
+    <Left>lib/net6.0/System.Net.Http.WinHttpHandler.dll</Left>
+    <Right>lib/netstandard2.0/System.Net.Http.WinHttpHandler.dll</Right>
+    <IsBaselineSuppression>true</IsBaselineSuppression>
   </Suppression>
   <Suppression>
-    <DiagnosticId>PKV006</DiagnosticId>
-    <Target>.NETStandard,Version=v1.3</Target>
-  </Suppression>
-  <Suppression>
-    <DiagnosticId>PKV007</DiagnosticId>
-    <Target>.NETFramework,Version=v4.6-win</Target>
-  </Suppression>
-  <Suppression>
-    <DiagnosticId>PKV007</DiagnosticId>
-    <Target>.NETStandard,Version=v1.3-win</Target>
+    <Left>lib/net7.0/System.Net.Http.WinHttpHandler.dll</Left>
+    <Right>lib/netstandard2.0/System.Net.Http.WinHttpHandler.dll</Right>
+    <IsBaselineSuppression>true</IsBaselineSuppression>
   </Suppression>
 </Suppressions>

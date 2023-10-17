@@ -12,6 +12,22 @@ class CrashInfo;
 #define MCREG_Cpsr(mc)    ((mc).pstate)
 #endif
 
+#if defined(__loongarch64)
+// See src/coreclr/pal/src/include/pal/context.h
+#define MCREG_Ra(mc)      ((mc).regs[1])
+#define MCREG_Fp(mc)      ((mc).regs[22])
+#define MCREG_Sp(mc)      ((mc).regs[3])
+#define MCREG_Pc(mc)      ((mc).csr_era)
+#endif
+
+#if defined(__riscv)
+// See src/coreclr/pal/src/include/pal/context.h
+#define MCREG_Ra(mc)      ((mc).ra)
+#define MCREG_Fp(mc)      ((mc).s0)
+#define MCREG_Sp(mc)      ((mc).sp)
+#define MCREG_Pc(mc)      ((mc).pc)
+#endif
+
 #define FPREG_ErrorOffset(fpregs) *(DWORD*)&((fpregs).rip)
 #define FPREG_ErrorSelector(fpregs) *(((WORD*)&((fpregs).rip)) + 2)
 #define FPREG_DataOffset(fpregs) *(DWORD*)&((fpregs).rdp)
@@ -19,6 +35,12 @@ class CrashInfo;
 #if defined(__arm__)
 #define user_regs_struct user_regs
 #define user_fpregs_struct user_fpregs
+#elif defined(__riscv)
+struct user_fpregs_struct
+{
+  unsigned long long  fpregs[32];
+  unsigned long       fpscr;
+} __attribute__((__packed__));
 #endif
 
 #if defined(__aarch64__)
@@ -31,6 +53,10 @@ struct user_vfpregs_struct
   unsigned long long  fpregs[32];
   unsigned long       fpscr;
 } __attribute__((__packed__));
+#endif
+
+#if defined(__loongarch64)
+#define user_fpregs_struct lasx_context
 #endif
 
 #define STACK_OVERFLOW_EXCEPTION    0x800703e9
@@ -130,12 +156,21 @@ public:
     inline const uint64_t GetInstructionPointer() const { return MCREG_Pc(m_gpRegisters); }
     inline const uint64_t GetStackPointer() const { return MCREG_Sp(m_gpRegisters); }
     inline const uint64_t GetFramePointer() const { return MCREG_Fp(m_gpRegisters); }
+#elif defined(__loongarch64)
+    inline const uint64_t GetInstructionPointer() const { return MCREG_Pc(m_gpRegisters); }
+    inline const uint64_t GetStackPointer() const { return MCREG_Sp(m_gpRegisters); }
+    inline const uint64_t GetFramePointer() const { return MCREG_Fp(m_gpRegisters); }
 #elif defined(__arm__)
     inline const uint64_t GetInstructionPointer() const { return m_gpRegisters.ARM_pc; }
     inline const uint64_t GetStackPointer() const { return m_gpRegisters.ARM_sp; }
     inline const uint64_t GetFramePointer() const { return m_gpRegisters.ARM_fp; }
+#elif defined(__riscv)
+    inline const uint64_t GetInstructionPointer() const { return MCREG_Pc(m_gpRegisters); }
+    inline const uint64_t GetStackPointer() const { return MCREG_Sp(m_gpRegisters); }
+    inline const uint64_t GetFramePointer() const { return MCREG_Fp(m_gpRegisters); }
 #endif
 #endif // __APPLE__
+    bool IsCrashThread() const;
 
 private:
     void UnwindNativeFrames(CONTEXT* pContext);

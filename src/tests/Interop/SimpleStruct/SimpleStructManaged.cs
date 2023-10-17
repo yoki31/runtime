@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Text;
 using System.Runtime.InteropServices;
 using TestLibrary;
+using Xunit;
 
 namespace PInvokeTests
 {
@@ -99,7 +100,7 @@ namespace PInvokeTests
     }
     #endregion
 
-    class StructureTests
+    public class StructureTests
     {
         #region direct Pinvoke declarartions
 
@@ -361,7 +362,7 @@ namespace PInvokeTests
 
                 if (retval == false)
                 {
-                    TestFramework.LogError("01", "PInvokeTests->PosTest3 : Unexpected error occured on unmanaged side");
+                    TestFramework.LogError("01", "PInvokeTests->PosTest3 : Unexpected error occurred on unmanaged side");
                     return false;
                 }
                 if ((p.type != DialogResult.OK) || (!p.b))
@@ -389,7 +390,7 @@ namespace PInvokeTests
 
                 if (retval == false)
                 {
-                    TestFramework.LogError("01", "PInvokeTests->PosTest3 : Unexpected error occured on unmanaged side");
+                    TestFramework.LogError("01", "PInvokeTests->PosTest3 : Unexpected error occurred on unmanaged side");
                     return false;
                 }
                 if ((p.type != DialogResult.OK) || (!p.b))
@@ -509,7 +510,8 @@ namespace PInvokeTests
 
         #endregion
 
-        public static int Main(string[] argv)
+        [Fact]
+        public static int TestEntryPoint()
         {
             bool retVal = true;
 

@@ -15,19 +15,11 @@ namespace System.Text.Json.Serialization.Converters
         where TCollection : Dictionary<TKey, TValue>
         where TKey : notnull
     {
+        internal override bool CanPopulate => true;
+
         protected override void Add(TKey key, in TValue value, JsonSerializerOptions options, ref ReadStack state)
         {
             ((TCollection)state.Current.ReturnValue!)[key] = value;
-        }
-
-        protected override void CreateCollection(ref Utf8JsonReader reader, ref ReadStack state)
-        {
-            if (state.Current.JsonTypeInfo.CreateObject == null)
-            {
-                ThrowHelper.ThrowNotSupportedException_SerializationNotSupported(state.Current.JsonTypeInfo.Type);
-            }
-
-            state.Current.ReturnValue = state.Current.JsonTypeInfo.CreateObject();
         }
 
         protected internal override bool OnWriteResume(
@@ -90,7 +82,7 @@ namespace System.Text.Json.Serialization.Converters
                         return false;
                     }
 
-                    state.Current.EndDictionaryElement();
+                    state.Current.EndDictionaryEntry();
                 } while (enumerator.MoveNext());
             }
 

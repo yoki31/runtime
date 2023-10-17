@@ -3,6 +3,7 @@
     <TargetFrameworkIdentifier>.NETCoreApp</TargetFrameworkIdentifier>
     <OutputType>exe</OutputType>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <JitOptimizationSensitive>true</JitOptimizationSensitive>
     <!-- This test provides no value for GCStress -->
     <GCStressIncompatible>true</GCStressIncompatible>
   </PropertyGroup>
@@ -10,6 +11,6 @@
     <Compile Include="$(MSBuildProjectName).cs" />
     <ProjectReference Include="$(TestSourceDir)Common/CoreCLRTestLibrary/CoreCLRTestLibrary.csproj" />
     <ProjectReference Include="../common/profiler_common.csproj" />
-    <ProjectReference Include="$(MSBuildThisFileDirectory)/../native/CMakeLists.txt" />
+    <CMakeProjectReference Include="$(MSBuildThisFileDirectory)/../native/CMakeLists.txt" />
   </ItemGroup>
 </Project>

@@ -2,15 +2,16 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 using System;
+using Xunit;
 
-namespace JitTest
+namespace JitTest_han2_cs
 {
-    internal struct Ring
+    public struct Ring
     {
         public int size;
     }
 
-    internal struct Column
+    public struct Column
     {
         public Ring[] rings;
         private int[] _heightPtr;
@@ -65,14 +66,14 @@ namespace JitTest
             return C;
         }
 
-        private static int Main()
+        [Fact]
+        public static void TestEntryPoint()
         {
             int NUM = 17;
             Column[] cols = new Column[3];
             cols[0].Init(NUM, NUM);
             cols[1].Init(NUM, 0);
             cols[2].Init(NUM, 0);
-            return 100;
         }
     }
 }

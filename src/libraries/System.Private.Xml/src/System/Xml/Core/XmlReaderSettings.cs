@@ -318,15 +318,10 @@ namespace System.Xml
 
         internal XmlReader CreateReader(string inputUri, XmlParserContext? inputContext)
         {
-            ArgumentNullException.ThrowIfNull(inputUri);
-
-            if (inputUri.Length == 0)
-            {
-                throw new ArgumentException(SR.XmlConvert_BadUri, nameof(inputUri));
-            }
+            ArgumentException.ThrowIfNullOrEmpty(inputUri);
 
             // resolve and open the url
-            XmlResolver tmpResolver = GetXmlResolver() ?? new XmlUrlResolver();
+            XmlResolver tmpResolver = GetXmlResolver() ?? GetDefaultPermissiveResolver();
 
             // create text XML reader
             XmlReader reader = new XmlTextReaderImpl(inputUri, this, inputContext, tmpResolver);
@@ -441,7 +436,7 @@ namespace System.Xml
 
                 if (resolver == null && !IsXmlResolverSet)
                 {
-                    resolver = new XmlUrlResolver();
+                    resolver = GetDefaultPermissiveResolver();
                 }
             }
 
@@ -626,6 +621,11 @@ namespace System.Xml
             }
 
             return baseReader;
+        }
+
+        internal static XmlResolver GetDefaultPermissiveResolver()
+        {
+            return LocalAppContextSwitches.IsNetworkingEnabledByDefault ? new XmlUrlResolver() : XmlResolver.FileSystemResolver;
         }
 
         [DoesNotReturn]

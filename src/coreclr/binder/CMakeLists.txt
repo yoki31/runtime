@@ -7,12 +7,10 @@ set(BINDER_COMMON_SOURCES
     applicationcontext.cpp
     assembly.cpp
     assemblybindercommon.cpp
-    assemblyidentitycache.cpp
     assemblyname.cpp
     bindertracing.cpp
     defaultassemblybinder.cpp
     failurecache.cpp
-    stringlexer.cpp
     textualidentityparser.cpp
     utils.cpp
 )
@@ -23,10 +21,8 @@ set(BINDER_COMMON_HEADERS
     inc/assembly.hpp
     inc/assembly.inl
     inc/assemblybindercommon.hpp
-    inc/assemblyentry.hpp
     inc/assemblyhashtraits.hpp
     inc/assemblyidentity.hpp
-    inc/assemblyidentitycache.hpp
     inc/assemblyname.hpp
     inc/assemblyname.inl
     inc/assemblyversion.hpp
@@ -38,10 +34,6 @@ set(BINDER_COMMON_HEADERS
     inc/defaultassemblybinder.h
     inc/failurecache.hpp
     inc/failurecachehashtraits.hpp
-    inc/loadcontext.hpp
-    inc/loadcontext.inl
-    inc/stringlexer.hpp
-    inc/stringlexer.inl
     inc/textualidentityparser.hpp
     inc/utils.hpp
 )
@@ -56,7 +48,6 @@ set(BINDER_HEADERS
     ${BINDER_COMMON_HEADERS}
     inc/activitytracker.h
     inc/customassemblybinder.h
-    inc/contextentry.hpp
 )
 
 if (CLR_CMAKE_TARGET_WIN32)
@@ -65,10 +56,5 @@ endif(CLR_CMAKE_TARGET_WIN32)
 
 convert_to_absolute_path(BINDER_SOURCES ${BINDER_SOURCES})
 
-add_library_clr(v3binder_obj
-    OBJECT
-    ${BINDER_SOURCES}
-)
-add_dependencies(v3binder_obj eventing_headers)
-add_library(v3binder INTERFACE)
-target_sources(v3binder INTERFACE $<TARGET_OBJECTS:v3binder_obj>)
+add_library_clr(v3binder OBJECT ${BINDER_SOURCES})
+add_dependencies(v3binder eventing_headers)

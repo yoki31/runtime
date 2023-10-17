@@ -10,7 +10,7 @@ namespace Microsoft.Extensions.Primitives
     /// <summary>
     /// Tokenizes a <see cref="string"/> into <see cref="StringSegment"/>s.
     /// </summary>
-    public readonly struct StringTokenizer :  IEnumerable<StringSegment>
+    public readonly struct StringTokenizer : IEnumerable<StringSegment>
     {
         private readonly StringSegment _value;
         private readonly char[] _separators;
@@ -57,12 +57,19 @@ namespace Microsoft.Extensions.Primitives
             _separators = separators;
         }
 
+        /// <summary>
+        /// Initializes a new instance of <see cref="Enumerator"/>.
+        /// </summary>
+        /// <returns>An <see cref="Enumerator"/> based on the <see cref="StringTokenizer"/>'s value and separators.</returns>
         public Enumerator GetEnumerator() => new Enumerator(in _value, _separators);
 
         IEnumerator<StringSegment> IEnumerable<StringSegment>.GetEnumerator() => GetEnumerator();
 
         IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 
+        /// <summary>
+        /// Enumerates the <see cref="string"/> tokens represented by <see cref="StringSegment"/>.
+        /// </summary>
         public struct Enumerator : IEnumerator<StringSegment>
         {
             private readonly StringSegment _value;
@@ -77,6 +84,10 @@ namespace Microsoft.Extensions.Primitives
                 _index = 0;
             }
 
+            /// <summary>
+            /// Initializes an <see cref="Enumerator"/> using a <see cref="StringTokenizer"/>.
+            /// </summary>
+            /// <param name="tokenizer"><see cref="StringTokenizer"/> containing value and separators for enumeration.</param>
             public Enumerator(ref StringTokenizer tokenizer)
             {
                 _value = tokenizer._value;
@@ -85,14 +96,24 @@ namespace Microsoft.Extensions.Primitives
                 _index = 0;
             }
 
+            /// <summary>
+            /// Gets the current <see cref="StringSegment"/> from the <see cref="StringTokenizer"/>.
+            /// </summary>
             public StringSegment Current { get; private set; }
 
             object IEnumerator.Current => Current;
 
+            /// <summary>
+            /// Releases all resources used by the <see cref="Enumerator"/>.
+            /// </summary>
             public void Dispose()
             {
             }
 
+            /// <summary>
+            /// Advances the enumerator to the next token in the <see cref="StringTokenizer"/>.
+            /// </summary>
+            /// <returns><see langword="true"/> if the enumerator was successfully advanced to the next token; <see langword="false"/> if the enumerator has passed the end of the <see cref="StringTokenizer"/>.</returns>
             public bool MoveNext()
             {
                 if (!_value.HasValue || _index > _value.Length)
@@ -114,6 +135,9 @@ namespace Microsoft.Extensions.Primitives
                 return true;
             }
 
+            /// <summary>
+            /// Resets the <see cref="Enumerator"/> to its initial state.
+            /// </summary>
             public void Reset()
             {
                 Current = default(StringSegment);

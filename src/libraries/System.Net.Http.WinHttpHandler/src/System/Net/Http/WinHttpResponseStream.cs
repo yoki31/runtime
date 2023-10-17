@@ -174,7 +174,7 @@ namespace System.Net.Http
 
         public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken token)
         {
-            if (buffer == null)
+            if (buffer is null)
             {
                 throw new ArgumentNullException(nameof(buffer));
             }
@@ -210,10 +210,10 @@ namespace System.Net.Http
         }
 
         public override IAsyncResult BeginRead(byte[] buffer, int offset, int count, AsyncCallback? callback, object? state) =>
-            TaskToApm.Begin(ReadAsync(buffer, offset, count, CancellationToken.None), callback, state);
+            TaskToAsyncResult.Begin(ReadAsync(buffer, offset, count, CancellationToken.None), callback, state);
 
         public override int EndRead(IAsyncResult asyncResult) =>
-            TaskToApm.End<int>(asyncResult);
+            TaskToAsyncResult.End<int>(asyncResult);
 
         private async Task<int> ReadAsyncCore(byte[] buffer, int offset, int count, CancellationToken token)
         {

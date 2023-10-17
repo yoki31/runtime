@@ -38,42 +38,43 @@ namespace Microsoft.Extensions.Logging.Console.Test
             var errorSink = new ConsoleSink();
             var console = new TestConsole(sink);
             var errorConsole = new TestConsole(errorSink);
-            var consoleLoggerProcessor = new TestLoggerProcessor();
-            consoleLoggerProcessor.Console = console;
-            consoleLoggerProcessor.ErrorConsole = errorConsole;
+            var bufferMode = options == null ? ConsoleLoggerQueueFullMode.Wait : options.QueueFullMode;
+            var maxQueueLength = options == null ? ConsoleLoggerOptions.DefaultMaxQueueLengthValue : options.MaxQueueLength;
+            var consoleLoggerProcessor = new TestLoggerProcessor(console, errorConsole, bufferMode, maxQueueLength);
 
-            var logger = new ConsoleLogger(_loggerName, consoleLoggerProcessor);
-            logger.ScopeProvider = new LoggerExternalScopeProvider();
-            logger.Options = options ?? new ConsoleLoggerOptions();
             var formatters = new ConcurrentDictionary<string, ConsoleFormatter>(ConsoleLoggerTest.GetFormatters(simpleOptions, systemdOptions, jsonOptions).ToDictionary(f => f.Name));
 
+            ConsoleFormatter? formatter = null;
+            var loggerOptions = options ?? new ConsoleLoggerOptions();
             Func<LogLevel, string> levelAsString;
             int writesPerMsg;
-            switch (logger.Options.FormatterName)
+            switch (loggerOptions.FormatterName)
             {
                 case ConsoleFormatterNames.Simple:
                     levelAsString = ConsoleLoggerTest.LogLevelAsStringDefault;
                     writesPerMsg = 2;
-                    logger.Formatter = formatters[ConsoleFormatterNames.Simple];
+                    formatter = formatters[ConsoleFormatterNames.Simple];
                     break;
                 case ConsoleFormatterNames.Systemd:
                     levelAsString = ConsoleLoggerTest.GetSyslogSeverityString;
                     writesPerMsg = 1;
-                    logger.Formatter = formatters[ConsoleFormatterNames.Systemd];
+                    formatter = formatters[ConsoleFormatterNames.Systemd];
                     break;
                 case ConsoleFormatterNames.Json:
                     levelAsString = ConsoleLoggerTest.GetJsonLogLevelString;
                     writesPerMsg = 1;
-                    logger.Formatter = formatters[ConsoleFormatterNames.Json];
+                    formatter = formatters[ConsoleFormatterNames.Json];
                     break;
                 default:
-                    throw new ArgumentOutOfRangeException(nameof(logger.Options.FormatterName));
+                    throw new ArgumentOutOfRangeException(nameof(loggerOptions.FormatterName));
             }
+            var logger = new ConsoleLogger(_loggerName, consoleLoggerProcessor, formatter, new LoggerExternalScopeProvider(), loggerOptions);
 
             return (logger, sink, errorSink, levelAsString, writesPerMsg);
         }
 
         [ConditionalFact(typeof(PlatformDetection), nameof(PlatformDetection.IsThreadingSupported))]
+        [ActiveIssue("https://github.com/dotnet/runtime/issues/91538", typeof(PlatformDetection), nameof(PlatformDetection.IsWasmThreadingSupported))]
         public void ConsoleLoggerOptions_TimeStampFormat_IsReloaded()
         {
             // Arrange
@@ -87,6 +88,7 @@ namespace Microsoft.Extensions.Logging.Console.Test
         }
 
         [ConditionalTheory(typeof(PlatformDetection), nameof(PlatformDetection.IsThreadingSupported))]
+        [ActiveIssue("https://github.com/dotnet/runtime/issues/91538", typeof(PlatformDetection), nameof(PlatformDetection.IsWasmThreadingSupported))]
         [MemberData(nameof(FormatterNames))]
         public void InvalidLogLevel_Throws(string formatterName)
         {
@@ -101,6 +103,7 @@ namespace Microsoft.Extensions.Logging.Console.Test
         }
 
         [ConditionalTheory(typeof(PlatformDetection), nameof(PlatformDetection.IsThreadingSupported))]
+        [ActiveIssue("https://github.com/dotnet/runtime/issues/91538", typeof(PlatformDetection), nameof(PlatformDetection.IsWasmThreadingSupported))]
         [MemberData(nameof(FormatterNamesAndLevels))]
         public void NoMessageOrException_Noop(string formatterName, LogLevel level)
         {
@@ -120,6 +123,7 @@ namespace Microsoft.Extensions.Logging.Console.Test
         }
 
         [ConditionalTheory(typeof(PlatformDetection), nameof(PlatformDetection.IsThreadingSupported))]
+        [ActiveIssue("https://github.com/dotnet/runtime/issues/91538", typeof(PlatformDetection), nameof(PlatformDetection.IsWasmThreadingSupported))]
         [MemberData(nameof(FormatterNamesAndLevels))]
         public void Log_LogsCorrectTimestamp(string formatterName, LogLevel level)
         {

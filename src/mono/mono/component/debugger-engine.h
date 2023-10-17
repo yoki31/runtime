@@ -107,7 +107,7 @@
 #define CMD_TYPE_GET_VALUE_SIZE MDBGPROT_CMD_TYPE_GET_VALUE_SIZE
 
 #define CMD_METHOD_GET_NAME MDBGPROT_CMD_METHOD_GET_NAME
-#define CMD_METHOD_GET_DECLARING_TYPE MDBGPROT_CMD_METHOD_GET_DECLARING_TYPE 
+#define CMD_METHOD_GET_DECLARING_TYPE MDBGPROT_CMD_METHOD_GET_DECLARING_TYPE
 #define CMD_METHOD_GET_DEBUG_INFO MDBGPROT_CMD_METHOD_GET_DEBUG_INFO
 #define CMD_METHOD_GET_PARAM_INFO MDBGPROT_CMD_METHOD_GET_PARAM_INFO
 #define CMD_METHOD_GET_LOCALS_INFO MDBGPROT_CMD_METHOD_GET_LOCALS_INFO
@@ -149,7 +149,7 @@
 
 #define CMD_OBJECT_REF_IS_COLLECTED MDBGPROT_CMD_OBJECT_REF_IS_COLLECTED
 #define CMD_OBJECT_REF_GET_TYPE MDBGPROT_CMD_OBJECT_REF_GET_TYPE
-#define CMD_OBJECT_REF_GET_VALUES_ICORDBG MDBGPROT_CMD_OBJECT_REF_GET_VALUES_ICORDBG
+#define CMD_OBJECT_REF_GET_VALUES_BY_FIELD_TOKEN MDBGPROT_CMD_OBJECT_REF_GET_VALUES_BY_FIELD_TOKEN
 #define CMD_OBJECT_REF_GET_VALUES MDBGPROT_CMD_OBJECT_REF_GET_VALUES
 #define CMD_OBJECT_REF_SET_VALUES MDBGPROT_CMD_OBJECT_REF_SET_VALUES
 #define CMD_OBJECT_REF_GET_ADDRESS MDBGPROT_CMD_OBJECT_REF_GET_ADDRESS
@@ -168,7 +168,7 @@
 #define STEP_DEPTH_OUT MDBGPROT_STEP_DEPTH_OUT
 #define STEP_DEPTH_INTO MDBGPROT_STEP_DEPTH_INTO
 #define STEP_SIZE_MIN MDBGPROT_STEP_SIZE_MIN
-#define STEP_SIZE_LINE MDBGPROT_STEP_SIZE_LINE
+#define STEP_SIZE_LINE_COLUMN MDBGPROT_STEP_SIZE_LINE_COLUMN
 
 #define SUSPEND_POLICY_NONE MDBGPROT_SUSPEND_POLICY_NONE
 #define SUSPEND_POLICY_ALL MDBGPROT_SUSPEND_POLICY_ALL
@@ -178,7 +178,7 @@
 
 #define INVOKE_FLAG_SINGLE_THREADED MDBGPROT_INVOKE_FLAG_SINGLE_THREADED
 #define INVOKE_FLAG_VIRTUAL MDBGPROT_INVOKE_FLAG_VIRTUAL
-#define INVOKE_FLAG_DISABLE_BREAKPOINTS MDBGPROT_INVOKE_FLAG_DISABLE_BREAKPOINTS
+#define INVOKE_FLAG_DISABLE_BREAKPOINTS_AND_STEPPING MDBGPROT_INVOKE_FLAG_DISABLE_BREAKPOINTS_AND_STEPPING
 #define INVOKE_FLAG_RETURN_OUT_THIS MDBGPROT_INVOKE_FLAG_RETURN_OUT_THIS
 #define INVOKE_FLAG_RETURN_OUT_ARGS MDBGPROT_INVOKE_FLAG_RETURN_OUT_ARGS
 
@@ -263,7 +263,7 @@
 #define FRAME_FLAG_DEBUGGER_INVOKE MDBGPROT_FRAME_FLAG_DEBUGGER_INVOKE
 #define FRAME_FLAG_NATIVE_TRANSITION MDBGPROT_FRAME_FLAG_NATIVE_TRANSITION
 
-/* 
+/*
  * Contains information about an inserted breakpoint.
  */
 typedef struct {
@@ -284,7 +284,7 @@ typedef struct {
 	/* Unique id used in the wire protocol to refer to objects */
 	int id;
 	/*
-	 * A weakref gc handle pointing to the object. The gc handle is used to 
+	 * A weakref gc handle pointing to the object. The gc handle is used to
 	 * detect if the object was garbage collected.
 	 */
 	MonoGCHandle handle;
@@ -329,6 +329,9 @@ mono_debugger_get_thread_states (void);
 
 gboolean
 mono_debugger_is_disconnected (void);
+
+void
+mono_debugger_agent_init (void);
 
 gsize
 mono_debugger_tls_thread_id (DebuggerTlsData *debuggerTlsData);
@@ -380,6 +383,9 @@ void mono_debugger_free_objref(gpointer value);
 #ifdef HOST_ANDROID
 #define PRINT_DEBUG_MSG(level, ...) do { if (G_UNLIKELY ((level) <= log_level)) { g_print (__VA_ARGS__); } } while (0)
 #define DEBUG(level,s) do { if (G_UNLIKELY ((level) <= log_level)) { s; } } while (0)
+#elif HOST_WASI
+#define PRINT_DEBUG_MSG(level, ...) do { if (G_UNLIKELY ((level) <= log_level)) { g_print (__VA_ARGS__); } } while (0)
+#define DEBUG(level,s) do { if (G_UNLIKELY ((level) <= log_level)) { s; } } while (0)
 #elif HOST_WASM
 void wasm_debugger_log(int level, const gchar *format, ...);
 #define PRINT_DEBUG_MSG(level, ...) do { if (G_UNLIKELY ((level) <= log_level)) { wasm_debugger_log (level, __VA_ARGS__); } } while (0)
@@ -403,5 +409,5 @@ void win32_debugger_log(FILE *stream, const gchar *format, ...);
 #define PRINT_MSG(...) g_print (__VA_ARGS__)
 #endif
 
-void 
+void
 mono_de_init(DebuggerEngineCallbacks* cbs);

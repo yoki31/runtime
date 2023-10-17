@@ -61,7 +61,7 @@ mono_arch_get_restore_context (MonoTrampInfo **info, gboolean aot)
 
 	start = code = mono_global_codeman_reserve (128);
 
-	/* 
+	/*
 	 * Move things to their proper place so we can restore all the registers with
 	 * one instruction.
 	 */
@@ -86,11 +86,11 @@ mono_arch_get_restore_context (MonoTrampInfo **info, gboolean aot)
 
 	g_assert ((code - start) < 128);
 
-	mono_arch_flush_icache (start, code - start);
+	mono_arch_flush_icache (start, GPTRDIFF_TO_INT (code - start));
 	MONO_PROFILER_RAISE (jit_code_buffer, (start, code - start, MONO_PROFILER_CODE_BUFFER_EXCEPTION_HANDLING, NULL));
 
 	if (info)
-		*info = mono_tramp_info_create ("restore_context", start, code - start, ji, unwind_ops);
+		*info = mono_tramp_info_create ("restore_context", start, GPTRDIFF_TO_UINT32 (code - start), ji, unwind_ops);
 
 	return start;
 }
@@ -99,7 +99,7 @@ mono_arch_get_restore_context (MonoTrampInfo **info, gboolean aot)
  * arch_get_call_filter:
  *
  * Returns a pointer to a method which calls an exception filter. We
- * also use this function to call finally handlers (we pass NULL as 
+ * also use this function to call finally handlers (we pass NULL as
  * @exc object in this case).
  */
 gpointer
@@ -137,11 +137,11 @@ mono_arch_get_call_filter (MonoTrampInfo **info, gboolean aot)
 
 	g_assert ((code - start) < 320);
 
-	mono_arch_flush_icache (start, code - start);
+	mono_arch_flush_icache (start, GPTRDIFF_TO_INT (code - start));
 	MONO_PROFILER_RAISE (jit_code_buffer, (start, code - start, MONO_PROFILER_CODE_BUFFER_EXCEPTION_HANDLING, NULL));
 
 	if (info)
-		*info = mono_tramp_info_create ("call_filter", start, code - start, ji, unwind_ops);
+		*info = mono_tramp_info_create ("call_filter", start, GPTRDIFF_TO_UINT32 (code - start), ji, unwind_ops);
 
 	return start;
 }
@@ -214,13 +214,13 @@ mono_arm_resume_unwind (guint32 dummy1, host_mgreg_t pc, host_mgreg_t sp, host_m
 /**
  * get_throw_trampoline:
  *
- * Returns a function pointer which can be used to raise 
- * exceptions. The returned function has the following 
+ * Returns a function pointer which can be used to raise
+ * exceptions. The returned function has the following
  * signature: void (*func) (MonoException *exc); or
  * void (*func) (guint32 ex_token, guint8* ip);
  *
  */
-static gpointer 
+static gpointer
 get_throw_trampoline (int size, gboolean corlib, gboolean rethrow, gboolean llvm, gboolean resume_unwind, const char *tramp_name, MonoTrampInfo **info, gboolean aot, gboolean preserve_ips)
 {
 	guint8 *start;
@@ -243,7 +243,7 @@ get_throw_trampoline (int size, gboolean corlib, gboolean rethrow, gboolean llvm
 
 	/* Save fp regs */
 	if (!mono_arch_is_soft_float ()) {
-		ARM_SUB_REG_IMM8 (code, ARMREG_SP, ARMREG_SP, sizeof (double) * 16);
+		ARM_SUB_REG_IMM8 (code, ARMREG_SP, ARMREG_SP, (guint32)(sizeof (double) * 16));
 		cfa_offset += sizeof (double) * 16;
 		mono_add_unwind_op_def_cfa_offset (unwind_ops, code, start, cfa_offset);
 		ARM_FSTMD (code, ARM_VFP_D0, 16, ARMREG_SP);
@@ -309,7 +309,7 @@ get_throw_trampoline (int size, gboolean corlib, gboolean rethrow, gboolean llvm
 		else
 			icall_id = MONO_JIT_ICALL_mono_arm_throw_exception;
 
-		ji = mono_patch_info_list_prepend (ji, code - start, MONO_PATCH_INFO_JIT_ICALL_ADDR, GUINT_TO_POINTER (icall_id));
+		ji = mono_patch_info_list_prepend (ji, GPTRDIFF_TO_INT (code - start), MONO_PATCH_INFO_JIT_ICALL_ADDR, GUINT_TO_POINTER (icall_id));
 		ARM_LDR_IMM (code, ARMREG_IP, ARMREG_PC, 0);
 		ARM_B (code, 0);
 		*(gpointer*)(gpointer)code = NULL;
@@ -323,11 +323,11 @@ get_throw_trampoline (int size, gboolean corlib, gboolean rethrow, gboolean llvm
 	/* we should never reach this breakpoint */
 	ARM_DBRK (code);
 	g_assert ((code - start) < size);
-	mono_arch_flush_icache (start, code - start);
+	mono_arch_flush_icache (start, GPTRDIFF_TO_INT (code - start));
 	MONO_PROFILER_RAISE (jit_code_buffer, (start, code - start, MONO_PROFILER_CODE_BUFFER_EXCEPTION_HANDLING, NULL));
 
 	if (info)
-		*info = mono_tramp_info_create (tramp_name, start, code - start, ji, unwind_ops);
+		*info = mono_tramp_info_create (tramp_name, start, GPTRDIFF_TO_UINT32 (code - start), ji, unwind_ops);
 
 	return start;
 }
@@ -335,16 +335,16 @@ get_throw_trampoline (int size, gboolean corlib, gboolean rethrow, gboolean llvm
 /**
  * arch_get_throw_exception:
  *
- * Returns a function pointer which can be used to raise 
- * exceptions. The returned function has the following 
- * signature: void (*func) (MonoException *exc); 
+ * Returns a function pointer which can be used to raise
+ * exceptions. The returned function has the following
+ * signature: void (*func) (MonoException *exc);
  * For example to raise an arithmetic exception you can use:
  *
- * x86_push_imm (code, mono_get_exception_arithmetic ()); 
- * x86_call_code (code, arch_get_throw_exception ()); 
+ * x86_push_imm (code, mono_get_exception_arithmetic ());
+ * x86_call_code (code, arch_get_throw_exception ());
  *
  */
-gpointer 
+gpointer
 mono_arch_get_throw_exception (MonoTrampInfo **info, gboolean aot)
 {
 	return get_throw_trampoline (132, FALSE, FALSE, FALSE, FALSE, "throw_exception", info, aot, FALSE);
@@ -353,9 +353,9 @@ mono_arch_get_throw_exception (MonoTrampInfo **info, gboolean aot)
 /**
  * mono_arch_get_rethrow_exception:
  *
- * Returns a function pointer which can be used to rethrow 
- * exceptions. The returned function has the following 
- * signature: void (*func) (MonoException *exc); 
+ * Returns a function pointer which can be used to rethrow
+ * exceptions. The returned function has the following
+ * signature: void (*func) (MonoException *exc);
  *
  */
 gpointer
@@ -364,7 +364,7 @@ mono_arch_get_rethrow_exception (MonoTrampInfo **info, gboolean aot)
 	return get_throw_trampoline (132, FALSE, TRUE, FALSE, FALSE, "rethrow_exception", info, aot, FALSE);
 }
 
-gpointer 
+gpointer
 mono_arch_get_rethrow_preserve_exception (MonoTrampInfo **info, gboolean aot)
 {
 	return get_throw_trampoline (132, FALSE, TRUE, FALSE, FALSE, "rethrow_preserve_exception", info, aot, TRUE);
@@ -372,19 +372,19 @@ mono_arch_get_rethrow_preserve_exception (MonoTrampInfo **info, gboolean aot)
 
 /**
  * mono_arch_get_throw_corlib_exception:
- * \returns a function pointer which can be used to raise 
- * corlib exceptions. The returned function has the following 
- * signature: void (*func) (guint32 ex_token, guint32 offset); 
- * Here, \c offset is the offset which needs to be substracted from the caller IP 
- * to get the IP of the throw. Passing the offset has the advantage that it 
+ * \returns a function pointer which can be used to raise
+ * corlib exceptions. The returned function has the following
+ * signature: void (*func) (guint32 ex_token, guint32 offset);
+ * Here, \c offset is the offset which needs to be subtracted from the caller IP
+ * to get the IP of the throw. Passing the offset has the advantage that it
  * needs no relocations in the caller.
  * On ARM, the ip is passed instead of an offset.
  */
-gpointer 
+gpointer
 mono_arch_get_throw_corlib_exception (MonoTrampInfo **info, gboolean aot)
 {
 	return get_throw_trampoline (168, TRUE, FALSE, FALSE, FALSE, "throw_corlib_exception", info, aot, FALSE);
-}	
+}
 
 GSList*
 mono_arm_get_exception_trampolines (gboolean aot)
@@ -398,7 +398,7 @@ mono_arm_get_exception_trampolines (gboolean aot)
 	get_throw_trampoline (168, TRUE, FALSE, FALSE, FALSE, "llvm_throw_corlib_exception_trampoline", &info, aot, FALSE);
 	info->jit_icall_info = &mono_get_jit_icall_info ()->mono_llvm_throw_corlib_exception_trampoline;
 	tramps = g_slist_prepend (tramps, info);
-	
+
 	get_throw_trampoline (168, TRUE, FALSE, TRUE, FALSE, "llvm_throw_corlib_exception_abs_trampoline", &info, aot, FALSE);
 	info->jit_icall_info = &mono_get_jit_icall_info ()->mono_llvm_throw_corlib_exception_abs_trampoline;
 	tramps = g_slist_prepend (tramps, info);
@@ -426,7 +426,7 @@ mono_arch_exceptions_init (void)
 {
 	gpointer tramp;
 	GSList *tramps, *l;
-	
+
 	if (mono_aot_only) {
 
 		// FIXME Macroize.
@@ -451,7 +451,7 @@ mono_arch_exceptions_init (void)
 	}
 }
 
-/* 
+/*
  * mono_arch_unwind_frame:
  *
  * See exceptions-amd64.c for docs;
@@ -491,7 +491,7 @@ mono_arch_unwind_frame (MonoJitTlsData *jit_tls,
 
 		for (i = 0; i < 16; ++i)
 			regs [i] = new_ctx->regs [i];
-#ifdef TARGET_IOS
+#if defined (TARGET_IOS) || defined(TARGET_TVOS)
 		/* On IOS, d8..d15 are callee saved. They are mapped to 8..15 in unwind.c */
 		for (i = 0; i < 8; ++i)
 			regs [MONO_MAX_IREGS + i] = *(guint64*)&(new_ctx->fregs [8 + i]);
@@ -509,7 +509,7 @@ mono_arch_unwind_frame (MonoJitTlsData *jit_tls,
 			new_ctx->regs [i] = regs [i];
 		new_ctx->pc = regs [ARMREG_LR];
 		new_ctx->regs [ARMREG_SP] = (gsize)cfa;
-#ifdef TARGET_IOS
+#if defined (TARGET_IOS) || defined(TARGET_TVOS)
 		for (i = 0; i < 8; ++i)
 			new_ctx->fregs [8 + i] = *(double*)&(regs [MONO_MAX_IREGS + i]);
 #endif
@@ -517,7 +517,7 @@ mono_arch_unwind_frame (MonoJitTlsData *jit_tls,
 		/* Clear thumb bit */
 		new_ctx->pc &= ~1;
 
-		/* we substract 1, so that the IP points into the call instruction */
+		/* we subtract 1, so that the IP points into the call instruction */
 		new_ctx->pc--;
 
 		return TRUE;
@@ -525,7 +525,7 @@ mono_arch_unwind_frame (MonoJitTlsData *jit_tls,
 		g_assert ((((guint64)(*lmf)->previous_lmf) & 2) == 0);
 
 		frame->type = FRAME_TYPE_MANAGED_TO_NATIVE;
-		
+
 		if ((ji = mini_jit_info_table_find ((gpointer)(gsize)(*lmf)->ip))) {
 			frame->ji = ji;
 		} else {
@@ -550,7 +550,7 @@ mono_arch_unwind_frame (MonoJitTlsData *jit_tls,
 		/* Clear thumb bit */
 		new_ctx->pc &= ~1;
 
-		/* we substract 1, so that the IP points into the call instruction */
+		/* we subtract 1, so that the IP points into the call instruction */
 		new_ctx->pc--;
 
 		*lmf = (MonoLMF*)(((gsize)(*lmf)->previous_lmf) & ~3);
@@ -574,7 +574,11 @@ handle_signal_exception (gpointer obj)
 
 	memcpy (&ctx, &jit_tls->ex_ctx, sizeof (MonoContext));
 
+	MONO_ENTER_GC_UNSAFE_UNBALANCED;
+	
 	mono_handle_exception (&ctx, (MonoObject*)obj);
+
+	MONO_EXIT_GC_UNSAFE_UNBALANCED;
 
 	mono_restore_context (&ctx);
 }
@@ -635,7 +639,7 @@ mono_arch_handle_exception (void *ctx, gpointer obj)
 
 	result = mono_handle_exception (&mctx, obj);
 	/* restore the context so that returning from the signal handler will invoke
-	 * the catch clause 
+	 * the catch clause
 	 */
 	mono_monoctx_to_sigctx (&mctx, ctx);
 	return result;

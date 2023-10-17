@@ -30,7 +30,10 @@ namespace System.Net.Http.HPack
             {
                 if (index >= _count)
                 {
+#pragma warning disable CA2201 // Do not raise reserved exception types
+                    // Helpful to act like static table (array)
                     throw new IndexOutOfRangeException();
+#pragma warning restore CA2201
                 }
 
                 index = _insertIndex - index - 1;
@@ -47,6 +50,11 @@ namespace System.Net.Http.HPack
 
         public void Insert(ReadOnlySpan<byte> name, ReadOnlySpan<byte> value)
         {
+            Insert(staticTableIndex: null, name, value);
+        }
+
+        public void Insert(int? staticTableIndex, ReadOnlySpan<byte> name, ReadOnlySpan<byte> value)
+        {
             int entryLength = HeaderField.GetLength(name.Length, value.Length);
             EnsureAvailable(entryLength);
 
@@ -59,7 +67,7 @@ namespace System.Net.Http.HPack
                 return;
             }
 
-            var entry = new HeaderField(name, value);
+            var entry = new HeaderField(staticTableIndex, name, value);
             _buffer[_insertIndex] = entry;
             _insertIndex = (_insertIndex + 1) % _buffer.Length;
             _size += entry.Length;

@@ -91,7 +91,7 @@ namespace System.Collections.Tests
             AssertExtensions.Throws<ArgumentNullException>("col", () => new Queue(null)); // Collection is null
         }
 
-        [Fact]
+        [ConditionalFact(typeof(PlatformDetection), nameof(PlatformDetection.IsDebuggerTypeProxyAttributeSupported))]
         public static void DebuggerAttribute()
         {
             DebuggerAttributes.ValidateDebuggerDisplayReferences(new Queue());
@@ -109,7 +109,7 @@ namespace System.Collections.Tests
             Assert.Equal(testQueue.ToArray(), items);
         }
 
-        [Fact]
+        [ConditionalFact(typeof(PlatformDetection), nameof(PlatformDetection.IsDebuggerTypeProxyAttributeSupported))]
         public static void DebuggerAttribute_NullQueue_ThrowsArgumentNullException()
         {
             bool threwNull = false;
@@ -913,6 +913,7 @@ namespace System.Collections.Tests
         }
 
         [ConditionalFact(typeof(PlatformDetection), nameof(PlatformDetection.IsThreadingSupported))]
+        [ActiveIssue("https://github.com/dotnet/runtime/issues/91538", typeof(PlatformDetection), nameof(PlatformDetection.IsWasmThreadingSupported))]
         public void SynchronizedEnqueue()
         {
             // Enqueue

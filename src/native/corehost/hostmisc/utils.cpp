@@ -4,6 +4,11 @@
 #include "utils.h"
 #include "trace.h"
 #include "bundle/info.h"
+#if defined(TARGET_WINDOWS)
+#include <_version.h>
+#else
+#include <_version.c>
+#endif
 
 bool library_exists_in_dir(const pal::string_t& lib_dir, const pal::string_t& lib_name, pal::string_t* p_lib_path)
 {
@@ -29,23 +34,32 @@ bool coreclr_exists_in_dir(const pal::string_t& candidate)
     return pal::file_exists(test);
 }
 
-bool ends_with(const pal::string_t& value, const pal::string_t& suffix, bool match_case)
+bool utils::starts_with(const pal::string_t& value, const pal::char_t* prefix, size_t prefix_len, bool match_case)
+{
+    // Cannot start with an empty string.
+    if (prefix_len == 0)
+        return false;
+
+    auto cmp = match_case ? pal::strncmp : pal::strncasecmp;
+    return (value.size() >= prefix_len) &&
+        cmp(value.c_str(), prefix, prefix_len) == 0;
+}
+
+bool utils::ends_with(const pal::string_t& value, const pal::char_t* suffix, size_t suffix_len, bool match_case)
 {
     auto cmp = match_case ? pal::strcmp : pal::strcasecmp;
-    return (value.size() >= suffix.size()) &&
-        cmp(value.c_str() + value.size() - suffix.size(), suffix.c_str()) == 0;
+    return (value.size() >= suffix_len) &&
+        cmp(value.c_str() + value.size() - suffix_len, suffix) == 0;
+}
+
+bool ends_with(const pal::string_t& value, const pal::string_t& suffix, bool match_case)
+{
+    return utils::ends_with(value, suffix.c_str(), suffix.size(), match_case);
 }
 
 bool starts_with(const pal::string_t& value, const pal::string_t& prefix, bool match_case)
 {
-    if (prefix.empty())
-    {
-        // Cannot start with an empty string.
-        return false;
-    }
-    auto cmp = match_case ? pal::strncmp : pal::strncasecmp;
-    return (value.size() >= prefix.size()) &&
-        cmp(value.c_str(), prefix.c_str(), prefix.size()) == 0;
+    return utils::starts_with(value, prefix.c_str(), prefix.size(), match_case);
 }
 
 void append_path(pal::string_t* path1, const pal::char_t* path2)
@@ -151,7 +165,7 @@ pal::string_t get_directory(const pal::string_t& path)
     return ret.substr(0, static_cast<size_t>(pos) + 1) + DIR_SEPARATOR;
 }
 
-void remove_trailing_dir_seperator(pal::string_t* dir)
+void remove_trailing_dir_separator(pal::string_t* dir)
 {
     if (dir->back() == DIR_SEPARATOR)
     {
@@ -185,80 +199,73 @@ pal::string_t get_replaced_char(const pal::string_t& path, pal::char_t match, pa
     return out;
 }
 
-const pal::char_t* get_arch()
+namespace
+{
+    const pal::char_t* s_all_architectures[] =
+    {
+        _X("arm"),
+        _X("arm64"),
+        _X("armv6"),
+        _X("loongarch64"),
+        _X("ppc64le"),
+        _X("riscv64"),
+        _X("s390x"),
+        _X("x64"),
+        _X("x86")
+    };
+    static_assert((sizeof(s_all_architectures) / sizeof(*s_all_architectures)) == static_cast<size_t>(pal::architecture::__last), "Invalid known architectures count");
+}
+
+pal::architecture get_current_arch()
 {
 #if defined(TARGET_AMD64)
-    return _X("x64");
+    return pal::architecture::x64;
 #elif defined(TARGET_X86)
-    return _X("x86");
+    return pal::architecture::x86;
+#elif defined(TARGET_ARMV6)
+    return pal::architecture::armv6;
 #elif defined(TARGET_ARM)
-    return _X("arm");
+    return pal::architecture::arm;
 #elif defined(TARGET_ARM64)
-    return _X("arm64");
+    return pal::architecture::arm64;
+#elif defined(TARGET_LOONGARCH64)
+    return pal::architecture::loongarch64;
+#elif defined(TARGET_RISCV64)
+    return pal::architecture::riscv64;
 #elif defined(TARGET_S390X)
-    return _X("s390x");
+    return pal::architecture::s390X;
+#elif defined(TARGET_POWERPC64)
+    return pal::architecture::ppc64le;
 #else
 #error "Unknown target"
 #endif
 }
 
-pal::string_t get_current_runtime_id(bool use_fallback)
+const pal::char_t* get_arch_name(pal::architecture arch)
+{
+    int idx = static_cast<int>(arch);
+    assert(0 <= idx && idx < static_cast<int>(pal::architecture::__last));
+    return s_all_architectures[idx];
+}
+
+const pal::char_t* get_current_arch_name()
+{
+    assert(pal::strcmp(get_arch_name(get_current_arch()), _STRINGIFY(CURRENT_ARCH_NAME)) == 0);
+    return _STRINGIFY(CURRENT_ARCH_NAME);
+}
+
+pal::string_t get_runtime_id()
 {
     pal::string_t rid;
-    if (pal::getenv(_X("DOTNET_RUNTIME_ID"), &rid))
+    if (try_get_runtime_id_from_env(rid))
         return rid;
 
-    rid = pal::get_current_os_rid_platform();
-    if (rid.empty() && use_fallback)
-        rid = pal::get_current_os_fallback_rid();
-
-    if (!rid.empty())
-    {
-        rid.append(_X("-"));
-        rid.append(get_arch());
-    }
-
-    return rid;
+    return _STRINGIFY(HOST_RID_PLATFORM) _X("-") _STRINGIFY(CURRENT_ARCH_NAME);
 }
 
-bool get_env_shared_store_dirs(std::vector<pal::string_t>* dirs, const pal::string_t& arch, const pal::string_t& tfm)
+bool try_get_runtime_id_from_env(pal::string_t& out_rid)
 {
-    pal::string_t path;
-    if (!pal::getenv(_X("DOTNET_SHARED_STORE"), &path))
-    {
-        return false;
-    }
-
-    pal::string_t tok;
-    pal::stringstream_t ss(path);
-    while (std::getline(ss, tok, PATH_SEPARATOR))
-    {
-        if (pal::realpath(&tok))
-        {
-            append_path(&tok, arch.c_str());
-            append_path(&tok, tfm.c_str());
-            dirs->push_back(tok);
-        }
-    }
-    return true;
-}
-
-bool get_global_shared_store_dirs(std::vector<pal::string_t>* dirs, const pal::string_t& arch, const pal::string_t& tfm)
-{
-    std::vector<pal::string_t> global_dirs;
-    if (!pal::get_global_dotnet_dirs(&global_dirs))
-    {
-        return false;
-    }
-
-    for (pal::string_t dir : global_dirs)
-    {
-        append_path(&dir, RUNTIME_STORE_DIRECTORY_NAME);
-        append_path(&dir, arch.c_str());
-        append_path(&dir, tfm.c_str());
-        dirs->push_back(dir);
-    }
-    return true;
+    return pal::getenv(_X("DOTNET_RUNTIME_ID"), &out_rid);
 }
 
 /**
@@ -280,9 +287,9 @@ bool multilevel_lookup_enabled()
     return multilevel_lookup;
 }
 
-void get_framework_and_sdk_locations(const pal::string_t& dotnet_dir, std::vector<pal::string_t>* locations)
+void get_framework_and_sdk_locations(const pal::string_t& dotnet_dir, const bool disable_multilevel_lookup, std::vector<pal::string_t>* locations)
 {
-    bool multilevel_lookup = multilevel_lookup_enabled();
+    bool multilevel_lookup = disable_multilevel_lookup ? false : multilevel_lookup_enabled();
 
     // Multi-level lookup will look for the most appropriate version in several locations
     // by following the priority rank below:
@@ -295,13 +302,16 @@ void get_framework_and_sdk_locations(const pal::string_t& dotnet_dir, std::vecto
     {
         // own_dir contains DIR_SEPARATOR appended that we need to remove.
         dotnet_dir_temp = dotnet_dir;
-        remove_trailing_dir_seperator(&dotnet_dir_temp);
+        remove_trailing_dir_separator(&dotnet_dir_temp);
 
         locations->push_back(dotnet_dir_temp);
     }
 
+    if (!multilevel_lookup)
+        return;
+
     std::vector<pal::string_t> global_dirs;
-    if (multilevel_lookup && pal::get_global_dotnet_dirs(&global_dirs))
+    if (pal::get_global_dotnet_dirs(&global_dirs))
     {
         for (pal::string_t dir : global_dirs)
         {
@@ -350,10 +360,14 @@ bool try_stou(const pal::string_t& str, unsigned* num)
     return true;
 }
 
+pal::string_t get_dotnet_root_env_var_for_arch(pal::architecture arch)
+{
+    return DOTNET_ROOT_ENV_VAR _X("_") + to_upper(get_arch_name(arch));
+}
+
 bool get_dotnet_root_from_env(pal::string_t* dotnet_root_env_var_name, pal::string_t* recv)
 {
-    *dotnet_root_env_var_name = _X("DOTNET_ROOT_");
-    dotnet_root_env_var_name->append(to_upper(get_arch()));
+    *dotnet_root_env_var_name = get_dotnet_root_env_var_for_arch(get_current_arch());
     if (get_file_path_from_env(dotnet_root_env_var_name->c_str(), recv))
         return true;
 
@@ -368,7 +382,7 @@ bool get_dotnet_root_from_env(pal::string_t* dotnet_root_env_var_name, pal::stri
 
     // If no architecture-specific environment variable was set
     // fallback to the default DOTNET_ROOT.
-    *dotnet_root_env_var_name = _X("DOTNET_ROOT");
+    *dotnet_root_env_var_name = DOTNET_ROOT_ENV_VAR;
     return get_file_path_from_env(dotnet_root_env_var_name->c_str(), recv);
 }
 
@@ -446,24 +460,53 @@ pal::string_t get_download_url(const pal::char_t* framework_name, const pal::cha
         url.append(_X("missing_runtime=true"));
     }
 
+    const pal::char_t* arch = get_current_arch_name();
     url.append(_X("&arch="));
-    url.append(get_arch());
-    pal::string_t rid = get_current_runtime_id(true /*use_fallback*/);
+    url.append(arch);
     url.append(_X("&rid="));
-    url.append(rid);
+    url.append(get_runtime_id());
+
+    pal::string_t os = pal::get_current_os_rid_platform();
+    if (os.empty())
+        os = pal::get_current_os_fallback_rid();
+
+    url.append(_X("&os="));
+    url.append(os);
 
     return url;
 }
 
+pal::string_t get_host_version_description()
+{
+#if defined(TARGET_WINDOWS)
+    return _STRINGIFY(VER_PRODUCTVERSION_STR);
+#else
+    pal::string_t info {_STRINGIFY(HOST_VERSION)};
+
+    // sccsid is @(#)Version <file_version> [@Commit: <commit_hash>]
+    // Get the commit portion if available
+    char* commit_maybe = ::strchr(&sccsid[STRING_LENGTH("@(#)Version ")], '@');
+    if (commit_maybe != nullptr)
+    {
+        info.append(" ");
+        info.append(commit_maybe);
+    }
+
+    return info;
+#endif
+}
+
 pal::string_t to_lower(const pal::char_t* in) {
     pal::string_t ret = in;
-    std::transform(ret.begin(), ret.end(), ret.begin(), ::tolower);
+    std::transform(ret.begin(), ret.end(), ret.begin(),
+        [](pal::char_t c) { return static_cast<pal::char_t>(::tolower(c)); });
     return ret;
 }
 
 pal::string_t to_upper(const pal::char_t* in) {
     pal::string_t ret = in;
-    std::transform(ret.begin(), ret.end(), ret.begin(), ::toupper);
+    std::transform(ret.begin(), ret.end(), ret.begin(),
+        [](pal::char_t c) { return static_cast<pal::char_t>(::toupper(c)); });
     return ret;
 }
 
@@ -474,7 +517,7 @@ pal::string_t to_upper(const pal::char_t* in) {
 // with test-only marker.
 bool test_only_getenv(const pal::char_t* name, pal::string_t* recv)
 {
-    // This is a static variable which is embeded in the product binary (somewhere).
+    // This is a static variable which is embedded in the product binary (somewhere).
     // The marker values is a GUID so that it's unique and can be found by doing a simple search on the file
     // The first character is used as the decider:
     //  - Default value is 'd' (stands for disabled) - test only behavior is disabled

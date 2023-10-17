@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="DisabledRuntimeMarshallingNative.cs" />
+    <Compile Include="../RuntimeMarshallingDisabledAttribute.cs" />
+  </ItemGroup>
+</Project>

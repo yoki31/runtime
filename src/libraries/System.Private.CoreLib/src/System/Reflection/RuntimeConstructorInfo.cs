@@ -11,20 +11,20 @@ namespace System.Reflection
     internal sealed partial class RuntimeConstructorInfo : ConstructorInfo
     {
         [MethodImpl(MethodImplOptions.NoInlining)] // move lazy invocation flags population out of the hot path
-        private static InvocationFlags ComputeAndUpdateInvocationFlags(ConstructorInfo constructorInfo, ref InvocationFlags flagsToUpdate)
+        internal InvocationFlags ComputeAndUpdateInvocationFlags()
         {
             InvocationFlags invocationFlags = InvocationFlags.IsConstructor; // this is a given
 
-            Type? declaringType = constructorInfo.DeclaringType;
+            Type? declaringType = DeclaringType;
 
             if (declaringType == typeof(void)
                 || declaringType != null && declaringType.ContainsGenericParameters  // Enclosing type has unbound generics
-                || (constructorInfo.CallingConvention & CallingConventions.VarArgs) == CallingConventions.VarArgs // Managed varargs
+                || (CallingConvention & CallingConventions.VarArgs) == CallingConventions.VarArgs // Managed varargs
                 )
             {
                 invocationFlags |= InvocationFlags.NoInvoke;
             }
-            else if (constructorInfo.IsStatic)
+            else if (IsStatic)
             {
                 invocationFlags |= InvocationFlags.RunClassConstructor | InvocationFlags.NoConstructorInvoke;
             }
@@ -39,19 +39,17 @@ namespace System.Reflection
                     invocationFlags |= InvocationFlags.ContainsStackPointers;
 
                 // Check for attempt to create a delegate class.
-                if (typeof(Delegate).IsAssignableFrom(constructorInfo.DeclaringType))
+                if (typeof(Delegate).IsAssignableFrom(DeclaringType))
                     invocationFlags |= InvocationFlags.IsDelegateConstructor;
             }
 
             invocationFlags |= InvocationFlags.Initialized;
-            flagsToUpdate = invocationFlags; // accesses are guaranteed atomic
             return invocationFlags;
         }
 
         internal static void CheckCanCreateInstance(Type declaringType, bool isVarArg)
         {
-            if (declaringType == null)
-                throw new ArgumentNullException(nameof(declaringType));
+            ArgumentNullException.ThrowIfNull(declaringType);
 
             // ctor is declared on interface class
             if (declaringType.IsInterface)
@@ -95,21 +93,29 @@ namespace System.Reflection
             throw new TargetException();
         }
 
-        [DebuggerStepThroughAttribute]
-        [Diagnostics.DebuggerHidden]
+        [DebuggerStepThrough]
+        [DebuggerHidden]
+        // This is a rarely-used Invoke since it calls a constructor on an existing instance.
         public override object? Invoke(
-            object? obj, BindingFlags invokeAttr, Binder? binder, object?[]? parameters, CultureInfo? culture)
+            object? obj,
+            BindingFlags invokeAttr,
+            Binder? binder,
+            object?[]? parameters,
+            CultureInfo? culture)
         {
             if ((InvocationFlags & InvocationFlags.NoInvoke) != 0)
                 ThrowNoInvokeException();
 
-            ValidateInvokeTarget(obj);
+            if (!IsStatic)
+            {
+                MethodInvokerCommon.ValidateInvokeTarget(obj, this);
+            }
 
             // Correct number of arguments supplied
-            int actualCount = (parameters is null) ? 0 : parameters.Length;
-            if (ArgumentTypes.Length != actualCount)
+            int argCount = (parameters is null) ? 0 : parameters.Length;
+            if (ArgumentTypes.Length != argCount)
             {
-                throw new TargetParameterCountException(SR.Arg_ParmCnt);
+                MethodBaseInvoker.ThrowTargetParameterCountException();
             }
 
             if ((InvocationFlags & InvocationFlags.RunClassConstructor) != 0)
@@ -120,27 +126,13 @@ namespace System.Reflection
                 return null;
             }
 
-            StackAllocedArguments stackArgs = default;
-            Span<object?> arguments = default;
-            if (actualCount != 0)
-            {
-                arguments = CheckArguments(ref stackArgs, parameters, binder, invokeAttr, culture, ArgumentTypes);
-            }
-
-            object? retValue = InvokeWorker(obj, invokeAttr, arguments);
-
-            // copy out. This should be made only if ByRef are present.
-            // n.b. cannot use Span<T>.CopyTo, as parameters.GetType() might not actually be typeof(object[])
-            for (int index = 0; index < arguments.Length; index++)
-            {
-                parameters![index] = arguments[index];
-            }
-
-            return retValue;
+            return argCount == 0 ?
+                Invoker.InvokeConstructorWithoutAlloc(obj!, (invokeAttr & BindingFlags.DoNotWrapExceptions) == 0) :
+                Invoker.InvokeConstructorWithoutAlloc(obj!, invokeAttr, binder, parameters!, culture);
         }
 
-        [DebuggerStepThroughAttribute]
-        [Diagnostics.DebuggerHidden]
+        [DebuggerStepThrough]
+        [DebuggerHidden]
         public override object Invoke(BindingFlags invokeAttr, Binder? binder, object?[]? parameters, CultureInfo? culture)
         {
             if ((InvocationFlags & (InvocationFlags.NoInvoke | InvocationFlags.ContainsStackPointers | InvocationFlags.NoConstructorInvoke)) != 0)
@@ -152,27 +144,25 @@ namespace System.Reflection
             // JIT will insert the call to .cctor in the instance ctor.
 
             // Correct number of arguments supplied
-            int actualCount = (parameters is null) ? 0 : parameters.Length;
-            if (ArgumentTypes.Length != actualCount)
+            int argCount = (parameters is null) ? 0 : parameters.Length;
+            if (ArgumentTypes.Length != argCount)
             {
-                throw new TargetParameterCountException(SR.Arg_ParmCnt);
+                MethodBaseInvoker.ThrowTargetParameterCountException();
             }
 
-            StackAllocedArguments stackArgs = default;
-            Span<object?> arguments = default;
-            if (actualCount != 0)
+            switch (argCount)
             {
-                arguments = CheckArguments(ref stackArgs, parameters, binder, invokeAttr, culture, ArgumentTypes);
+                case 0:
+                    return Invoker.InvokeWithNoArgs(obj: null, invokeAttr)!;
+                case 1:
+                    return Invoker.InvokeWithOneArg(obj: null, invokeAttr, binder, parameters!, culture)!;
+                case 2:
+                case 3:
+                case 4:
+                    return Invoker.InvokeWithFewArgs(obj: null, invokeAttr, binder, parameters!, culture)!;
+                default:
+                    return Invoker.InvokeWithManyArgs(obj: null, invokeAttr, binder, parameters!, culture)!;
             }
-
-            object retValue = InvokeCtorWorker(invokeAttr, arguments);
-
-            // copy out. This should be made only if ByRef are present.
-            // n.b. cannot use Span<T>.CopyTo, as parameters.GetType() might not actually be typeof(object[])
-            for (int index = 0; index < arguments.Length; index++)
-                parameters![index] = arguments[index];
-
-            return retValue;
         }
     }
 }

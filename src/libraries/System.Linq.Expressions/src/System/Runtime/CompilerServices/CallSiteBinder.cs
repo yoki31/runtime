@@ -4,10 +4,11 @@
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Dynamic.Utils;
 using System.Linq.Expressions;
-using System.Threading;
 using System.Reflection;
+using System.Threading;
 using static System.Linq.Expressions.CachedReflectionInfo;
 
 namespace System.Runtime.CompilerServices
@@ -41,17 +42,7 @@ namespace System.Runtime.CompilerServices
         {
             private static LambdaSignature<T>? s_instance;
 
-            internal static LambdaSignature<T> Instance
-            {
-                get
-                {
-                    if (s_instance == null)
-                    {
-                        s_instance = new LambdaSignature<T>();
-                    }
-                    return s_instance;
-                }
-            }
+            internal static LambdaSignature<T> Instance => s_instance ??= new LambdaSignature<T>();
 
             internal readonly ReadOnlyCollection<ParameterExpression> Parameters;
             internal readonly LabelTarget ReturnLabel;
@@ -110,6 +101,7 @@ namespace System.Runtime.CompilerServices
             return null;
         }
 
+        [RequiresDynamicCode(Expression.NewArrayRequiresDynamicCode)]
         internal T BindCore<T>(CallSite<T> site, object[] args) where T : class
         {
             //

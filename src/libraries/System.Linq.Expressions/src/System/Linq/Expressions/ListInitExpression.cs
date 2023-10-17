@@ -105,6 +105,7 @@ namespace System.Linq.Expressions
         /// <param name="initializers">An array of <see cref="Expression"/> objects to use to populate the <see cref="ListInitExpression.Initializers"/> collection.</param>
         /// <returns>A <see cref="ListInitExpression"/> that has the <see cref="NodeType"/> property equal to <see cref="ExpressionType.ListInit"/> and the <see cref="ListInitExpression.NewExpression"/> property set to the specified value.</returns>
         [RequiresUnreferencedCode(ExpressionRequiresUnreferencedCode)]
+        [RequiresDynamicCode(GenericMethodRequiresDynamicCode)]
         public static ListInitExpression ListInit(NewExpression newExpression, params Expression[] initializers)
         {
             return ListInit(newExpression, initializers as IEnumerable<Expression>);
@@ -117,15 +118,16 @@ namespace System.Linq.Expressions
         /// <param name="initializers">An <see cref="IEnumerable{T}"/> that contains <see cref="Expressions.ElementInit"/> objects to use to populate the <see cref="ListInitExpression.Initializers"/> collection.</param>
         /// <returns>A <see cref="ListInitExpression"/> that has the <see cref="NodeType"/> property equal to <see cref="ExpressionType.ListInit"/> and the <see cref="ListInitExpression.NewExpression"/> property set to the specified value.</returns>
         [RequiresUnreferencedCode(ExpressionRequiresUnreferencedCode)]
+        [RequiresDynamicCode(GenericMethodRequiresDynamicCode)]
         public static ListInitExpression ListInit(NewExpression newExpression, IEnumerable<Expression> initializers)
         {
-            ContractUtils.RequiresNotNull(newExpression, nameof(newExpression));
-            ContractUtils.RequiresNotNull(initializers, nameof(initializers));
+            ArgumentNullException.ThrowIfNull(newExpression);
+            ArgumentNullException.ThrowIfNull(initializers);
 
             ReadOnlyCollection<Expression> initializerlist = initializers.ToReadOnly();
             if (initializerlist.Count == 0)
             {
-                return new ListInitExpression(newExpression, EmptyReadOnlyCollection<ElementInit>.Instance);
+                return new ListInitExpression(newExpression, ReadOnlyCollection<ElementInit>.Empty);
             }
 
             MethodInfo? addMethod = FindMethod(newExpression.Type, "Add", null, new Expression[] { initializerlist[0] }, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
@@ -140,6 +142,7 @@ namespace System.Linq.Expressions
         /// <param name="initializers">An array of <see cref="Expression"/> objects to use to populate the <see cref="ListInitExpression.Initializers"/> collection.</param>
         /// <returns>A <see cref="ListInitExpression"/> that has the <see cref="NodeType"/> property equal to <see cref="ExpressionType.ListInit"/> and the <see cref="ListInitExpression.NewExpression"/> property set to the specified value.</returns>
         [RequiresUnreferencedCode(ExpressionRequiresUnreferencedCode)]
+        [RequiresDynamicCode(GenericMethodRequiresDynamicCode)]
         public static ListInitExpression ListInit(NewExpression newExpression, MethodInfo? addMethod, params Expression[] initializers)
         {
             return ListInit(newExpression, addMethod, initializers as IEnumerable<Expression>);
@@ -153,14 +156,15 @@ namespace System.Linq.Expressions
         /// <param name="initializers">An <see cref="IEnumerable{T}"/> that contains <see cref="Expression"/> objects to use to populate the Initializers collection.</param>
         /// <returns>A <see cref="ListInitExpression"/> that has the <see cref="NodeType"/> property equal to <see cref="ExpressionType.ListInit"/> and the <see cref="ListInitExpression.NewExpression"/> property set to the specified value.</returns>
         [RequiresUnreferencedCode(ExpressionRequiresUnreferencedCode)]
+        [RequiresDynamicCode(GenericMethodRequiresDynamicCode)]
         public static ListInitExpression ListInit(NewExpression newExpression, MethodInfo? addMethod, IEnumerable<Expression> initializers)
         {
             if (addMethod == null)
             {
                 return ListInit(newExpression, initializers);
             }
-            ContractUtils.RequiresNotNull(newExpression, nameof(newExpression));
-            ContractUtils.RequiresNotNull(initializers, nameof(initializers));
+            ArgumentNullException.ThrowIfNull(newExpression);
+            ArgumentNullException.ThrowIfNull(initializers);
 
             ReadOnlyCollection<Expression> initializerlist = initializers.ToReadOnly();
             ElementInit[] initList = new ElementInit[initializerlist.Count];
@@ -201,8 +205,8 @@ namespace System.Linq.Expressions
         /// </remarks>
         public static ListInitExpression ListInit(NewExpression newExpression, IEnumerable<ElementInit> initializers)
         {
-            ContractUtils.RequiresNotNull(newExpression, nameof(newExpression));
-            ContractUtils.RequiresNotNull(initializers, nameof(initializers));
+            ArgumentNullException.ThrowIfNull(newExpression);
+            ArgumentNullException.ThrowIfNull(initializers);
             ReadOnlyCollection<ElementInit> initializerlist = initializers.ToReadOnly();
             ValidateListInitArgs(newExpression.Type, initializerlist, nameof(newExpression));
             return new ListInitExpression(newExpression, initializerlist);

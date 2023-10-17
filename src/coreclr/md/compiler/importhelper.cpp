@@ -16,9 +16,6 @@
 #include "strongnameinternal.h"
 #include "sstring.h"
 
-#define COM_RUNTIME_LIBRARY "ComRuntimeLibrary"
-
-
 //*******************************************************************************
 // Find the MethodSpec by Method and Instantiation
 //*******************************************************************************
@@ -478,7 +475,7 @@ HRESULT ImportHelper::FindMemberRef(
         }
         if ((cbSig != 0) && (pbSig != NULL))
         {
-            // signature is specifed
+            // signature is specified
             IfFailGo(pMiniMd->getSignatureOfMemberRef(pMemberRefRec, &pbSigTmp, &cbSigTmp));
             if (cbSigTmp != cbSig)
                 continue;
@@ -1199,7 +1196,7 @@ HRESULT ImportHelper::FindCustomAttributeByToken(
     }
     else
     {
-        CLookUpHash *pHashTable = pMiniMd->m_pLookUpHashs[TBL_CustomAttribute];
+        CLookUpHash *pHashTable = pMiniMd->m_pLookUpHashes[TBL_CustomAttribute];
 
         if (pHashTable)
         {
@@ -2477,7 +2474,6 @@ ImportHelper::ImportTypeDef(
     LPCUTF8     szModuleImport;
     mdToken     tkOuterRes = mdTokenNil;
     HRESULT     hr = S_OK;
-    BOOL        bBCL = false;
 
     _ASSERTE(pMiniMdEmit && pCommonImport && ptkType);
     _ASSERTE(TypeFromToken(tdImport) == mdtTypeDef && tdImport != mdTypeDefNil);
@@ -2494,43 +2490,7 @@ ImportHelper::ImportTypeDef(
     }
     IfFailGo(static_cast<IMetaModelCommon*>(pMiniMdEmit)->CommonGetScopeProps(0, &MvidEmit));
 
-    if (pCommonAssemImport == NULL && strcmp(szModuleImport, COM_RUNTIME_LIBRARY) == 0)
-    {
-        const BYTE      *pBlob;                 // Blob with dispid.
-        ULONG           cbBlob;                 // Length of blob.
-        WCHAR           wzBlob[40];             // Wide char format of guid.
-        int             ix;                     // Loop control.
-
-        hr = pCommonImport->CommonGetCustomAttributeByName(1, INTEROP_GUID_TYPE, (const void **)&pBlob, &cbBlob);
-        if (hr != S_FALSE)
-        {
-            // Should be in format.  Total length == 41
-            // <0x0001><0x24>01234567-0123-0123-0123-001122334455<0x0000>
-            if ((cbBlob == 41) || (GET_UNALIGNED_VAL16(pBlob) == 1))
-            {
-                for (ix=1; ix<=36; ++ix)
-                    wzBlob[ix] = pBlob[ix+2];
-                wzBlob[0] = '{';
-                wzBlob[37] = '}';
-                wzBlob[38] = 0;
-                // It's ok that we ignore the hr here. It's not needed, but I
-                // don't want to remove it in case a code analysis tool will complain
-                // about not capturing return codes.
-                hr = IIDFromString(wzBlob, &GuidImport);
-            }
-        }
-        bBCL = (GuidImport == LIBID_ComPlusRuntime);
-    }
-
-    // Compute the ResolutionScope for the imported type.
-    if (bBCL)
-    {
-        // This is the case that we are referring to mscorlib.dll but client does not provide the manifest for
-        // mscorlib.dll!! Do not generate ModuleRef to the mscorlib.dll. But instead we should just leave the
-        // ResolutionScope empty
-        tkOuterRes = mdTokenNil;
-    }
-    else if (MvidAssemImport == MvidAssemEmit && MvidImport == MvidEmit)
+    if (MvidAssemImport == MvidAssemEmit && MvidImport == MvidEmit)
     {
         // The TypeDef is in the same Assembly and the Same scope.
         if (bReturnTd)
@@ -2572,7 +2532,7 @@ ImportHelper::ImportTypeDef(
         else
         {
             // <REVISIT_TODO>@FUTURE: review this fix! We may want to return error in the future.
-            // This is to enable smc to reference mscorlib.dll while it does not have the manifest for mscorlib.dll opened.</REVISIT_TODO>
+            // This is to enable smc to reference SPCL while it does not have the manifest for SPCL opened.</REVISIT_TODO>
             // Create a Nil ResolutionScope to the TypeRef.
             tkOuterRes = mdTokenNil;
         }
@@ -2735,7 +2695,7 @@ HRESULT ImportHelper::ImportTypeRef(
         if (IsNilToken(tkOuterImportRes))
         {
             // <REVISIT_TODO>BUG FIX:: URT 13626
-            // Well, before all of the clients generate AR for mscorlib.dll reference, it is not true
+            // Well, before all of the clients generate AR for SPCL reference, it is not true
             // that tkOuterImportRes == nil will imply that we have to find such an entry in the import manifest!!</REVISIT_TODO>
 
             // Look for a ExportedType entry in the import Assembly.  Its an error
@@ -2978,9 +2938,6 @@ HRESULT ImportHelper::CreateModuleRefFromScope( // S_OK or error.
             IfFailGo(pMiniMdEmit->AddModuleRefRecord(&pRecordEmit, &iRecordEmit));
             *ptkModuleRef = TokenFromRid(iRecordEmit, mdtModuleRef);
             IfFailGo(pMiniMdEmit->UpdateENCLog(*ptkModuleRef));
-
-            // It is a bug to create an ModuleRef to mscorlib.dll
-            _ASSERTE(strcmp(szName, COM_RUNTIME_LIBRARY) != 0);
 
             // Set the name of ModuleRef.
             IfFailGo(pMiniMdEmit->PutString(TBL_ModuleRef, ModuleRefRec::COL_Name,

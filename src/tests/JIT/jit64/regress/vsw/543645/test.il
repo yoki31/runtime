@@ -15,11 +15,10 @@
 {
   .ver 0:0:0:0
 }
-.assembly ovfldiv1
+.assembly 'test_543645'
 {
   .ver 0:0:0:0
 }
-.module ovfldiv1_il_r.exe
 .imagebase 0x00400000
 .file alignment 0x00000200
 .stackreserve 0x00100000
@@ -28,11 +27,10 @@
 
 
 
-.class private auto ansi beforefieldinit Overflow
+.class public auto ansi beforefieldinit Overflow
        extends [mscorlib]System.Object
 {
-  .method private hidebysig static int32
-          Main(string[] args) cil managed
+  .method public hidebysig static int32 Main() cil managed
   {
     .custom instance void [xunit.core]Xunit.FactAttribute::.ctor() = (
         01 00 00 00

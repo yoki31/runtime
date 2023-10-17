@@ -60,11 +60,10 @@ namespace System.Threading
 
         private Thread() { }
 
-        public extern int ManagedThreadId
+        public int ManagedThreadId
         {
             [Intrinsic]
-            [MethodImpl(MethodImplOptions.InternalCall)]
-            get;
+            get => _managedThreadId;
         }
 
         /// <summary>Returns handle for interop with EE. The handle is guaranteed to be non-null.</summary>
@@ -92,8 +91,8 @@ namespace System.Threading
             }
         }
 
-        [DllImport(RuntimeHelpers.QCall, EntryPoint = "ThreadNative_Start")]
-        private static extern unsafe void StartInternal(ThreadHandle t, int stackSize, int priority, char* pThreadName);
+        [LibraryImport(RuntimeHelpers.QCall, EntryPoint = "ThreadNative_Start")]
+        private static unsafe partial void StartInternal(ThreadHandle t, int stackSize, int priority, char* pThreadName);
 
         // Called from the runtime
         private void StartCallback()
@@ -119,21 +118,38 @@ namespace System.Threading
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern void SleepInternal(int millisecondsTimeout);
 
-        [DllImport(RuntimeHelpers.QCall, EntryPoint = "ThreadNative_UninterruptibleSleep0")]
-        internal static extern void UninterruptibleSleep0();
+        // Max iterations to be done in SpinWait without switching GC modes.
+        private const int SpinWaitCoopThreshold = 1024;
+
+        [LibraryImport(RuntimeHelpers.QCall, EntryPoint = "ThreadNative_SpinWait")]
+        [SuppressGCTransition]
+        private static partial void SpinWaitInternal(int iterations);
+
+        [LibraryImport(RuntimeHelpers.QCall, EntryPoint = "ThreadNative_SpinWait")]
+        private static partial void LongSpinWaitInternal(int iterations);
+
+        [MethodImpl(MethodImplOptions.NoInlining)] // Slow path method. Make sure that the caller frame does not pay for PInvoke overhead.
+        private static void LongSpinWait(int iterations) => LongSpinWaitInternal(iterations);
 
         /// <summary>
         /// Wait for a length of time proportional to 'iterations'.  Each iteration is should
         /// only take a few machine instructions.  Calling this API is preferable to coding
         /// a explicit busy loop because the hardware can be informed that it is busy waiting.
         /// </summary>
-        [MethodImpl(MethodImplOptions.InternalCall)]
-        private static extern void SpinWaitInternal(int iterations);
+        public static void SpinWait(int iterations)
+        {
+            if (iterations < SpinWaitCoopThreshold)
+            {
+                SpinWaitInternal(iterations);
+            }
+            else
+            {
+                LongSpinWait(iterations);
+            }
+        }
 
-        public static void SpinWait(int iterations) => SpinWaitInternal(iterations);
-
-        [DllImport(RuntimeHelpers.QCall, EntryPoint = "ThreadNative_YieldThread")]
-        private static extern Interop.BOOL YieldInternal();
+        [LibraryImport(RuntimeHelpers.QCall, EntryPoint = "ThreadNative_YieldThread")]
+        private static partial Interop.BOOL YieldInternal();
 
         public static bool Yield() => YieldInternal() != Interop.BOOL.FALSE;
 
@@ -157,8 +173,8 @@ namespace System.Threading
             InformThreadNameChange(GetNativeHandle(), value, value?.Length ?? 0);
         }
 
-        [DllImport(RuntimeHelpers.QCall, EntryPoint = "ThreadNative_InformThreadNameChange", CharSet = CharSet.Unicode)]
-        private static extern void InformThreadNameChange(ThreadHandle t, string? name, int len);
+        [LibraryImport(RuntimeHelpers.QCall, EntryPoint = "ThreadNative_InformThreadNameChange", StringMarshalling = StringMarshalling.Utf16)]
+        private static partial void InformThreadNameChange(ThreadHandle t, string? name, int len);
 
         /// <summary>Returns true if the thread has been started and is not dead.</summary>
         public extern bool IsAlive
@@ -219,8 +235,8 @@ namespace System.Threading
         [MethodImpl(MethodImplOptions.InternalCall)]
         private extern void SetPriorityNative(int priority);
 
-        [DllImport(RuntimeHelpers.QCall, EntryPoint = "ThreadNative_GetCurrentOSThreadId")]
-        private static extern ulong GetCurrentOSThreadId();
+        [LibraryImport(RuntimeHelpers.QCall, EntryPoint = "ThreadNative_GetCurrentOSThreadId")]
+        private static partial ulong GetCurrentOSThreadId();
 
         /// <summary>
         /// Return the thread state as a consistent set of bits.  This is more
@@ -251,7 +267,7 @@ namespace System.Threading
             //  Once we CoUninitialize the thread, the OS will still
             //  report the thread as implicitly in the MTA if any
             //  other thread in the process is CoInitialized.
-            if ((state == System.Threading.ApartmentState.Unknown) && (retState == System.Threading.ApartmentState.MTA))
+            if ((state == ApartmentState.Unknown) && (retState == ApartmentState.MTA))
             {
                 return true;
             }
@@ -278,17 +294,17 @@ namespace System.Threading
 #else // FEATURE_COMINTEROP_APARTMENT_SUPPORT
         private static bool SetApartmentStateUnchecked(ApartmentState state, bool throwOnError)
         {
-             if (state != ApartmentState.Unknown)
-             {
+            if (state != ApartmentState.Unknown)
+            {
                 if (throwOnError)
                 {
                     throw new PlatformNotSupportedException(SR.PlatformNotSupported_ComInterop);
                 }
 
                 return false;
-             }
+            }
 
-             return true;
+            return true;
         }
 #endif // FEATURE_COMINTEROP_APARTMENT_SUPPORT
 
@@ -332,36 +348,11 @@ namespace System.Threading
             get;
         }
 
-        [MethodImpl(MethodImplOptions.InternalCall)]
-        internal static extern int GetCurrentProcessorNumber();
-
-        // Cached processor id could be used as a hint for which per-core stripe of data to access to avoid sharing.
-        // It is periodically refreshed to trail the actual thread core affinity.
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static int GetCurrentProcessorId()
-        {
-            if (s_isProcessorNumberReallyFast)
-                return GetCurrentProcessorNumber();
-
-            return ProcessorIdCache.GetCurrentProcessorId();
-        }
-
-        // a speed check will determine refresh rate of the cache and will report if caching is not advisable.
-        // we will record that in a readonly static so that it could become a JIT constant and bypass caching entirely.
-        private static readonly bool s_isProcessorNumberReallyFast = ProcessorIdCache.ProcessorNumberSpeedCheck();
-
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void ResetThreadPoolThread()
         {
             Debug.Assert(this == CurrentThread);
             Debug.Assert(IsThreadPoolThread);
-
-            if (!ThreadPool.UsePortableThreadPool)
-            {
-                // Currently implemented in unmanaged method Thread::InternalReset and
-                // called internally from the ThreadPool in NotifyWorkItemComplete.
-                return;
-            }
 
             if (_mayNeedResetForThreadPool)
             {

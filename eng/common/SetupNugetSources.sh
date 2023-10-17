@@ -4,7 +4,7 @@
 # This file should be removed as part of this issue: https://github.com/dotnet/arcade/issues/4080
 #
 # What the script does is iterate over all package sources in the pointed NuGet.config and add a credential entry
-# under <packageSourceCredentials> for each Maestro's managed private feed. Two additional credential 
+# under <packageSourceCredentials> for each Maestro's managed private feed. Two additional credential
 # entries are also added for the two private static internal feeds: dotnet3-internal and dotnet3-internal-transport.
 #
 # This script needs to be called in every job that will restore packages and which the base repo has
@@ -68,7 +68,7 @@ if [ "$?" != "0" ]; then
     sed -i.bak "s|$ConfigNodeHeader|$ConfigNodeHeader${NL}$PackageSourcesTemplate|" $ConfigFile
 fi
 
-# Ensure there is a <packageSourceCredentials>...</packageSourceCredentials> section. 
+# Ensure there is a <packageSourceCredentials>...</packageSourceCredentials> section.
 grep -i "<packageSourceCredentials>" $ConfigFile
 if [ "$?" != "0" ]; then
     echo "Adding <packageSourceCredentials>...</packageSourceCredentials> section."
@@ -105,53 +105,33 @@ if [ "$?" == "0" ]; then
     PackageSources+=('dotnet3.1-internal-transport')
 fi
 
-# Ensure dotnet5-internal and dotnet5-internal-transport are in the packageSources if the public dotnet5 feeds are present
-grep -i "<add key=\"dotnet5\"" $ConfigFile
-if [ "$?" == "0" ]; then
-    grep -i "<add key=\"dotnet5-internal\"" $ConfigFile
-    if [ "$?" != "0" ]; then
-        echo "Adding dotnet5-internal to the packageSources."
-        PackageSourcesNodeFooter="</packageSources>"
-        PackageSourceTemplate="${TB}<add key=\"dotnet5-internal\" value=\"https://pkgs.dev.azure.com/dnceng/internal/_packaging/dotnet5-internal/nuget/v2\" />"
+DotNetVersions=('5' '6' '7' '8')
 
-        sed -i.bak "s|$PackageSourcesNodeFooter|$PackageSourceTemplate${NL}$PackageSourcesNodeFooter|" $ConfigFile
+for DotNetVersion in ${DotNetVersions[@]} ; do
+    FeedPrefix="dotnet${DotNetVersion}";
+    grep -i "<add key=\"$FeedPrefix\"" $ConfigFile
+    if [ "$?" == "0" ]; then
+        grep -i "<add key=\"$FeedPrefix-internal\"" $ConfigFile
+        if [ "$?" != "0" ]; then
+            echo "Adding $FeedPrefix-internal to the packageSources."
+            PackageSourcesNodeFooter="</packageSources>"
+            PackageSourceTemplate="${TB}<add key=\"$FeedPrefix-internal\" value=\"https://pkgs.dev.azure.com/dnceng/internal/_packaging/$FeedPrefix-internal/nuget/v2\" />"
+
+            sed -i.bak "s|$PackageSourcesNodeFooter|$PackageSourceTemplate${NL}$PackageSourcesNodeFooter|" $ConfigFile
+        fi
+        PackageSources+=("$FeedPrefix-internal")
+
+        grep -i "<add key=\"$FeedPrefix-internal-transport\">" $ConfigFile
+        if [ "$?" != "0" ]; then
+            echo "Adding $FeedPrefix-internal-transport to the packageSources."
+            PackageSourcesNodeFooter="</packageSources>"
+            PackageSourceTemplate="${TB}<add key=\"$FeedPrefix-internal-transport\" value=\"https://pkgs.dev.azure.com/dnceng/internal/_packaging/$FeedPrefix-internal-transport/nuget/v2\" />"
+
+            sed -i.bak "s|$PackageSourcesNodeFooter|$PackageSourceTemplate${NL}$PackageSourcesNodeFooter|" $ConfigFile
+        fi
+        PackageSources+=("$FeedPrefix-internal-transport")
     fi
-    PackageSources+=('dotnet5-internal')
-
-    grep -i "<add key=\"dotnet5-internal-transport\">" $ConfigFile
-    if [ "$?" != "0" ]; then
-        echo "Adding dotnet5-internal-transport to the packageSources."
-        PackageSourcesNodeFooter="</packageSources>"
-        PackageSourceTemplate="${TB}<add key=\"dotnet5-internal-transport\" value=\"https://pkgs.dev.azure.com/dnceng/internal/_packaging/dotnet5-internal-transport/nuget/v2\" />"
-
-        sed -i.bak "s|$PackageSourcesNodeFooter|$PackageSourceTemplate${NL}$PackageSourcesNodeFooter|" $ConfigFile
-    fi
-    PackageSources+=('dotnet5-internal-transport')
-fi
-
-# Ensure dotnet6-internal and dotnet6-internal-transport are in the packageSources if the public dotnet6 feeds are present
-grep -i "<add key=\"dotnet6\"" $ConfigFile
-if [ "$?" == "0" ]; then
-    grep -i "<add key=\"dotnet6-internal\"" $ConfigFile
-    if [ "$?" != "0" ]; then
-        echo "Adding dotnet6-internal to the packageSources."
-        PackageSourcesNodeFooter="</packageSources>"
-        PackageSourceTemplate="${TB}<add key=\"dotnet6-internal\" value=\"https://pkgs.dev.azure.com/dnceng/internal/_packaging/dotnet6-internal/nuget/v2\" />"
-
-        sed -i.bak "s|$PackageSourcesNodeFooter|$PackageSourceTemplate${NL}$PackageSourcesNodeFooter|" $ConfigFile
-    fi
-    PackageSources+=('dotnet6-internal')
-
-    grep -i "<add key=\"dotnet6-internal-transport\">" $ConfigFile
-    if [ "$?" != "0" ]; then
-        echo "Adding dotnet6-internal-transport to the packageSources."
-        PackageSourcesNodeFooter="</packageSources>"
-        PackageSourceTemplate="${TB}<add key=\"dotnet6-internal-transport\" value=\"https://pkgs.dev.azure.com/dnceng/internal/_packaging/dotnet6-internal-transport/nuget/v2\" />"
-
-        sed -i.bak "s|$PackageSourcesNodeFooter|$PackageSourceTemplate${NL}$PackageSourcesNodeFooter|" $ConfigFile
-    fi
-    PackageSources+=('dotnet6-internal-transport')
-fi
+done
 
 # I want things split line by line
 PrevIFS=$IFS
@@ -162,7 +142,7 @@ IFS=$PrevIFS
 
 for FeedName in ${PackageSources[@]} ; do
     # Check if there is no existing credential for this FeedName
-    grep -i "<$FeedName>" $ConfigFile 
+    grep -i "<$FeedName>" $ConfigFile
     if [ "$?" != "0" ]; then
         echo "Adding credentials for $FeedName."
 

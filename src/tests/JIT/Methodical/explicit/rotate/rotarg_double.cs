@@ -2,10 +2,11 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 using System;
+using Xunit;
 
-namespace Rotate
+namespace Rotate_rotarg_double_cs
 {
-    internal class App
+    public class App
     {
         public static int s_weightCount = 1;
         public static int s_objCount = 0;
@@ -110,12 +111,12 @@ namespace Rotate
             }
         }
 
-        private static int Main()
+        [Fact]
+        public static void TestEntryPoint()
         {
             Node root = new Node();
             root.growTree(4, "");
             root.rotateTree(ref root.m_leftChild.m_weight, ref root.m_rightChild.m_weight);
-            return 100;
         }
     }
 }

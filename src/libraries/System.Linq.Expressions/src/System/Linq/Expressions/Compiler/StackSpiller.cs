@@ -462,6 +462,7 @@ namespace System.Linq.Expressions.Compiler
             return cr.Finish(expr);
         }
 
+        [RequiresDynamicCode(Expression.NewArrayRequiresDynamicCode)]
         private Result RewriteNewArrayExpression(Expression expr, Stack stack)
         {
             var node = (NewArrayExpression)expr;
@@ -919,10 +920,7 @@ namespace System.Linq.Expressions.Compiler
 
                     @case = new SwitchCase(body.Node, testValues);
 
-                    if (clone == null)
-                    {
-                        clone = Clone(cases, i);
-                    }
+                    clone ??= Clone(cases, i);
                 }
 
                 if (clone != null)
@@ -987,10 +985,7 @@ namespace System.Linq.Expressions.Compiler
                     {
                         handler = Expression.MakeCatchBlock(handler.Test, handler.Variable, rbody.Node, filter);
 
-                        if (clone == null)
-                        {
-                            clone = Clone(handlers, i);
-                        }
+                        clone ??= Clone(handlers, i);
                     }
 
                     if (clone != null)

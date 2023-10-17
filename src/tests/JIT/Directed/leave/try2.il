@@ -8,10 +8,9 @@
   .publickeytoken = (B0 3F 5F 7F 11 D5 0A 3A )
   .ver 4:0:0:0
 }
-.assembly try2
+.assembly ASSEMBLY_NAME
 { 
 }
-.module try2.exe 
 .class private  sealed  VT
        extends [mscorlib]System.ValueType
 {

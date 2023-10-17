@@ -79,10 +79,8 @@ namespace System.Xml
         // By default, convert base64 value to string and call WriteString.
         public override Task WriteBase64Async(byte[] buffer, int index, int count)
         {
-            if (_base64Encoder == null)
-            {
-                _base64Encoder = new XmlRawWriterBase64Encoder(this);
-            }
+            _base64Encoder ??= new XmlRawWriterBase64Encoder(this);
+
             // Encode will call WriteRaw to write out the encoded characters
             return _base64Encoder.EncodeAsync(buffer, index, count);
         }
@@ -120,8 +118,7 @@ namespace System.Xml
         // Forward call to WriteString(string).
         public override Task WriteSurrogateCharEntityAsync(char lowChar, char highChar)
         {
-            ReadOnlySpan<char> entity = stackalloc char[] { lowChar, highChar };
-            return WriteStringAsync(new string(entity));
+            return WriteStringAsync(new string([lowChar, highChar]));
         }
 
         // Forward call to WriteString(string).

@@ -18,11 +18,11 @@ namespace System.Linq
     {
         internal EnumerableQuery() { }
     }
+    [System.Diagnostics.CodeAnalysis.RequiresUnreferencedCodeAttribute("Enumerating in-memory collections as IQueryable can require unreferenced code because expressions referencing IQueryable extension methods can get rebound to IEnumerable extension methods. The IEnumerable extension methods could be trimmed causing the application to fail at runtime.")]
+    [System.Diagnostics.CodeAnalysis.RequiresDynamicCode("Enumerating in-memory collections as IQueryable can require creating new generic types or methods, which requires creating code at runtime. This may not work when AOT compiling.")]
     public partial class EnumerableQuery<T> : System.Linq.EnumerableQuery, System.Collections.Generic.IEnumerable<T>, System.Collections.IEnumerable, System.Linq.IOrderedQueryable, System.Linq.IOrderedQueryable<T>, System.Linq.IQueryable, System.Linq.IQueryable<T>, System.Linq.IQueryProvider
     {
-        [System.Diagnostics.CodeAnalysis.RequiresUnreferencedCodeAttribute("Enumerating in-memory collections as IQueryable can require unreferenced code because expressions referencing IQueryable extension methods can get rebound to IEnumerable extension methods. The IEnumerable extension methods could be trimmed causing the application to fail at runtime.")]
         public EnumerableQuery(System.Collections.Generic.IEnumerable<T> enumerable) { }
-        [System.Diagnostics.CodeAnalysis.RequiresUnreferencedCodeAttribute("Enumerating in-memory collections as IQueryable can require unreferenced code because expressions referencing IQueryable extension methods can get rebound to IEnumerable extension methods. The IEnumerable extension methods could be trimmed causing the application to fail at runtime.")]
         public EnumerableQuery(System.Linq.Expressions.Expression expression) { }
         System.Type System.Linq.IQueryable.ElementType { get { throw null; } }
         System.Linq.Expressions.Expression System.Linq.IQueryable.Expression { get { throw null; } }
@@ -40,13 +40,17 @@ namespace System.Linq
         public static TSource Aggregate<TSource>(this System.Linq.IQueryable<TSource> source, System.Linq.Expressions.Expression<System.Func<TSource, TSource, TSource>> func) { throw null; }
         public static TAccumulate Aggregate<TSource, TAccumulate>(this System.Linq.IQueryable<TSource> source, TAccumulate seed, System.Linq.Expressions.Expression<System.Func<TAccumulate, TSource, TAccumulate>> func) { throw null; }
         public static TResult Aggregate<TSource, TAccumulate, TResult>(this System.Linq.IQueryable<TSource> source, TAccumulate seed, System.Linq.Expressions.Expression<System.Func<TAccumulate, TSource, TAccumulate>> func, System.Linq.Expressions.Expression<System.Func<TAccumulate, TResult>> selector) { throw null; }
+        public static System.Linq.IQueryable<System.Collections.Generic.KeyValuePair<TKey, TAccumulate>> AggregateBy<TSource, TKey, TAccumulate>(this System.Linq.IQueryable<TSource> source, System.Linq.Expressions.Expression<System.Func<TSource, TKey>> keySelector, TAccumulate seed, System.Linq.Expressions.Expression<System.Func<TAccumulate, TSource, TAccumulate>> func, System.Collections.Generic.IEqualityComparer<TKey>? keyComparer = null) where TKey : notnull { throw null; }
+        public static System.Linq.IQueryable<System.Collections.Generic.KeyValuePair<TKey, TAccumulate>> AggregateBy<TSource, TKey, TAccumulate>(this System.Linq.IQueryable<TSource> source, System.Linq.Expressions.Expression<System.Func<TSource, TKey>> keySelector, System.Linq.Expressions.Expression<System.Func<TKey, TAccumulate>> seedSelector, System.Linq.Expressions.Expression<System.Func<TAccumulate, TSource, TAccumulate>> func, System.Collections.Generic.IEqualityComparer<TKey>? keyComparer = null) where TKey : notnull { throw null; }
         public static bool All<TSource>(this System.Linq.IQueryable<TSource> source, System.Linq.Expressions.Expression<System.Func<TSource, bool>> predicate) { throw null; }
         public static bool Any<TSource>(this System.Linq.IQueryable<TSource> source) { throw null; }
         public static bool Any<TSource>(this System.Linq.IQueryable<TSource> source, System.Linq.Expressions.Expression<System.Func<TSource, bool>> predicate) { throw null; }
         public static System.Linq.IQueryable<TSource> Append<TSource>(this System.Linq.IQueryable<TSource> source, TSource element) { throw null; }
         [System.Diagnostics.CodeAnalysis.RequiresUnreferencedCodeAttribute("Enumerating in-memory collections as IQueryable can require unreferenced code because expressions referencing IQueryable extension methods can get rebound to IEnumerable extension methods. The IEnumerable extension methods could be trimmed causing the application to fail at runtime.")]
+        [System.Diagnostics.CodeAnalysis.RequiresDynamicCode("Enumerating in-memory collections as IQueryable can require creating new generic types or methods, which requires creating code at runtime. This may not work when AOT compiling.")]
         public static System.Linq.IQueryable AsQueryable(this System.Collections.IEnumerable source) { throw null; }
         [System.Diagnostics.CodeAnalysis.RequiresUnreferencedCodeAttribute("Enumerating in-memory collections as IQueryable can require unreferenced code because expressions referencing IQueryable extension methods can get rebound to IEnumerable extension methods. The IEnumerable extension methods could be trimmed causing the application to fail at runtime.")]
+        [System.Diagnostics.CodeAnalysis.RequiresDynamicCode("Enumerating in-memory collections as IQueryable can require creating new generic types or methods, which requires creating code at runtime. This may not work when AOT compiling.")]
         public static System.Linq.IQueryable<TElement> AsQueryable<TElement>(this System.Collections.Generic.IEnumerable<TElement> source) { throw null; }
         public static decimal Average(this System.Linq.IQueryable<decimal> source) { throw null; }
         public static double Average(this System.Linq.IQueryable<double> source) { throw null; }
@@ -75,7 +79,8 @@ namespace System.Linq
         public static bool Contains<TSource>(this System.Linq.IQueryable<TSource> source, TSource item, System.Collections.Generic.IEqualityComparer<TSource>? comparer) { throw null; }
         public static int Count<TSource>(this System.Linq.IQueryable<TSource> source) { throw null; }
         public static int Count<TSource>(this System.Linq.IQueryable<TSource> source, System.Linq.Expressions.Expression<System.Func<TSource, bool>> predicate) { throw null; }
-        public static System.Linq.IQueryable<TSource> DefaultIfEmpty<TSource>(this System.Linq.IQueryable<TSource> source) { throw null; }
+        public static System.Linq.IQueryable<System.Collections.Generic.KeyValuePair<TKey, int>> CountBy<TSource, TKey>(this System.Linq.IQueryable<TSource> source, System.Linq.Expressions.Expression<System.Func<TSource, TKey>> keySelector, System.Collections.Generic.IEqualityComparer<TKey>? comparer = null) where TKey : notnull { throw null; }
+        public static System.Linq.IQueryable<TSource?> DefaultIfEmpty<TSource>(this System.Linq.IQueryable<TSource> source) { throw null; }
         public static System.Linq.IQueryable<TSource> DefaultIfEmpty<TSource>(this System.Linq.IQueryable<TSource> source, TSource defaultValue) { throw null; }
         public static System.Linq.IQueryable<TSource> DistinctBy<TSource, TKey>(this System.Linq.IQueryable<TSource> source, System.Linq.Expressions.Expression<System.Func<TSource, TKey>> keySelector) { throw null; }
         public static System.Linq.IQueryable<TSource> DistinctBy<TSource, TKey>(this System.Linq.IQueryable<TSource> source, System.Linq.Expressions.Expression<System.Func<TSource, TKey>> keySelector, System.Collections.Generic.IEqualityComparer<TKey>? comparer) { throw null; }
@@ -134,6 +139,10 @@ namespace System.Linq
         public static System.Linq.IOrderedQueryable<TSource> OrderByDescending<TSource, TKey>(this System.Linq.IQueryable<TSource> source, System.Linq.Expressions.Expression<System.Func<TSource, TKey>> keySelector, System.Collections.Generic.IComparer<TKey>? comparer) { throw null; }
         public static System.Linq.IOrderedQueryable<TSource> OrderBy<TSource, TKey>(this System.Linq.IQueryable<TSource> source, System.Linq.Expressions.Expression<System.Func<TSource, TKey>> keySelector) { throw null; }
         public static System.Linq.IOrderedQueryable<TSource> OrderBy<TSource, TKey>(this System.Linq.IQueryable<TSource> source, System.Linq.Expressions.Expression<System.Func<TSource, TKey>> keySelector, System.Collections.Generic.IComparer<TKey>? comparer) { throw null; }
+        public static System.Linq.IOrderedQueryable<T> OrderDescending<T>(this System.Linq.IQueryable<T> source) { throw null; }
+        public static System.Linq.IOrderedQueryable<T> OrderDescending<T>(this System.Linq.IQueryable<T> source, System.Collections.Generic.IComparer<T> comparer) { throw null; }
+        public static System.Linq.IOrderedQueryable<T> Order<T>(this System.Linq.IQueryable<T> source) { throw null; }
+        public static System.Linq.IOrderedQueryable<T> Order<T>(this System.Linq.IQueryable<T> source, System.Collections.Generic.IComparer<T> comparer) { throw null; }
         public static System.Linq.IQueryable<TSource> Prepend<TSource>(this System.Linq.IQueryable<TSource> source, TSource element) { throw null; }
         public static System.Linq.IQueryable<TSource> Reverse<TSource>(this System.Linq.IQueryable<TSource> source) { throw null; }
         public static System.Linq.IQueryable<TResult> SelectMany<TSource, TResult>(this System.Linq.IQueryable<TSource> source, System.Linq.Expressions.Expression<System.Func<TSource, System.Collections.Generic.IEnumerable<TResult>>> selector) { throw null; }

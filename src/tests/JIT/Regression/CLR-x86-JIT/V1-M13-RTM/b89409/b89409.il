@@ -7,11 +7,10 @@
   .publickeytoken = (B0 3F 5F 7F 11 D5 0A 3A )
   .ver 4:0:0:0
 }
-.assembly test
+.assembly 'b89409'
 {
 }
 .assembly extern xunit.core {}
-.module test.exe
 // MVID: {A814820F-7F5B-4AEC-98B2-8CA067CCDA19}
 
 
@@ -20,7 +19,7 @@
 // Image base: 0x04800000
 
 
-.class private auto ansi beforefieldinit Test_b89409
+.class public auto ansi beforefieldinit Test_b89409
        extends [mscorlib]System.Object
 {
 
@@ -52,7 +51,7 @@
   IL_0006:  ret
 } // end of method Test::.ctor
 
-.method private hidebysig static int32 Main() cil managed
+.method public hidebysig static int32 Main() cil managed
 {
   .custom instance void [xunit.core]Xunit.FactAttribute::.ctor() = (
       01 00 00 00

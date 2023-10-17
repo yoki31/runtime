@@ -131,7 +131,8 @@ public class Reverse
         internal static extern IntPtr InvokeRetCallback(RetCallback callback);
     }
 
-    public static int Main(string[] args)
+    [Fact]
+    public static int TestEntryPoint()
     {
         try
         {

@@ -61,16 +61,18 @@ VOID FieldDesc::Init(mdFieldDef mb, CorElementType FieldType, DWORD dwMemberAttr
         FieldType == ELEMENT_TYPE_R8 ||
         FieldType == ELEMENT_TYPE_CLASS ||
         FieldType == ELEMENT_TYPE_VALUETYPE ||
+        FieldType == ELEMENT_TYPE_BYREF ||
+        FieldType == ELEMENT_TYPE_TYPEDBYREF ||
         FieldType == ELEMENT_TYPE_PTR ||
         FieldType == ELEMENT_TYPE_FNPTR
         );
     _ASSERTE(fIsStatic || (!fIsRVA && !fIsThreadLocal));
     _ASSERTE(fIsRVA + fIsThreadLocal <= 1);
 
-    m_requiresFullMbValue = 0;
     SetMemberDef(mb);
 
-    m_type = FieldType;
+    // A TypedByRef should be treated like a regular value type.
+    m_type = FieldType != ELEMENT_TYPE_TYPEDBYREF ? FieldType : ELEMENT_TYPE_VALUETYPE;
     m_prot = fdFieldAccessMask & dwMemberAttrs;
     m_isStatic = fIsStatic != 0;
     m_isRVA = fIsRVA != 0;
@@ -81,7 +83,7 @@ VOID FieldDesc::Init(mdFieldDef mb, CorElementType FieldType, DWORD dwMemberAttr
 #endif
 
     _ASSERTE(GetMemberDef() == mb);                 // no truncation
-    _ASSERTE(GetFieldType() == FieldType);
+    _ASSERTE(GetFieldType() == FieldType || (FieldType == ELEMENT_TYPE_TYPEDBYREF && m_type == ELEMENT_TYPE_VALUETYPE));
     _ASSERTE(GetFieldProtection() == (fdFieldAccessMask & dwMemberAttrs));
     _ASSERTE((BOOL) IsStatic() == (fIsStatic != 0));
 }
@@ -94,30 +96,12 @@ BOOL FieldDesc::IsObjRef()
     return CorTypeInfo::IsObjRef_NoThrow(GetFieldType());
 }
 
-BOOL FieldDesc::MightHaveName(ULONG nameHashValue)
+// Return whether the field is a GC ref type
+BOOL FieldDesc::IsByRef()
 {
-    LIMITED_METHOD_CONTRACT;
-
-    g_IBCLogger.LogFieldDescsAccess(this);
-
-    // We only have space for a name hash when we are using the packed mb layout
-    if (m_requiresFullMbValue)
-    {
-        return TRUE;
-    }
-
-    ULONG thisHashValue = m_mb & enum_packedMbLayout_NameHashMask;
-
-    // A zero value might mean no hash has ever been set
-    // (checking this way is better than dedicating a bit to tell us)
-    if (thisHashValue == 0)
-    {
-        return TRUE;
-    }
-
-    ULONG testHashValue = nameHashValue & enum_packedMbLayout_NameHashMask;
-
-    return (thisHashValue == testHashValue);
+    WRAPPER_NO_CONTRACT;
+    SUPPORTS_DAC;
+    return CorTypeInfo::IsByRef_NoThrow(GetFieldType());
 }
 
 #ifndef DACCESS_COMPILE //we don't require DAC to special case simple types
@@ -152,6 +136,7 @@ TypeHandle FieldDesc::LookupFieldTypeHandle(ClassLoadLevel level, BOOL dropGener
     _ASSERTE(type == ELEMENT_TYPE_CLASS ||
              type == ELEMENT_TYPE_VALUETYPE ||
              type == ELEMENT_TYPE_STRING ||
+             type == ELEMENT_TYPE_TYPEDBYREF ||
              type == ELEMENT_TYPE_SZARRAY ||
              type == ELEMENT_TYPE_VAR
              );
@@ -196,7 +181,7 @@ void* FieldDesc::GetStaticAddress(void *base)
     void* ret = GetStaticAddressHandle(base);       // Get the handle
 
         // For value classes, the handle points at an OBJECTREF
-        // which holds the boxed value class, so derefernce and unbox.
+        // which holds the boxed value class, so dereference and unbox.
     if (GetFieldType() == ELEMENT_TYPE_VALUETYPE && !IsRVA())
     {
         OBJECTREF obj = ObjectToOBJECTREF(*(Object**) ret);
@@ -239,14 +224,12 @@ PTR_VOID FieldDesc::GetStaticAddressHandle(PTR_VOID base)
         MODE_ANY;
         FORBID_FAULT;
         PRECONDITION(IsStatic());
-        PRECONDITION(GetEnclosingMethodTable()->IsRestored_NoLogging());
+        PRECONDITION(GetEnclosingMethodTable()->IsRestored());
     }
     CONTRACTL_END
 
-     g_IBCLogger.LogFieldDescsAccess(this);
-
     _ASSERTE(IsStatic());
-#ifdef EnC_SUPPORTED
+#ifdef FEATURE_METADATA_UPDATER
     if (IsEnCNew())
     {
         EnCFieldDesc * pFD = dac_cast<PTR_EnCFieldDesc>(this);
@@ -271,7 +254,7 @@ PTR_VOID FieldDesc::GetStaticAddressHandle(PTR_VOID base)
 #endif // !DACCESS_COMPILE
         return retVal;
     }
-#endif // EnC_SUPPORTED
+#endif // FEATURE_METADATA_UPDATER
 
 
     if (IsRVA())
@@ -359,7 +342,7 @@ void    FieldDesc::SetInstanceField(OBJECTREF o, const VOID * pInVal)
     //
     // assert that o is derived from MT of enclosing class
     //
-    // walk up o's inheritence chain to make sure m_pMTOfEnclosingClass is along it
+    // walk up o's inheritance chain to make sure m_pMTOfEnclosingClass is along it
     //
     MethodTable* pCursor = o->GetMethodTable();
 
@@ -459,16 +442,15 @@ PTR_VOID FieldDesc::GetAddress(PTR_VOID o)
     _ASSERTE(!IsEnCNew()); // when we call this while finding an EnC field via the DAC,
                            // the field desc is for the EnCHelper, not the new EnC field
 #endif
-    g_IBCLogger.LogFieldDescsAccess(this);
 
-#if defined(EnC_SUPPORTED) && !defined(DACCESS_COMPILE)
+#if defined(FEATURE_METADATA_UPDATER) && !defined(DACCESS_COMPILE)
     // EnC added fields aren't at a simple offset like normal fields.
     if (IsEnCNew())
     {
         // We'll have to go through some effort to compute the address of this field.
         return ((EnCFieldDesc *)this)->GetAddress(o);
     }
-#endif //  defined(EnC_SUPPORTED) && !defined(DACCESS_COMPILE)
+#endif //  defined(FEATURE_METADATA_UPDATER) && !defined(DACCESS_COMPILE)
     return GetAddressNoThrowNoGC(o);
 }
 
@@ -481,11 +463,9 @@ void *FieldDesc::GetInstanceAddress(OBJECTREF o)
     }
     CONTRACTL_END;
 
-    g_IBCLogger.LogFieldDescsAccess(this);
-
     DWORD dwOffset = m_dwOffset; // GetOffset()
 
-#ifdef EnC_SUPPORTED
+#ifdef FEATURE_METADATA_UPDATER
     // EnC added fields aren't at a simple offset like normal fields.
     if (dwOffset == FIELD_OFFSET_NEW_ENC) // IsEnCNew()
     {
@@ -687,6 +667,32 @@ UINT FieldDesc::LoadSize()
         //        LOG((LF_CLASSLOADER, LL_INFO10000, "FieldDesc::LoadSize %s::%s\n", GetApproxEnclosingMethodTable()->GetDebugClassName(), m_debugName));
         CONSISTENCY_CHECK(GetFieldType() == ELEMENT_TYPE_VALUETYPE);
         size = GetApproxFieldTypeHandleThrowing().GetMethodTable()->GetNumInstanceFieldBytes();
+    }
+
+    return size;
+}
+
+UINT FieldDesc::GetSize(MethodTable *pMTOfValueTypeField)
+{
+    CONTRACTL
+    {
+        INSTANCE_CHECK;
+        NOTHROW;
+        GC_NOTRIGGER;
+        MODE_ANY;
+        FORBID_FAULT;
+    }
+    CONTRACTL_END
+
+    CorElementType type = GetFieldType();
+    UINT size = GetSizeForCorElementType(type);
+    if (size == (UINT) -1)
+    {
+        LOG((LF_CLASSLOADER, LL_INFO10000, "FieldDesc::GetSize %s::%s\n", GetApproxEnclosingMethodTable()->GetDebugClassName(), m_debugName));
+        CONSISTENCY_CHECK(GetFieldType() == ELEMENT_TYPE_VALUETYPE);
+        TypeHandle t = (pMTOfValueTypeField != NULL) ? TypeHandle(pMTOfValueTypeField) : LookupApproxFieldTypeHandle();
+        _ASSERTE(!t.IsNull());
+        size = t.GetMethodTable()->GetNumInstanceFieldBytes();
     }
 
     return size;

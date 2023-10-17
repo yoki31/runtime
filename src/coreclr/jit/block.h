@@ -33,11 +33,7 @@ typedef BitVec          EXPSET_TP;
 typedef BitVec_ValArg_T EXPSET_VALARG_TP;
 typedef BitVec_ValRet_T EXPSET_VALRET_TP;
 
-#if LARGE_EXPSET
 #define EXPSET_SZ 64
-#else
-#define EXPSET_SZ 32
-#endif
 
 typedef BitVec          ASSERT_TP;
 typedef BitVec_ValArg_T ASSERT_VALARG_TP;
@@ -63,7 +59,8 @@ typedef BitVec_ValRet_T ASSERT_VALRET_TP;
 
 enum BBjumpKinds : BYTE
 {
-    BBJ_EHFINALLYRET,// block ends with 'endfinally' (for finally or fault)
+    BBJ_EHFINALLYRET,// block ends with 'endfinally' (for finally)
+    BBJ_EHFAULTRET,  // block ends with 'endfinally' (IL alias for 'endfault') (for fault)
     BBJ_EHFILTERRET, // block ends with 'endfilter'
     BBJ_EHCATCHRET,  // block ends with a leave out of a catch (only #if defined(FEATURE_EH_FUNCLETS))
     BBJ_THROW,       // block ends with 'throw'
@@ -78,6 +75,24 @@ enum BBjumpKinds : BYTE
     BBJ_COUNT
 };
 
+#ifdef DEBUG
+const char* const BBjumpKindNames[] = {
+    "BBJ_EHFINALLYRET",
+    "BBJ_EHFAULTRET",
+    "BBJ_EHFILTERRET",
+    "BBJ_EHCATCHRET",
+    "BBJ_THROW",
+    "BBJ_RETURN",
+    "BBJ_NONE",
+    "BBJ_ALWAYS",
+    "BBJ_LEAVE",
+    "BBJ_CALLFINALLY",
+    "BBJ_COND",
+    "BBJ_SWITCH",
+    "BBJ_COUNT"
+};
+#endif // DEBUG
+
 // clang-format on
 
 struct GenTree;
@@ -86,32 +101,21 @@ struct BasicBlock;
 class Compiler;
 class typeInfo;
 struct BasicBlockList;
-struct flowList;
+struct FlowEdge;
 struct EHblkDsc;
 struct BBswtDesc;
+struct BBehfDesc;
 
 struct StackEntry
 {
     GenTree* val;
     typeInfo seTypeInfo;
 };
-/*****************************************************************************/
-
-enum ThisInitState
-{
-    TIS_Bottom, // We don't know anything about the 'this' pointer.
-    TIS_Uninit, // The 'this' pointer for this constructor is known to be uninitialized.
-    TIS_Init,   // The 'this' pointer for this constructor is known to be initialized.
-    TIS_Top,    // This results from merging the state of two blocks one with TIS_Unint and the other with TIS_Init.
-                // We use this in fault blocks to prevent us from accessing the 'this' pointer, but otherwise
-                // allowing the fault block to generate code.
-};
 
 struct EntryState
 {
-    ThisInitState thisInitialized; // used to track whether the this ptr is initialized.
-    unsigned      esStackDepth;    // size of esStack
-    StackEntry*   esStack;         // ptr to  stack
+    unsigned    esStackDepth; // size of esStack
+    StackEntry* esStack;      // ptr to  stack
 };
 
 // Enumeration of the kinds of memory whose state changes the compiler tracks
@@ -196,159 +200,33 @@ struct allMemoryKinds
     }
 };
 
-// This encapsulates the "exception handling" successors of a block.  That is,
-// if a basic block BB1 occurs in a try block, we consider the first basic block
-// BB2 of the corresponding handler to be an "EH successor" of BB1.  Because we
-// make the conservative assumption that control flow can jump from a try block
-// to its handler at any time, the immediate (regular control flow)
-// predecessor(s) of the the first block of a try block are also considered to
-// have the first block of the handler as an EH successor.  This makes variables that
-// are "live-in" to the handler become "live-out" for these try-predecessor block,
-// so that they become live-in to the try -- which we require.
-//
-// This class maintains the minimum amount of state necessary to implement
-// successor iteration. The basic block whose successors are enumerated and
-// the compiler need to be provided by Advance/Current's callers. In addition
-// to iterators, this allows the use of other approaches that are more space
-// efficient.
-class EHSuccessorIterPosition
-{
-    // The number of "regular" (i.e., non-exceptional) successors that remain to
-    // be considered.  If BB1 has successor BB2, and BB2 is the first block of a
-    // try block, then we consider the catch block of BB2's try to be an EH
-    // successor of BB1.  This captures the iteration over the successors of BB1
-    // for this purpose.  (In reverse order; we're done when this field is 0).
-    unsigned m_remainingRegSuccs;
-
-    // The current "regular" successor of "m_block" that we're considering.
-    BasicBlock* m_curRegSucc;
-
-    // The current try block.  If non-null, then the current successor "m_curRegSucc"
-    // is the first block of the handler of this block.  While this try block has
-    // enclosing try's that also start with "m_curRegSucc", the corresponding handlers will be
-    // further EH successors.
-    EHblkDsc* m_curTry;
-
-    // Requires that "m_curTry" is NULL.  Determines whether there is, as
-    // discussed just above, a regular successor that's the first block of a
-    // try; if so, sets "m_curTry" to that try block.  (As noted above, selecting
-    // the try containing the current regular successor as the "current try" may cause
-    // multiple first-blocks of catches to be yielded as EH successors: trys enclosing
-    // the current try are also included if they also start with the current EH successor.)
-    void FindNextRegSuccTry(Compiler* comp, BasicBlock* block);
-
-public:
-    // Constructs a position that "points" to the first EH successor of `block`.
-    EHSuccessorIterPosition(Compiler* comp, BasicBlock* block);
-
-    // Constructs a position that "points" past the last EH successor of `block` ("end" position).
-    EHSuccessorIterPosition() : m_remainingRegSuccs(0), m_curTry(nullptr)
-    {
-    }
-
-    // Go on to the next EH successor.
-    void Advance(Compiler* comp, BasicBlock* block);
-
-    // Returns the current EH successor.
-    // Requires that "*this" is not equal to the "end" position.
-    BasicBlock* Current(Compiler* comp, BasicBlock* block);
-
-    // Returns "true" iff "*this" is equal to "ehsi".
-    bool operator==(const EHSuccessorIterPosition& ehsi)
-    {
-        return m_curTry == ehsi.m_curTry && m_remainingRegSuccs == ehsi.m_remainingRegSuccs;
-    }
-
-    bool operator!=(const EHSuccessorIterPosition& ehsi)
-    {
-        return !((*this) == ehsi);
-    }
-};
-
-// Yields both normal and EH successors (in that order) in one iteration.
-//
-// This class maintains the minimum amount of state necessary to implement
-// successor iteration. The basic block whose successors are enumerated and
-// the compiler need to be provided by Advance/Current's callers. In addition
-// to iterators, this allows the use of other approaches that are more space
-// efficient.
-class AllSuccessorIterPosition
-{
-    // Normal successor position
-    unsigned m_numNormSuccs;
-    unsigned m_remainingNormSucc;
-    // EH successor position
-    EHSuccessorIterPosition m_ehIter;
-
-    // True iff m_blk is a BBJ_CALLFINALLY block, and the current try block of m_ehIter,
-    // the first block of whose handler would be next yielded, is the jump target of m_blk.
-    inline bool CurTryIsBlkCallFinallyTarget(Compiler* comp, BasicBlock* block);
-
-public:
-    // Constructs a position that "points" to the first successor of `block`.
-    inline AllSuccessorIterPosition(Compiler* comp, BasicBlock* block);
-
-    // Constructs a position that "points" past the last successor of `block` ("end" position).
-    AllSuccessorIterPosition() : m_remainingNormSucc(0), m_ehIter()
-    {
-    }
-
-    // Go on to the next successor.
-    inline void Advance(Compiler* comp, BasicBlock* block);
-
-    // Returns the current successor.
-    // Requires that "*this" is not equal to the "end" position.
-    inline BasicBlock* Current(Compiler* comp, BasicBlock* block);
-
-    bool IsCurrentEH()
-    {
-        return m_remainingNormSucc == 0;
-    }
-
-    bool HasCurrent()
-    {
-        return *this != AllSuccessorIterPosition();
-    }
-
-    // Returns "true" iff "*this" is equal to "asi".
-    bool operator==(const AllSuccessorIterPosition& asi)
-    {
-        return (m_remainingNormSucc == asi.m_remainingNormSucc) && (m_ehIter == asi.m_ehIter);
-    }
-
-    bool operator!=(const AllSuccessorIterPosition& asi)
-    {
-        return !((*this) == asi);
-    }
-};
-
 // PredEdgeList: adapter class for forward iteration of the predecessor edge linked list using range-based `for`,
 // normally used via BasicBlock::PredEdges(), e.g.:
-//    for (flowList* const edge : block->PredEdges()) ...
+//    for (FlowEdge* const edge : block->PredEdges()) ...
 //
 class PredEdgeList
 {
-    flowList* m_begin;
+    FlowEdge* m_begin;
 
     // Forward iterator for the predecessor edges linked list.
     // The caller can't make changes to the preds list when using this.
     //
     class iterator
     {
-        flowList* m_pred;
+        FlowEdge* m_pred;
 
 #ifdef DEBUG
         // Try to guard against the user of the iterator from making changes to the IR that would invalidate
         // the iterator: cache the edge we think should be next, then check it when we actually do the `++`
         // operation. This is a bit conservative, but attempts to protect against callers assuming too much about
         // this iterator implementation.
-        flowList* m_next;
+        FlowEdge* m_next;
 #endif
 
     public:
-        iterator(flowList* pred);
+        iterator(FlowEdge* pred);
 
-        flowList* operator*() const
+        FlowEdge* operator*() const
         {
             return m_pred;
         }
@@ -362,7 +240,7 @@ class PredEdgeList
     };
 
 public:
-    PredEdgeList(flowList* pred) : m_begin(pred)
+    PredEdgeList(FlowEdge* pred) : m_begin(pred)
     {
     }
 
@@ -383,25 +261,25 @@ public:
 //
 class PredBlockList
 {
-    flowList* m_begin;
+    FlowEdge* m_begin;
 
     // Forward iterator for the predecessor edges linked list, yielding the predecessor block, not the edge.
     // The caller can't make changes to the preds list when using this.
     //
     class iterator
     {
-        flowList* m_pred;
+        FlowEdge* m_pred;
 
 #ifdef DEBUG
         // Try to guard against the user of the iterator from making changes to the IR that would invalidate
         // the iterator: cache the edge we think should be next, then check it when we actually do the `++`
         // operation. This is a bit conservative, but attempts to protect against callers assuming too much about
         // this iterator implementation.
-        flowList* m_next;
+        FlowEdge* m_next;
 #endif
 
     public:
-        iterator(flowList* pred);
+        iterator(FlowEdge* pred);
 
         BasicBlock* operator*() const;
 
@@ -414,7 +292,7 @@ class PredBlockList
     };
 
 public:
-    PredBlockList(flowList* pred) : m_begin(pred)
+    PredBlockList(FlowEdge* pred) : m_begin(pred)
     {
     }
 
@@ -478,6 +356,20 @@ public:
     BBArrayIterator end() const;
 };
 
+// BBEhfSuccList: adapter class for forward iteration of BBJ_EHFINALLYRET blocks, using range-based `for`,
+// normally used via BasicBlock::EHFinallyRetSuccs(), e.g.:
+//    for (BasicBlock* const succ : block->EHFinallyRetSuccs()) ...
+//
+class BBEhfSuccList
+{
+    BBehfDesc* m_bbeDesc;
+
+public:
+    BBEhfSuccList(BBehfDesc* bbeDesc);
+    BBArrayIterator begin() const;
+    BBArrayIterator end() const;
+};
+
 //------------------------------------------------------------------------
 // BasicBlockFlags: a bitmask of flags for BasicBlock
 //
@@ -487,41 +379,39 @@ enum BasicBlockFlags : unsigned __int64
 #define MAKE_BBFLAG(bit) (1ULL << (bit))
     BBF_EMPTY                = 0,
 
-    BBF_VISITED              = MAKE_BBFLAG( 0), // BB visited during optimizations
+    BBF_IS_LIR               = MAKE_BBFLAG( 0), // Set if the basic block contains LIR (as opposed to HIR)
     BBF_MARKED               = MAKE_BBFLAG( 1), // BB marked  during optimizations
-    BBF_CHANGED              = MAKE_BBFLAG( 2), // input/output of this block has changed
-    BBF_REMOVED              = MAKE_BBFLAG( 3), // BB has been removed from bb-list
-
-    BBF_DONT_REMOVE          = MAKE_BBFLAG( 4), // BB should not be removed during flow graph optimizations
-    BBF_IMPORTED             = MAKE_BBFLAG( 5), // BB byte-code has been imported
-    BBF_INTERNAL             = MAKE_BBFLAG( 6), // BB has been added by the compiler
-    BBF_FAILED_VERIFICATION  = MAKE_BBFLAG( 7), // BB has verification exception
-
-    BBF_TRY_BEG              = MAKE_BBFLAG( 8), // BB starts a 'try' block
-    BBF_FUNCLET_BEG          = MAKE_BBFLAG( 9), // BB is the beginning of a funclet
-    BBF_HAS_NULLCHECK        = MAKE_BBFLAG(10), // BB contains a null check
-    BBF_HAS_SUPPRESSGC_CALL  = MAKE_BBFLAG(11), // BB contains a call to a method with SuppressGCTransitionAttribute
-
-    BBF_RUN_RARELY           = MAKE_BBFLAG(12), // BB is rarely run (catch clauses, blocks with throws etc)
-    BBF_LOOP_HEAD            = MAKE_BBFLAG(13), // BB is the head of a loop
-    BBF_LOOP_CALL0           = MAKE_BBFLAG(14), // BB starts a loop that sometimes won't call
-    BBF_LOOP_CALL1           = MAKE_BBFLAG(15), // BB starts a loop that will always     call
-
-    BBF_HAS_LABEL            = MAKE_BBFLAG(16), // BB needs a label
-    BBF_LOOP_ALIGN           = MAKE_BBFLAG(17), // Block is lexically the first block in a loop we intend to align.
-    BBF_HAS_JMP              = MAKE_BBFLAG(18), // BB executes a JMP instruction (instead of return)
-    BBF_GC_SAFE_POINT        = MAKE_BBFLAG(19), // BB has a GC safe point (a call).  More abstractly, BB does not require a
+    BBF_REMOVED              = MAKE_BBFLAG( 2), // BB has been removed from bb-list
+    BBF_DONT_REMOVE          = MAKE_BBFLAG( 3), // BB should not be removed during flow graph optimizations
+    BBF_IMPORTED             = MAKE_BBFLAG( 4), // BB byte-code has been imported
+    BBF_INTERNAL             = MAKE_BBFLAG( 5), // BB has been added by the compiler
+    BBF_FAILED_VERIFICATION  = MAKE_BBFLAG( 6), // BB has verification exception
+//  BBF_UNUSED               = MAKE_BBFLAG( 7),
+    BBF_FUNCLET_BEG          = MAKE_BBFLAG( 8), // BB is the beginning of a funclet
+    BBF_CLONED_FINALLY_BEGIN = MAKE_BBFLAG( 9), // First block of a cloned finally region
+    BBF_CLONED_FINALLY_END   = MAKE_BBFLAG(10), // Last block of a cloned finally region
+    BBF_HAS_NULLCHECK        = MAKE_BBFLAG(11), // BB contains a null check
+    BBF_HAS_SUPPRESSGC_CALL  = MAKE_BBFLAG(12), // BB contains a call to a method with SuppressGCTransitionAttribute
+    BBF_RUN_RARELY           = MAKE_BBFLAG(13), // BB is rarely run (catch clauses, blocks with throws etc)
+    BBF_LOOP_HEAD            = MAKE_BBFLAG(14), // BB is the head of a loop
+    BBF_LOOP_CALL0           = MAKE_BBFLAG(15), // BB starts a loop that sometimes won't call
+    BBF_LOOP_CALL1           = MAKE_BBFLAG(16), // BB starts a loop that will always     call
+    BBF_HAS_LABEL            = MAKE_BBFLAG(17), // BB needs a label
+    BBF_LOOP_ALIGN           = MAKE_BBFLAG(18), // Block is lexically the first block in a loop we intend to align.
+    BBF_HAS_ALIGN            = MAKE_BBFLAG(19), // BB ends with 'align' instruction
+    BBF_HAS_JMP              = MAKE_BBFLAG(20), // BB executes a JMP instruction (instead of return)
+    BBF_GC_SAFE_POINT        = MAKE_BBFLAG(21), // BB has a GC safe point (a call).  More abstractly, BB does not require a
                                                 // (further) poll -- this may be because this BB has a call, or, in some
                                                 // cases, because the BB occurs in a loop, and we've determined that all
                                                 // paths in the loop body leading to BB include a call.
-
-    BBF_HAS_IDX_LEN          = MAKE_BBFLAG(20), // BB contains simple index or length expressions on an array local var.
-    BBF_HAS_NEWARRAY         = MAKE_BBFLAG(21), // BB contains 'new' of an array
-    BBF_HAS_NEWOBJ           = MAKE_BBFLAG(22), // BB contains 'new' of an object type.
+    BBF_HAS_IDX_LEN          = MAKE_BBFLAG(22), // BB contains simple index or length expressions on an SD array local var.
+    BBF_HAS_MD_IDX_LEN       = MAKE_BBFLAG(23), // BB contains simple index, length, or lower bound expressions on an MD array local var.
+    BBF_HAS_MDARRAYREF       = MAKE_BBFLAG(24), // Block has a multi-dimensional array reference
+    BBF_HAS_NEWOBJ           = MAKE_BBFLAG(25), // BB contains 'new' of an object type.
 
 #if defined(FEATURE_EH_FUNCLETS) && defined(TARGET_ARM)
 
-    BBF_FINALLY_TARGET       = MAKE_BBFLAG(23), // BB is the target of a finally return: where a finally will return during
+    BBF_FINALLY_TARGET       = MAKE_BBFLAG(26), // BB is the target of a finally return: where a finally will return during
                                                 // non-exceptional flow. Because the ARM calling sequence for calling a
                                                 // finally explicitly sets the return address to the finally target and jumps
                                                 // to the finally, instead of using a call instruction, ARM needs this to
@@ -530,60 +420,63 @@ enum BasicBlockFlags : unsigned __int64
 
 #endif // defined(FEATURE_EH_FUNCLETS) && defined(TARGET_ARM)
 
-    BBF_BACKWARD_JUMP        = MAKE_BBFLAG(24), // BB is surrounded by a backward jump/switch arc
-    BBF_RETLESS_CALL         = MAKE_BBFLAG(25), // BBJ_CALLFINALLY that will never return (and therefore, won't need a paired
-                                                // BBJ_ALWAYS); see isBBCallAlwaysPair().
-    BBF_LOOP_PREHEADER       = MAKE_BBFLAG(26), // BB is a loop preheader block
-    BBF_COLD                 = MAKE_BBFLAG(27), // BB is cold
-
-    BBF_PROF_WEIGHT          = MAKE_BBFLAG(28), // BB weight is computed from profile data
-    BBF_IS_LIR               = MAKE_BBFLAG(29), // Set if the basic block contains LIR (as opposed to HIR)
-    BBF_KEEP_BBJ_ALWAYS      = MAKE_BBFLAG(30), // A special BBJ_ALWAYS block, used by EH code generation. Keep the jump kind
-                                                // as BBJ_ALWAYS. Used for the paired BBJ_ALWAYS block following the
-                                                // BBJ_CALLFINALLY block, as well as, on x86, the final step block out of a
-                                                // finally.
-    BBF_CLONED_FINALLY_BEGIN = MAKE_BBFLAG(31), // First block of a cloned finally region
-
-    BBF_CLONED_FINALLY_END   = MAKE_BBFLAG(32), // Last block of a cloned finally region
-    BBF_HAS_CALL             = MAKE_BBFLAG(33), // BB contains a call
-    BBF_DOMINATED_BY_EXCEPTIONAL_ENTRY = MAKE_BBFLAG(34), // Block is dominated by exceptional entry.
-    BBF_BACKWARD_JUMP_TARGET = MAKE_BBFLAG(35), // Block is a target of a backward jump
-
-    BBF_PATCHPOINT           = MAKE_BBFLAG(36), // Block is a patchpoint
-    BBF_HAS_CLASS_PROFILE    = MAKE_BBFLAG(37), // BB contains a call needing a class profile
-    BBF_PARTIAL_COMPILATION_PATCHPOINT  = MAKE_BBFLAG(38), // Block is a partial compilation patchpoint
-    BBF_HAS_ALIGN          = MAKE_BBFLAG(39), // BB ends with 'align' instruction
+    BBF_RETLESS_CALL                   = MAKE_BBFLAG(27), // BBJ_CALLFINALLY that will never return (and therefore, won't need a paired
+                                                          // BBJ_ALWAYS); see isBBCallAlwaysPair().
+    BBF_LOOP_PREHEADER                 = MAKE_BBFLAG(28), // BB is a loop preheader block
+    BBF_COLD                           = MAKE_BBFLAG(29), // BB is cold
+    BBF_PROF_WEIGHT                    = MAKE_BBFLAG(30), // BB weight is computed from profile data
+    BBF_KEEP_BBJ_ALWAYS                = MAKE_BBFLAG(31), // A special BBJ_ALWAYS block, used by EH code generation. Keep the jump kind
+                                                          // as BBJ_ALWAYS. Used for the paired BBJ_ALWAYS block following the
+                                                          // BBJ_CALLFINALLY block, as well as, on x86, the final step block out of a
+                                                          // finally.
+    BBF_HAS_CALL                       = MAKE_BBFLAG(32), // BB contains a call
+    BBF_DOMINATED_BY_EXCEPTIONAL_ENTRY = MAKE_BBFLAG(33), // Block is dominated by exceptional entry.
+    BBF_BACKWARD_JUMP                  = MAKE_BBFLAG(34), // BB is surrounded by a backward jump/switch arc
+    BBF_BACKWARD_JUMP_SOURCE           = MAKE_BBFLAG(35), // Block is a source of a backward jump
+    BBF_BACKWARD_JUMP_TARGET           = MAKE_BBFLAG(36), // Block is a target of a backward jump
+    BBF_PATCHPOINT                     = MAKE_BBFLAG(37), // Block is a patchpoint
+    BBF_PARTIAL_COMPILATION_PATCHPOINT = MAKE_BBFLAG(38), // Block is a partial compilation patchpoint
+    BBF_HAS_HISTOGRAM_PROFILE          = MAKE_BBFLAG(39), // BB contains a call needing a histogram profile
+    BBF_TAILCALL_SUCCESSOR             = MAKE_BBFLAG(40), // BB has pred that has potential tail call
+    BBF_RECURSIVE_TAILCALL             = MAKE_BBFLAG(41), // Block has recursive tailcall that may turn into a loop
+    BBF_NO_CSE_IN                      = MAKE_BBFLAG(42), // Block should kill off any incoming CSE
 
     // The following are sets of flags.
 
     // Flags that relate blocks to loop structure.
 
-    BBF_LOOP_FLAGS = BBF_LOOP_PREHEADER | BBF_LOOP_HEAD | BBF_LOOP_CALL0 | BBF_LOOP_CALL1,
+    BBF_LOOP_FLAGS = BBF_LOOP_PREHEADER | BBF_LOOP_HEAD | BBF_LOOP_CALL0 | BBF_LOOP_CALL1 | BBF_LOOP_ALIGN,
 
     // Flags to update when two blocks are compacted
 
-    BBF_COMPACT_UPD = BBF_CHANGED | BBF_GC_SAFE_POINT | BBF_HAS_JMP | BBF_HAS_IDX_LEN | BBF_BACKWARD_JUMP | BBF_HAS_NEWARRAY | \
-                      BBF_HAS_NEWOBJ | BBF_HAS_NULLCHECK,
+    BBF_COMPACT_UPD = BBF_GC_SAFE_POINT | BBF_HAS_JMP | BBF_HAS_IDX_LEN | BBF_HAS_MD_IDX_LEN | BBF_BACKWARD_JUMP | \
+                      BBF_HAS_NEWOBJ | BBF_HAS_NULLCHECK | BBF_HAS_MDARRAYREF | BBF_LOOP_PREHEADER,
 
     // Flags a block should not have had before it is split.
 
-    BBF_SPLIT_NONEXIST = BBF_CHANGED | BBF_LOOP_HEAD | BBF_LOOP_CALL0 | BBF_LOOP_CALL1 | BBF_RETLESS_CALL | BBF_LOOP_PREHEADER | BBF_COLD,
+    BBF_SPLIT_NONEXIST = BBF_LOOP_HEAD | BBF_LOOP_CALL0 | BBF_LOOP_CALL1 | BBF_RETLESS_CALL | BBF_LOOP_PREHEADER | BBF_COLD,
 
     // Flags lost by the top block when a block is split.
     // Note, this is a conservative guess.
     // For example, the top block might or might not have BBF_GC_SAFE_POINT,
     // but we assume it does not have BBF_GC_SAFE_POINT any more.
 
-    BBF_SPLIT_LOST = BBF_GC_SAFE_POINT | BBF_HAS_JMP | BBF_KEEP_BBJ_ALWAYS | BBF_CLONED_FINALLY_END,
+    BBF_SPLIT_LOST = BBF_GC_SAFE_POINT | BBF_HAS_JMP | BBF_KEEP_BBJ_ALWAYS | BBF_CLONED_FINALLY_END | BBF_RECURSIVE_TAILCALL,
 
     // Flags gained by the bottom block when a block is split.
     // Note, this is a conservative guess.
-    // For example, the bottom block might or might not have BBF_HAS_NEWARRAY or BBF_HAS_NULLCHECK,
-    // but we assume it has BBF_HAS_NEWARRAY and BBF_HAS_NULLCHECK.
+    // For example, the bottom block might or might not have BBF_HAS_NULLCHECK, but we assume it has BBF_HAS_NULLCHECK.
     // TODO: Should BBF_RUN_RARELY be added to BBF_SPLIT_GAINED ?
 
-    BBF_SPLIT_GAINED = BBF_DONT_REMOVE | BBF_HAS_JMP | BBF_BACKWARD_JUMP | BBF_HAS_IDX_LEN | BBF_HAS_NEWARRAY | BBF_PROF_WEIGHT | \
-                       BBF_HAS_NEWOBJ | BBF_KEEP_BBJ_ALWAYS | BBF_CLONED_FINALLY_END | BBF_HAS_NULLCHECK | BBF_HAS_CLASS_PROFILE,
+    BBF_SPLIT_GAINED = BBF_DONT_REMOVE | BBF_HAS_JMP | BBF_BACKWARD_JUMP | BBF_HAS_IDX_LEN | BBF_HAS_MD_IDX_LEN | BBF_PROF_WEIGHT | \
+                       BBF_HAS_NEWOBJ | BBF_KEEP_BBJ_ALWAYS | BBF_CLONED_FINALLY_END | BBF_HAS_NULLCHECK | BBF_HAS_HISTOGRAM_PROFILE | BBF_HAS_MDARRAYREF,
+
+    // Flags that must be propagated to a new block if code is copied from a block to a new block. These are flags that
+    // limit processing of a block if the code in question doesn't exist. This is conservative; we might not
+    // have actually copied one of these type of tree nodes, but if we only copy a portion of the block's statements,
+    // we don't know (unless we actually pay close attention during the copy).
+
+    BBF_COPY_PROPAGATE = BBF_HAS_NEWOBJ | BBF_HAS_NULLCHECK | BBF_HAS_IDX_LEN | BBF_HAS_MD_IDX_LEN | BBF_HAS_MDARRAYREF,
 };
 
 inline constexpr BasicBlockFlags operator ~(BasicBlockFlags a)
@@ -611,6 +504,12 @@ inline BasicBlockFlags& operator &=(BasicBlockFlags& a, BasicBlockFlags b)
     return a = (BasicBlockFlags)((unsigned __int64)a & (unsigned __int64)b);
 }
 
+enum class BasicBlockVisit
+{
+    Continue,
+    Abort,
+};
+
 // clang-format on
 
 //------------------------------------------------------------------------
@@ -624,16 +523,163 @@ struct BasicBlock : private LIR::Range
 {
     friend class LIR;
 
+private:
     BasicBlock* bbNext; // next BB in ascending PC offset order
     BasicBlock* bbPrev;
 
-    void setNext(BasicBlock* next)
+    BBjumpKinds bbJumpKind; // jump (if any) at the end of this block
+
+    /* The following union describes the jump target(s) of this block */
+    union {
+        unsigned    bbJumpOffs; // PC offset (temporary only)
+        BasicBlock* bbJumpDest; // basic block
+        BBswtDesc*  bbJumpSwt;  // switch descriptor
+        BBehfDesc*  bbJumpEhf;  // BBJ_EHFINALLYRET descriptor
+    };
+
+public:
+    BBjumpKinds GetJumpKind() const
+    {
+        return bbJumpKind;
+    }
+
+    void SetJumpKind(BBjumpKinds jumpKind DEBUG_ARG(Compiler* compiler))
+    {
+#ifdef DEBUG
+        // BBJ_NONE should only be assigned when optimizing jumps in Compiler::optOptimizeLayout
+        // TODO: Change assert to check if compiler is in appropriate optimization phase to use BBJ_NONE
+        // (right now, this assertion does the null check to avoid unused variable warnings)
+        assert((jumpKind != BBJ_NONE) || (compiler != nullptr));
+#endif // DEBUG
+        bbJumpKind = jumpKind;
+    }
+
+    BasicBlock* Prev() const
+    {
+        return bbPrev;
+    }
+
+    void SetPrev(BasicBlock* prev)
+    {
+        bbPrev = prev;
+        if (prev)
+        {
+            prev->bbNext = this;
+        }
+    }
+
+    BasicBlock* Next() const
+    {
+        return bbNext;
+    }
+
+    void SetNext(BasicBlock* next)
     {
         bbNext = next;
         if (next)
         {
             next->bbPrev = this;
         }
+    }
+
+    bool IsFirst() const
+    {
+        return (bbPrev == nullptr);
+    }
+
+    bool IsLast() const
+    {
+        return (bbNext == nullptr);
+    }
+
+    bool PrevIs(const BasicBlock* block) const
+    {
+        return (bbPrev == block);
+    }
+
+    bool NextIs(const BasicBlock* block) const
+    {
+        return (bbNext == block);
+    }
+
+    bool IsLastHotBlock(Compiler* compiler) const;
+
+    bool IsFirstColdBlock(Compiler* compiler) const;
+
+    unsigned GetJumpOffs() const
+    {
+        return bbJumpOffs;
+    }
+
+    void SetJumpOffs(unsigned jumpOffs)
+    {
+        bbJumpOffs = jumpOffs;
+    }
+
+    BasicBlock* GetJumpDest() const
+    {
+        return bbJumpDest;
+    }
+
+    void SetJumpDest(BasicBlock* jumpDest)
+    {
+        bbJumpDest = jumpDest;
+    }
+
+    void SetJumpKindAndTarget(BBjumpKinds jumpKind, BasicBlock* jumpDest)
+    {
+        assert(jumpDest != nullptr);
+        bbJumpKind = jumpKind;
+        bbJumpDest = jumpDest;
+        assert(KindIs(BBJ_ALWAYS, BBJ_CALLFINALLY, BBJ_COND, BBJ_EHCATCHRET, BBJ_LEAVE));
+    }
+
+    bool HasJumpTo(const BasicBlock* jumpDest) const
+    {
+        return (bbJumpDest == jumpDest);
+    }
+
+    bool JumpsToNext() const
+    {
+        return (bbJumpDest == bbNext);
+    }
+
+    BBswtDesc* GetJumpSwt() const
+    {
+        return bbJumpSwt;
+    }
+
+    void SetJumpSwt(BBswtDesc* jumpSwt)
+    {
+        bbJumpSwt = jumpSwt;
+    }
+
+    void SetJumpKindAndTarget(BBjumpKinds jumpKind, BBswtDesc* jumpSwt)
+    {
+        assert(jumpKind == BBJ_SWITCH);
+        assert(jumpSwt != nullptr);
+        bbJumpKind = jumpKind;
+        bbJumpSwt  = jumpSwt;
+    }
+
+    BBehfDesc* GetJumpEhf() const
+    {
+        assert(KindIs(BBJ_EHFINALLYRET));
+        return bbJumpEhf;
+    }
+
+    void SetJumpEhf(BBehfDesc* jumpEhf)
+    {
+        assert(KindIs(BBJ_EHFINALLYRET));
+        bbJumpEhf = jumpEhf;
+    }
+
+    void SetJumpKindAndTarget(BBjumpKinds jumpKind, BBehfDesc* jumpEhf)
+    {
+        assert(jumpKind == BBJ_EHFINALLYRET);
+        assert(jumpEhf != nullptr);
+        bbJumpKind = jumpKind;
+        bbJumpEhf  = jumpEhf;
     }
 
     BasicBlockFlags bbFlags;
@@ -669,7 +715,6 @@ struct BasicBlock : private LIR::Range
 
 #ifdef DEBUG
     void     dspFlags();               // Print the flags
-    unsigned dspCheapPreds();          // Print the predecessors (bbCheapPreds)
     unsigned dspPreds();               // Print the predecessors (bbPreds)
     void dspSuccs(Compiler* compiler); // Print the successors. The 'compiler' argument determines whether EH
                                        // regions are printed: see NumSucc() for details.
@@ -819,14 +864,21 @@ struct BasicBlock : private LIR::Range
     // a block corresponding to an exit from the try of a try/finally.
     bool isBBCallAlwaysPairTail() const;
 
-    BBjumpKinds bbJumpKind; // jump (if any) at the end of this block
+    bool KindIs(BBjumpKinds kind) const
+    {
+        return bbJumpKind == kind;
+    }
 
-    /* The following union describes the jump target(s) of this block */
-    union {
-        unsigned    bbJumpOffs; // PC offset (temporary only)
-        BasicBlock* bbJumpDest; // basic block
-        BBswtDesc*  bbJumpSwt;  // switch descriptor
-    };
+    template <typename... T>
+    bool KindIs(BBjumpKinds kind, T... rest) const
+    {
+        return KindIs(kind) || KindIs(rest...);
+    }
+
+    bool HasTerminator()
+    {
+        return KindIs(BBJ_EHFINALLYRET, BBJ_EHFAULTRET, BBJ_EHFILTERRET, BBJ_COND, BBJ_SWITCH, BBJ_RETURN);
+    }
 
     // NumSucc() gives the number of successors, and GetSucc() returns a given numbered successor.
     //
@@ -835,27 +887,14 @@ struct BasicBlock : private LIR::Range
     // GetSucc() without a Compiler*.
     //
     // The behavior of NumSucc()/GetSucc() is different when passed a Compiler* for blocks that end in:
-    // (1) BBJ_EHFINALLYRET (a return from a finally or fault block)
-    // (2) BBJ_EHFILTERRET (a return from EH filter block)
-    // (3) BBJ_SWITCH
-    //
-    // For BBJ_EHFINALLYRET, if no Compiler* is passed, then the block is considered to have no
-    // successor. If Compiler* is passed, we figure out the actual successors. Some cases will want one behavior,
-    // other cases the other. For example, IL verification requires that these blocks end in an empty operand
-    // stack, and since the dataflow analysis of IL verification is concerned only with the contents of the
-    // operand stack, we can consider the finally block to have no successors. But a more general dataflow
-    // analysis that is tracking the contents of local variables might want to consider *all* successors,
-    // and would pass the current Compiler object.
-    //
-    // Similarly, BBJ_EHFILTERRET blocks are assumed to have no successors if Compiler* is not passed; if
-    // Compiler* is passed, NumSucc/GetSucc yields the first block of the try block's handler.
+    // (1) BBJ_SWITCH
     //
     // For BBJ_SWITCH, if Compiler* is not passed, then all switch successors are returned. If Compiler*
     // is passed, then only unique switch successors are returned; the duplicate successors are omitted.
     //
-    // Note that for BBJ_COND, which has two successors (fall through and condition true branch target),
-    // only the unique targets are returned. Thus, if both targets are the same, NumSucc() will only return 1
-    // instead of 2.
+    // Note that for BBJ_COND, which has two successors (fall through (condition false), and condition true
+    // branch target), only the unique targets are returned. Thus, if both targets are the same, NumSucc()
+    // will only return 1 instead of 2.
     //
     // NumSucc: Returns the number of successors of "this".
     unsigned NumSucc() const;
@@ -865,13 +904,23 @@ struct BasicBlock : private LIR::Range
     BasicBlock* GetSucc(unsigned i) const;
     BasicBlock* GetSucc(unsigned i, Compiler* comp);
 
-    // SwitchTargets: convenience methods for enabling range-based `for` iteration over a switch block's targets, e.g.:
+    // SwitchTargets: convenience method for enabling range-based `for` iteration over a switch block's targets, e.g.:
     //    for (BasicBlock* const bTarget : block->SwitchTargets()) ...
     //
     BBSwitchTargetList SwitchTargets() const
     {
         assert(bbJumpKind == BBJ_SWITCH);
         return BBSwitchTargetList(bbJumpSwt);
+    }
+
+    // EHFinallyRetSuccs: convenience method for enabling range-based `for` iteration over BBJ_EHFINALLYRET block
+    // successors, e.g.:
+    //    for (BasicBlock* const succ : block->EHFinallyRetSuccs()) ...
+    //
+    BBEhfSuccList EHFinallyRetSuccs() const
+    {
+        assert(bbJumpKind == BBJ_EHFINALLYRET);
+        return BBEhfSuccList(bbJumpEhf);
     }
 
     BasicBlock* GetUniquePred(Compiler* comp) const;
@@ -895,10 +944,7 @@ struct BasicBlock : private LIR::Range
         m_firstNode = tree;
     }
 
-    union {
-        EntryState* bbEntryState; // verifier tracked state of all entries in stack.
-        flowList*   bbLastPred;   // last pred list entry
-    };
+    EntryState* bbEntryState; // verifier tracked state of all entries in stack.
 
 #define NO_BASE_TMP UINT_MAX // base# to use when we have none
 
@@ -908,8 +954,8 @@ struct BasicBlock : private LIR::Range
     };
 
     union {
-        unsigned bbStkTempsOut;      // base# for output stack temps
-        int      bbClassSchemaIndex; // schema index for class instrumentation
+        unsigned bbStkTempsOut;          // base# for output stack temps
+        int      bbHistogramSchemaIndex; // schema index for histogram instrumentation
     };
 
 #define MAX_XCPTN_INDEX (USHRT_MAX - 1)
@@ -1000,6 +1046,16 @@ struct BasicBlock : private LIR::Range
         bbHndIndex = from->bbHndIndex;
     }
 
+    void copyTryIndex(const BasicBlock* from)
+    {
+        bbTryIndex = from->bbTryIndex;
+    }
+
+    void copyHndIndex(const BasicBlock* from)
+    {
+        bbHndIndex = from->bbHndIndex;
+    }
+
     static bool sameTryRegion(const BasicBlock* blk1, const BasicBlock* blk2)
     {
         return blk1->bbTryIndex == blk2->bbTryIndex;
@@ -1038,19 +1094,14 @@ struct BasicBlock : private LIR::Range
         unsigned short bbFPinVars; // number of inner enregistered FP vars
     };
 
-    // Basic block predecessor lists. Early in compilation, some phases might need to compute "cheap" predecessor
-    // lists. These are stored in bbCheapPreds, computed by fgComputeCheapPreds(). If bbCheapPreds is valid,
-    // 'fgCheapPredsValid' will be 'true'. Later, the "full" predecessor lists are created by fgComputePreds(), stored
-    // in 'bbPreds', and then maintained throughout compilation. 'fgComputePredsDone' will be 'true' after the
-    // full predecessor lists are created. See the comment at fgComputeCheapPreds() to see how those differ from
-    // the "full" variant.
-    union {
-        BasicBlockList* bbCheapPreds; // ptr to list of cheap predecessors (used before normal preds are computed)
-        flowList*       bbPreds;      // ptr to list of predecessors
-    };
+    // Basic block predecessor lists. Predecessor lists are created by fgLinkBasicBlocks(), stored
+    // in 'bbPreds', and then maintained throughout compilation. 'fgPredsComputed' will be 'true' after the
+    // predecessor lists are created.
+    //
+    FlowEdge* bbPreds; // ptr to list of predecessors
 
     // PredEdges: convenience method for enabling range-based `for` iteration over predecessor edges, e.g.:
-    //    for (flowList* const edge : block->PredEdges()) ...
+    //    for (FlowEdge* const edge : block->PredEdges()) ...
     //
     PredEdgeList PredEdges() const
     {
@@ -1074,13 +1125,16 @@ struct BasicBlock : private LIR::Range
     BlockSet bbReach; // Set of all blocks that can reach this one
 
     union {
-        BasicBlock* bbIDom;      // Represent the closest dominator to this block (called the Immediate
-                                 // Dominator) used to compute the dominance tree.
-        void* bbSparseProbeList; // Used early on by fgInstrument
-        void* bbSparseCountInfo; // Used early on by fgIncorporateEdgeCounts
+        BasicBlock* bbIDom;          // Represent the closest dominator to this block (called the Immediate
+                                     // Dominator) used to compute the dominance tree.
+        FlowEdge* bbLastPred;        // Used early on by fgLinkBasicBlock/fgAddRefPred
+        void*     bbSparseProbeList; // Used early on by fgInstrument
     };
 
-    unsigned bbPostOrderNum; // the block's post order number in the graph.
+    void* bbSparseCountInfo; // Used early on by fgIncorporateEdgeCounts
+
+    unsigned bbPreorderNum;  // the block's  preorder number in the graph (1...fgMaxBBNum]
+    unsigned bbPostorderNum; // the block's postorder number in the graph (1...fgMaxBBNum]
 
     IL_OFFSET bbCodeOffs;    // IL offset of the beginning of the block
     IL_OFFSET bbCodeOffsEnd; // IL offset past the end of the block. Thus, the [bbCodeOffs..bbCodeOffsEnd)
@@ -1092,7 +1146,7 @@ struct BasicBlock : private LIR::Range
                                   // BAD_IL_OFFSET.
 #endif                            // DEBUG
 
-    VARSET_TP bbVarUse; // variables used     by block (before an assignment)
+    VARSET_TP bbVarUse; // variables used     by block (before a definition)
     VARSET_TP bbVarDef; // variables assigned by block (before a use)
 
     VARSET_TP bbLiveIn;  // variables live on entry
@@ -1146,24 +1200,18 @@ struct BasicBlock : private LIR::Range
      */
 
     union {
-        EXPSET_TP bbCseGen; // CSEs computed by block
-#if ASSERTION_PROP
-        ASSERT_TP bbAssertionGen; // value assignments computed by block
-#endif
+        EXPSET_TP bbCseGen;       // CSEs computed by block
+        ASSERT_TP bbAssertionGen; // assertions computed by block
     };
 
     union {
-        EXPSET_TP bbCseIn; // CSEs available on entry
-#if ASSERTION_PROP
-        ASSERT_TP bbAssertionIn; // value assignments available on entry
-#endif
+        EXPSET_TP bbCseIn;       // CSEs available on entry
+        ASSERT_TP bbAssertionIn; // assertions available on entry
     };
 
     union {
-        EXPSET_TP bbCseOut; // CSEs available on exit
-#if ASSERTION_PROP
-        ASSERT_TP bbAssertionOut; // value assignments available on exit
-#endif
+        EXPSET_TP bbCseOut;       // CSEs available on exit
+        ASSERT_TP bbAssertionOut; // assertions available on exit
     };
 
     void* bbEmitCookie;
@@ -1189,10 +1237,10 @@ struct BasicBlock : private LIR::Range
 
     bool bbFallsThrough() const;
 
-    // Our slop fraction is 1/128 of the block weight rounded off
+    // Our slop fraction is 1/50 of the block weight.
     static weight_t GetSlopFraction(weight_t weightBlk)
     {
-        return ((weightBlk + 64) / 128);
+        return weightBlk / 50.0;
     }
 
     // Given an the edge b1 -> b2, calculate the slop fraction by
@@ -1215,9 +1263,8 @@ struct BasicBlock : private LIR::Range
     unsigned bbID;
 #endif // DEBUG
 
-    ThisInitState bbThisOnEntry() const;
-    unsigned      bbStackDepthOnEntry() const;
-    void bbSetStack(void* stackBuffer);
+    unsigned bbStackDepthOnEntry() const;
+    void bbSetStack(StackEntry* stack);
     StackEntry* bbStackOnEntry() const;
 
     // "bbNum" is one-based (for unknown reasons); it is sometimes useful to have the corresponding
@@ -1230,6 +1277,7 @@ struct BasicBlock : private LIR::Range
 
     Statement* firstStmt() const;
     Statement* lastStmt() const;
+    bool       hasSingleStmt() const;
 
     // Statements: convenience method for enabling range-based `for` iteration over the statement list, e.g.:
     //    for (Statement* const stmt : block->Statements())
@@ -1248,7 +1296,6 @@ struct BasicBlock : private LIR::Range
         return StatementList(FirstNonPhiDef());
     }
 
-    GenTree* firstNode() const;
     GenTree* lastNode() const;
 
     bool endsWithJmpMethod(Compiler* comp) const;
@@ -1263,9 +1310,9 @@ struct BasicBlock : private LIR::Range
     bool endsWithTailCallConvertibleToLoop(Compiler* comp, GenTree** tailCall) const;
 
     // Returns the first statement in the statement list of "this" that is
-    // not an SSA definition (a lcl = phi(...) assignment).
+    // not an SSA definition (a lcl = phi(...) store).
     Statement* FirstNonPhiDef() const;
-    Statement* FirstNonPhiDefOrCatchArgAsg() const;
+    Statement* FirstNonPhiDefOrCatchArgStore() const;
 
     BasicBlock() : bbStmtList(nullptr), bbLiveIn(VarSetOps::UninitVal()), bbLiveOut(VarSetOps::UninitVal())
     {
@@ -1330,15 +1377,16 @@ struct BasicBlock : private LIR::Range
         }
     };
 
-    Successors<EHSuccessorIterPosition> GetEHSuccs(Compiler* comp)
-    {
-        return Successors<EHSuccessorIterPosition>(comp, this);
-    }
+    template <typename TFunc>
+    BasicBlockVisit VisitEHSecondPassSuccs(Compiler* comp, TFunc func);
 
-    Successors<AllSuccessorIterPosition> GetAllSuccs(Compiler* comp)
-    {
-        return Successors<AllSuccessorIterPosition>(comp, this);
-    }
+    template <typename TFunc>
+    BasicBlockVisit VisitAllSuccs(Compiler* comp, TFunc func);
+
+    template <typename TFunc>
+    BasicBlockVisit VisitRegularSuccs(Compiler* comp, TFunc func);
+
+    bool HasPotentialEHSuccs(Compiler* comp);
 
     // BBSuccList: adapter class for forward iteration of block successors, using range-based `for`,
     // normally used via BasicBlock::Succs(), e.g.:
@@ -1519,10 +1567,10 @@ public:
     {
         assert(m_block != nullptr);
         // Check that we haven't been spliced out of the list.
-        assert((m_block->bbNext == nullptr) || (m_block->bbNext->bbPrev == m_block));
-        assert((m_block->bbPrev == nullptr) || (m_block->bbPrev->bbNext == m_block));
+        assert(m_block->IsLast() || m_block->Next()->PrevIs(m_block));
+        assert(m_block->IsFirst() || m_block->Prev()->NextIs(m_block));
 
-        m_block = m_block->bbNext;
+        m_block = m_block->Next();
         return *this;
     }
 
@@ -1562,6 +1610,10 @@ public:
 // and must be non-null. E.g.,
 //    for (BasicBlock* const block : BasicBlockRangeList(startBlock, endBlock)) ...
 //
+// Note that endBlock->bbNext is captured at the beginning of the iteration. Thus, any blocks
+// inserted before that will continue the iteration. In particular, inserting blocks between endBlock
+// and endBlock->bbNext will yield unexpected results, as the iteration will continue longer than desired.
+//
 class BasicBlockRangeList
 {
     BasicBlock* m_begin;
@@ -1581,7 +1633,7 @@ public:
 
     BasicBlockIterator end() const
     {
-        return BasicBlockIterator(m_end->bbNext); // walk until we see the block *following* the `m_end` block
+        return BasicBlockIterator(m_end->Next()); // walk until we see the block *following* the `m_end` block
     }
 };
 
@@ -1649,17 +1701,49 @@ inline BBArrayIterator BBSwitchTargetList::end() const
     return BBArrayIterator(m_bbsDesc->bbsDstTab + m_bbsDesc->bbsCount);
 }
 
+// BBehfDesc -- descriptor for a BBJ_EHFINALLYRET block
+//
+struct BBehfDesc
+{
+    BasicBlock** bbeSuccs; // array of `BasicBlock*` pointing to BBJ_EHFINALLYRET block successors
+    unsigned     bbeCount; // size of `bbeSuccs` array
+
+    BBehfDesc() : bbeSuccs(nullptr), bbeCount(0)
+    {
+    }
+
+    BBehfDesc(Compiler* comp, const BBehfDesc* other);
+};
+
+// BBEhfSuccList out-of-class-declaration implementations (here due to C++ ordering requirements).
+//
+
+inline BBEhfSuccList::BBEhfSuccList(BBehfDesc* bbeDesc) : m_bbeDesc(bbeDesc)
+{
+    assert(m_bbeDesc != nullptr);
+    assert((m_bbeDesc->bbeSuccs != nullptr) || (m_bbeDesc->bbeCount == 0));
+}
+
+inline BBArrayIterator BBEhfSuccList::begin() const
+{
+    return BBArrayIterator(m_bbeDesc->bbeSuccs);
+}
+
+inline BBArrayIterator BBEhfSuccList::end() const
+{
+    return BBArrayIterator(m_bbeDesc->bbeSuccs + m_bbeDesc->bbeCount);
+}
+
 // BBSuccList out-of-class-declaration implementations
 //
 inline BasicBlock::BBSuccList::BBSuccList(const BasicBlock* block)
 {
     assert(block != nullptr);
-    switch (block->bbJumpKind)
+    switch (block->GetJumpKind())
     {
         case BBJ_THROW:
         case BBJ_RETURN:
-        case BBJ_EHFINALLYRET:
-        case BBJ_EHFILTERRET:
+        case BBJ_EHFAULTRET:
             // We don't need m_succs.
             m_begin = nullptr;
             m_end   = nullptr;
@@ -1668,41 +1752,58 @@ inline BasicBlock::BBSuccList::BBSuccList(const BasicBlock* block)
         case BBJ_CALLFINALLY:
         case BBJ_ALWAYS:
         case BBJ_EHCATCHRET:
+        case BBJ_EHFILTERRET:
         case BBJ_LEAVE:
-            m_succs[0] = block->bbJumpDest;
+            m_succs[0] = block->GetJumpDest();
             m_begin    = &m_succs[0];
             m_end      = &m_succs[1];
             break;
 
         case BBJ_NONE:
-            m_succs[0] = block->bbNext;
+            m_succs[0] = block->Next();
             m_begin    = &m_succs[0];
             m_end      = &m_succs[1];
             break;
 
         case BBJ_COND:
-            m_succs[0] = block->bbNext;
+            m_succs[0] = block->Next();
             m_begin    = &m_succs[0];
 
             // If both fall-through and branch successors are identical, then only include
             // them once in the iteration (this is the same behavior as NumSucc()/GetSucc()).
-            if (block->bbJumpDest == block->bbNext)
+            if (block->JumpsToNext())
             {
                 m_end = &m_succs[1];
             }
             else
             {
-                m_succs[1] = block->bbJumpDest;
+                m_succs[1] = block->GetJumpDest();
                 m_end      = &m_succs[2];
+            }
+            break;
+
+        case BBJ_EHFINALLYRET:
+            // We don't use the m_succs in-line data; use the existing successor table in the block.
+            // We must tolerate iterating successors early in the system, before EH_FINALLYRET successors have
+            // been computed.
+            if (block->GetJumpEhf() == nullptr)
+            {
+                m_begin = nullptr;
+                m_end   = nullptr;
+            }
+            else
+            {
+                m_begin = block->GetJumpEhf()->bbeSuccs;
+                m_end   = block->GetJumpEhf()->bbeSuccs + block->GetJumpEhf()->bbeCount;
             }
             break;
 
         case BBJ_SWITCH:
             // We don't use the m_succs in-line data for switches; use the existing jump table in the block.
-            assert(block->bbJumpSwt != nullptr);
-            assert(block->bbJumpSwt->bbsDstTab != nullptr);
-            m_begin = block->bbJumpSwt->bbsDstTab;
-            m_end   = block->bbJumpSwt->bbsDstTab + block->bbJumpSwt->bbsCount;
+            assert(block->GetJumpSwt() != nullptr);
+            assert(block->GetJumpSwt()->bbsDstTab != nullptr);
+            m_begin = block->GetJumpSwt()->bbsDstTab;
+            m_end   = block->GetJumpSwt()->bbsDstTab + block->GetJumpSwt()->bbsCount;
             break;
 
         default:
@@ -1722,47 +1823,8 @@ inline BBArrayIterator BasicBlock::BBSuccList::end() const
     return BBArrayIterator(m_end);
 }
 
-// In compiler terminology the control flow between two BasicBlocks
-// is typically referred to as an "edge".  Most well known are the
-// backward branches for loops, which are often called "back-edges".
-//
-// "struct flowList" is the type that represents our control flow edges.
-// This type is a linked list of zero or more "edges".
-// (The list of zero edges is represented by NULL.)
-// Every BasicBlock has a field called bbPreds of this type.  This field
-// represents the list of "edges" that flow into this BasicBlock.
-// The flowList type only stores the BasicBlock* of the source for the
-// control flow edge.  The destination block for the control flow edge
-// is implied to be the block which contained the bbPreds field.
-//
-// For a switch branch target there may be multiple "edges" that have
-// the same source block (and destination block).  We need to count the
-// number of these edges so that during optimization we will know when
-// we have zero of them.  Rather than have extra flowList entries we
-// increment the flDupCount field.
-//
-// When we have Profile weight for the BasicBlocks we can usually compute
-// the number of times each edge was executed by examining the adjacent
-// BasicBlock weights.  As we are doing for BasicBlocks, we call the number
-// of times that a control flow edge was executed the "edge weight".
-// In order to compute the edge weights we need to use a bounded range
-// for every edge weight. These two fields, 'flEdgeWeightMin' and 'flEdgeWeightMax'
-// are used to hold a bounded range.  Most often these will converge such
-// that both values are the same and that value is the exact edge weight.
-// Sometimes we are left with a rage of possible values between [Min..Max]
-// which represents an inexact edge weight.
-//
-// The bbPreds list is initially created by Compiler::fgComputePreds()
-// and is incrementally kept up to date.
-//
-// The edge weight are computed by Compiler::fgComputeEdgeWeights()
-// the edge weights are used to straighten conditional branches
-// by Compiler::fgReorderBlocks()
-//
 // We have a simpler struct, BasicBlockList, which is simply a singly-linked
-// list of blocks. This is used for various purposes, but one is as a "cheap"
-// predecessor list, computed by fgComputeCheapPreds(), and stored as a list
-// on BasicBlock pointed to by bbCheapPreds.
+// list of blocks.
 
 struct BasicBlockList
 {
@@ -1778,44 +1840,117 @@ struct BasicBlockList
     }
 };
 
-// flowList -- control flow edge
+//-------------------------------------------------------------------------
+// FlowEdge -- control flow edge
 //
-struct flowList
+// In compiler terminology the control flow between two BasicBlocks
+// is typically referred to as an "edge".  Most well known are the
+// backward branches for loops, which are often called "back-edges".
+//
+// "struct FlowEdge" is the type that represents our control flow edges.
+// This type is a linked list of zero or more "edges".
+// (The list of zero edges is represented by NULL.)
+// Every BasicBlock has a field called bbPreds of this type.  This field
+// represents the list of "edges" that flow into this BasicBlock.
+// The FlowEdge type only stores the BasicBlock* of the source for the
+// control flow edge.  The destination block for the control flow edge
+// is implied to be the block which contained the bbPreds field.
+//
+// For a switch branch target there may be multiple "edges" that have
+// the same source block (and destination block).  We need to count the
+// number of these edges so that during optimization we will know when
+// we have zero of them.  Rather than have extra FlowEdge entries we
+// track this via the DupCount property.
+//
+// When we have Profile weight for the BasicBlocks we can usually compute
+// the number of times each edge was executed by examining the adjacent
+// BasicBlock weights.  As we are doing for BasicBlocks, we call the number
+// of times that a control flow edge was executed the "edge weight".
+// In order to compute the edge weights we need to use a bounded range
+// for every edge weight. These two fields, 'flEdgeWeightMin' and 'flEdgeWeightMax'
+// are used to hold a bounded range.  Most often these will converge such
+// that both values are the same and that value is the exact edge weight.
+// Sometimes we are left with a rage of possible values between [Min..Max]
+// which represents an inexact edge weight.
+//
+// The bbPreds list is initially created by Compiler::fgLinkBasicBlocks()
+// and is incrementally kept up to date.
+//
+// The edge weight are computed by Compiler::fgComputeEdgeWeights()
+// the edge weights are used to straighten conditional branches
+// by Compiler::fgReorderBlocks()
+//
+struct FlowEdge
 {
-public:
-    flowList* flNext; // The next BasicBlock in the list, nullptr for end of list.
-
 private:
-    BasicBlock* m_block; // The BasicBlock of interest.
-    weight_t    flEdgeWeightMin;
-    weight_t    flEdgeWeightMax;
+    // The next predecessor edge in the list, nullptr for end of list.
+    FlowEdge* m_nextPredEdge;
+
+    // The source of the control flow
+    BasicBlock* m_sourceBlock;
+
+    // Edge weights
+    weight_t m_edgeWeightMin;
+    weight_t m_edgeWeightMax;
+
+    // Likelihood that m_sourceBlock transfers control along this edge.
+    // Values in range [0..1]
+    weight_t m_likelihood;
+
+    // The count of duplicate "edges" (used for switch stmts or degenerate branches)
+    unsigned m_dupCount;
+
+#ifdef DEBUG
+    bool m_likelihoodSet;
+#endif
 
 public:
-    unsigned flDupCount; // The count of duplicate "edges" (use only for switch stmts)
-
-public:
-    BasicBlock* getBlock() const
+    FlowEdge(BasicBlock* block, FlowEdge* rest)
+        : m_nextPredEdge(rest)
+        , m_sourceBlock(block)
+        , m_edgeWeightMin(0)
+        , m_edgeWeightMax(0)
+        , m_likelihood(0)
+        , m_dupCount(0) DEBUGARG(m_likelihoodSet(false))
     {
-        return m_block;
     }
 
-    void setBlock(BasicBlock* newBlock)
+    FlowEdge* getNextPredEdge() const
     {
-        m_block = newBlock;
+        return m_nextPredEdge;
+    }
+
+    FlowEdge** getNextPredEdgeRef()
+    {
+        return &m_nextPredEdge;
+    }
+
+    void setNextPredEdge(FlowEdge* newEdge)
+    {
+        m_nextPredEdge = newEdge;
+    }
+
+    BasicBlock* getSourceBlock() const
+    {
+        return m_sourceBlock;
+    }
+
+    void setSourceBlock(BasicBlock* newBlock)
+    {
+        m_sourceBlock = newBlock;
     }
 
     weight_t edgeWeightMin() const
     {
-        return flEdgeWeightMin;
+        return m_edgeWeightMin;
     }
 
     weight_t edgeWeightMax() const
     {
-        return flEdgeWeightMax;
+        return m_edgeWeightMax;
     }
 
-    // These two methods are used to set new values for flEdgeWeightMin and flEdgeWeightMax
-    // they are used only during the computation of the edge weights
+    // These two methods are used to set new values for edge weights.
     // They return false if the newWeight is not between the current [min..max]
     // when slop is non-zero we allow for the case where our weights might be off by 'slop'
     //
@@ -1823,82 +1958,103 @@ public:
     bool setEdgeWeightMaxChecked(weight_t newWeight, BasicBlock* bDst, weight_t slop, bool* wbUsedSlop);
     void setEdgeWeights(weight_t newMinWeight, weight_t newMaxWeight, BasicBlock* bDst);
 
-    flowList(BasicBlock* block, flowList* rest)
-        : flNext(rest), m_block(block), flEdgeWeightMin(0), flEdgeWeightMax(0), flDupCount(0)
+    weight_t getLikelihood() const
     {
+        return m_likelihood;
+    }
+
+    void setLikelihood(weight_t likelihood)
+    {
+        assert(likelihood >= 0.0);
+        assert(likelihood <= 1.0);
+        INDEBUG(m_likelihoodSet = true);
+        m_likelihood = likelihood;
+    }
+
+    void clearLikelihood()
+    {
+        m_likelihood = 0.0;
+        INDEBUG(m_likelihoodSet = false);
+    }
+
+#ifdef DEBUG
+    bool hasLikelihood() const
+    {
+        return m_likelihoodSet;
+    }
+#endif
+
+    weight_t getLikelyWeight() const
+    {
+        assert(m_likelihoodSet);
+        return m_likelihood * m_sourceBlock->bbWeight;
+    }
+
+    unsigned getDupCount() const
+    {
+        return m_dupCount;
+    }
+
+    void incrementDupCount()
+    {
+        m_dupCount++;
+    }
+
+    void decrementDupCount()
+    {
+        assert(m_dupCount >= 1);
+        m_dupCount--;
     }
 };
 
-// Pred list iterator implementations (that are required to be defined after the declaration of BasicBlock and flowList)
+// Pred list iterator implementations (that are required to be defined after the declaration of BasicBlock and FlowEdge)
 
-inline PredEdgeList::iterator::iterator(flowList* pred) : m_pred(pred)
+inline PredEdgeList::iterator::iterator(FlowEdge* pred) : m_pred(pred)
 {
 #ifdef DEBUG
-    m_next = (m_pred == nullptr) ? nullptr : m_pred->flNext;
+    m_next = (m_pred == nullptr) ? nullptr : m_pred->getNextPredEdge();
 #endif
 }
 
 inline PredEdgeList::iterator& PredEdgeList::iterator::operator++()
 {
-    flowList* next = m_pred->flNext;
+    FlowEdge* next = m_pred->getNextPredEdge();
 
 #ifdef DEBUG
     // Check that the next block is the one we expect to see.
     assert(next == m_next);
-    m_next = (next == nullptr) ? nullptr : next->flNext;
+    m_next = (next == nullptr) ? nullptr : next->getNextPredEdge();
 #endif // DEBUG
 
     m_pred = next;
     return *this;
 }
 
-inline PredBlockList::iterator::iterator(flowList* pred) : m_pred(pred)
+inline PredBlockList::iterator::iterator(FlowEdge* pred) : m_pred(pred)
 {
 #ifdef DEBUG
-    m_next = (m_pred == nullptr) ? nullptr : m_pred->flNext;
+    m_next = (m_pred == nullptr) ? nullptr : m_pred->getNextPredEdge();
 #endif
 }
 
 inline BasicBlock* PredBlockList::iterator::operator*() const
 {
-    return m_pred->getBlock();
+    return m_pred->getSourceBlock();
 }
 
 inline PredBlockList::iterator& PredBlockList::iterator::operator++()
 {
-    flowList* next = m_pred->flNext;
+    FlowEdge* next = m_pred->getNextPredEdge();
 
 #ifdef DEBUG
     // Check that the next block is the one we expect to see.
     assert(next == m_next);
-    m_next = (next == nullptr) ? nullptr : next->flNext;
+    m_next = (next == nullptr) ? nullptr : next->getNextPredEdge();
 #endif // DEBUG
 
     m_pred = next;
     return *this;
 }
-
-// This enum represents a pre/post-visit action state to emulate a depth-first
-// spanning tree traversal of a tree or graph.
-enum DfsStackState
-{
-    DSS_Invalid, // The initialized, invalid error state
-    DSS_Pre,     // The DFS pre-order (first visit) traversal state
-    DSS_Post     // The DFS post-order (last visit) traversal state
-};
-
-// These structs represents an entry in a stack used to emulate a non-recursive
-// depth-first spanning tree traversal of a graph. The entry contains either a
-// block pointer or a block number depending on which is more useful.
-struct DfsBlockEntry
-{
-    DfsStackState dfsStackState; // The pre/post traversal action for this entry
-    BasicBlock*   dfsBlock;      // The corresponding block for the action
-
-    DfsBlockEntry(DfsStackState state, BasicBlock* basicBlock) : dfsStackState(state), dfsBlock(basicBlock)
-    {
-    }
-};
 
 /*****************************************************************************
  *
@@ -1908,72 +2064,25 @@ struct DfsBlockEntry
 
 void* emitCodeGetCookie(BasicBlock* block);
 
-AllSuccessorIterPosition::AllSuccessorIterPosition(Compiler* comp, BasicBlock* block)
-    : m_numNormSuccs(block->NumSucc(comp)), m_remainingNormSucc(m_numNormSuccs), m_ehIter(comp, block)
-{
-    if (CurTryIsBlkCallFinallyTarget(comp, block))
-    {
-        m_ehIter.Advance(comp, block);
-    }
-}
-
-bool AllSuccessorIterPosition::CurTryIsBlkCallFinallyTarget(Compiler* comp, BasicBlock* block)
-{
-    return (block->bbJumpKind == BBJ_CALLFINALLY) && (m_ehIter != EHSuccessorIterPosition()) &&
-           (block->bbJumpDest == m_ehIter.Current(comp, block));
-}
-
-void AllSuccessorIterPosition::Advance(Compiler* comp, BasicBlock* block)
-{
-    if (m_remainingNormSucc > 0)
-    {
-        m_remainingNormSucc--;
-    }
-    else
-    {
-        m_ehIter.Advance(comp, block);
-
-        // If the original block whose successors we're iterating over
-        // is a BBJ_CALLFINALLY, that finally clause's first block
-        // will be yielded as a normal successor.  Don't also yield as
-        // an exceptional successor.
-        if (CurTryIsBlkCallFinallyTarget(comp, block))
-        {
-            m_ehIter.Advance(comp, block);
-        }
-    }
-}
-
-// Requires that "this" is not equal to the standard "end" iterator.  Returns the
-// current successor.
-BasicBlock* AllSuccessorIterPosition::Current(Compiler* comp, BasicBlock* block)
-{
-    if (m_remainingNormSucc > 0)
-    {
-        return block->GetSucc(m_numNormSuccs - m_remainingNormSucc, comp);
-    }
-    else
-    {
-        return m_ehIter.Current(comp, block);
-    }
-}
-
-typedef BasicBlock::Successors<EHSuccessorIterPosition>::iterator  EHSuccessorIter;
-typedef BasicBlock::Successors<AllSuccessorIterPosition>::iterator AllSuccessorIter;
-
 // An enumerator of a block's all successors. In some cases (e.g. SsaBuilder::TopologicalSort)
 // using iterators is not exactly efficient, at least because they contain an unnecessary
 // member - a pointer to the Compiler object.
 class AllSuccessorEnumerator
 {
-    BasicBlock*              m_block;
-    AllSuccessorIterPosition m_pos;
+    BasicBlock* m_block;
+    union {
+        // We store up to 4 successors inline in the enumerator. For ASP.NET
+        // and libraries.pmi this is enough in 99.7% of cases.
+        BasicBlock*  m_successors[4];
+        BasicBlock** m_pSuccessors;
+    };
+
+    unsigned m_numSuccs;
+    unsigned m_curSucc = UINT_MAX;
 
 public:
     // Constructs an enumerator of all `block`'s successors.
-    AllSuccessorEnumerator(Compiler* comp, BasicBlock* block) : m_block(block), m_pos(comp, block)
-    {
-    }
+    AllSuccessorEnumerator(Compiler* comp, BasicBlock* block);
 
     // Gets the block whose successors are enumerated.
     BasicBlock* Block()
@@ -1981,23 +2090,21 @@ public:
         return m_block;
     }
 
-    // Returns true if the next successor is an EH successor.
-    bool IsNextEHSuccessor()
-    {
-        return m_pos.IsCurrentEH();
-    }
-
     // Returns the next available successor or `nullptr` if there are no more successors.
     BasicBlock* NextSuccessor(Compiler* comp)
     {
-        if (!m_pos.HasCurrent())
+        m_curSucc++;
+        if (m_curSucc >= m_numSuccs)
         {
             return nullptr;
         }
 
-        BasicBlock* succ = m_pos.Current(comp, m_block);
-        m_pos.Advance(comp, m_block);
-        return succ;
+        if (m_numSuccs <= ArrLen(m_successors))
+        {
+            return m_successors[m_curSucc];
+        }
+
+        return m_pSuccessors[m_curSucc];
     }
 };
 

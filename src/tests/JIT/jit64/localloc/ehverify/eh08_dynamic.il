@@ -9,10 +9,10 @@
 .assembly extern xunit.core {}
 
 .assembly extern mscorlib{}
-.assembly extern common{}
-.assembly eh05{}
+.assembly extern localloc_common{}
+.assembly 'eh08_dynamic'{}
 
-.class private auto ansi beforefieldinit LocallocTest
+.class public auto ansi beforefieldinit LocallocTest
        extends [mscorlib]System.Object
 {
   .method private hidebysig static void  func() cil managed
@@ -27,7 +27,7 @@
 	fault
 	{
     IL_0000:  ldc.i4.4
-    IL_0001:  ldsfld     int32 [common]LocallocTesting.Global::stackAllocSize
+    IL_0001:  ldsfld     int32 [localloc_common]LocallocTesting.Global::stackAllocSize
     IL_0006:  mul
     IL_0007:  localloc
     IL_0009:  stloc.0

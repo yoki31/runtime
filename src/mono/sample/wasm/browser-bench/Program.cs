@@ -4,35 +4,45 @@
 using System;
 using System.Diagnostics.CodeAnalysis;
 using System.Collections.Generic;
+using System.IO;
 using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
+using System.Runtime.InteropServices.JavaScript;
 
 namespace Sample
 {
     public partial class Test
     {
+        static bool JsonResults = false;
+
         List<BenchTask> tasks = new()
         {
             new AppStartTask(),
             new ExceptionsTask(),
             new JsonTask(),
-            new WebSocketTask()
+            new SpanTask(),
+            new StringTask(),
+            new VectorTask(),
+            new JSInteropTask(),
+            new WebSocketTask(),
         };
-        static Test instance = new Test();
+        public static Test Instance = new Test();
         Formatter formatter = new HTMLFormatter();
 
-        [MethodImpl(MethodImplOptions.NoInlining)]
+        [JSExport]
         public static Task<string> RunBenchmark()
         {
-            return instance.RunTasks();
+            return Instance.RunTasks();
         }
 
-        [MethodImpl(MethodImplOptions.NoInlining)]
         // the constructors of the task we care about are already used when createing tasks field
         [UnconditionalSuppressMessage("Trim analysis error", "IL2057")]
         [UnconditionalSuppressMessage("Trim analysis error", "IL2072")]
+        [JSExport]
         public static void SetTasks(string taskNames)
         {
             Regex pattern;
@@ -64,7 +74,13 @@ namespace Sample
                 tasksList.Add(task);
             }
 
-            instance.tasks = tasksList;
+            Instance.tasks = tasksList;
+        }
+
+        [JSExport]
+        public static string GetFullJsonResults()
+        {
+            return Instance.GetJsonResults();
         }
 
         int taskCounter = 0;
@@ -77,9 +93,10 @@ namespace Sample
             set { task = value; }
         }
         List<BenchTask.Result> results = new();
+        Dictionary<string, double> minTimes = new();
         bool resultsReturned;
 
-        bool NextTask()
+        async Task<bool> NextTask()
         {
             bool hasMeasurement;
             do
@@ -89,7 +106,7 @@ namespace Sample
 
                 Task = tasks[taskCounter];
                 measurementIdx = -1;
-                hasMeasurement = NextMeasurement();
+                hasMeasurement = await NextMeasurement();
 
                 if (hasMeasurement)
                     task.Initialize();
@@ -100,7 +117,7 @@ namespace Sample
             return true;
         }
 
-        bool NextMeasurement()
+        async Task<bool> NextMeasurement()
         {
             runIdx = 0;
 
@@ -108,7 +125,10 @@ namespace Sample
             {
                 measurementIdx++;
 
-                if (Task.pattern == null || Task.pattern.Match(Task.Measurements[measurementIdx].Name).Success)
+                if (!await Task.Measurements[measurementIdx].IsEnabled())
+                    continue;
+
+                if (Task.pattern == null || Task.pattern.IsMatch(Task.Measurements[measurementIdx].Name))
                     return true;
             }
 
@@ -124,14 +144,14 @@ namespace Sample
 
             if (taskCounter == 0)
             {
-                NextTask();
+                await NextTask();
                 return $"Benchmark started{formatter.NewLine}";
             }
 
             if (measurementIdx == -1)
                 return ResultsSummary();
 
-            if (runIdx >= Task.Measurements[measurementIdx].NumberOfRuns && !NextMeasurement() && !NextTask())
+            if (runIdx >= Task.Measurements[measurementIdx].NumberOfRuns && !await NextMeasurement() && !await NextTask())
                 return ResultsSummary();
 
             runIdx++;
@@ -141,21 +161,11 @@ namespace Sample
 
         string ResultsSummary()
         {
-            Dictionary<string, double> minTimes = new Dictionary<string, double>();
-            StringBuilder sb = new();
+            ProcessResults();
+            if (JsonResults)
+                PrintJsonResults();
 
-            foreach (var result in results)
-            {
-                double t;
-                var key = $"{result.taskName}, {result.measurementName}";
-                t = result.span.TotalMilliseconds / result.steps;
-                if (minTimes.ContainsKey(key))
-                    t = Math.Min(minTimes[key], t);
-
-                minTimes[key] = t;
-            }
-
-            sb.Append($"{formatter.NewLine}Summary{formatter.NewLine}");
+            StringBuilder sb = new($"{formatter.NewLine}Summary{formatter.NewLine}");
             foreach (var key in minTimes.Keys)
             {
                 sb.Append($"{key}: {minTimes[key]}ms{formatter.NewLine}");
@@ -178,6 +188,46 @@ namespace Sample
             resultsReturned = true;
 
             return sb.ToString();
+        }
+
+        private void ProcessResults()
+        {
+            minTimes.Clear();
+
+            foreach (var result in results)
+            {
+                double t;
+                var key = $"{result.taskName}, {result.measurementName}";
+                t = result.span.TotalMilliseconds / result.steps;
+                if (minTimes.ContainsKey(key))
+                    t = Math.Min(minTimes[key], t);
+
+                minTimes[key] = t;
+            }
+        }
+
+        class JsonResultsData
+        {
+            public List<BenchTask.Result> results;
+            public Dictionary<string, double> minTimes;
+            public DateTime timeStamp;
+        }
+
+        [JsonSourceGenerationOptions(IncludeFields = true, WriteIndented = true)]
+        [JsonSerializable(typeof(JsonResultsData))]
+        partial class ResultsSerializerContext : JsonSerializerContext { }
+
+        string GetJsonResults()
+        {
+            var jsonObject = new JsonResultsData { results = results, minTimes = minTimes, timeStamp = DateTime.UtcNow };
+            return JsonSerializer.Serialize(jsonObject, ResultsSerializerContext.Default.JsonResultsData);
+        }
+
+        private void PrintJsonResults()
+        {
+            Console.WriteLine("=== json results start ===");
+            Console.WriteLine(GetJsonResults());
+            Console.WriteLine("=== json results end ===");
         }
     }
 

@@ -22,7 +22,7 @@
 #define ASMCONSTANTS_RUNTIME_ASSERT(cond)
 #endif
 
-// Some contants are different in _DEBUG builds.  This macro factors out ifdefs from below.
+// Some constants are different in _DEBUG builds.  This macro factors out ifdefs from below.
 #ifdef _DEBUG
 #define DBG_FRE(dbg,fre) dbg
 #else
@@ -165,18 +165,20 @@ ASMCONSTANTS_C_ASSERT(SIZEOF__FaultingExceptionFrame        == sizeof(FaultingEx
 ASMCONSTANTS_C_ASSERT(FaultingExceptionFrame__m_fFilterExecuted == offsetof(FaultingExceptionFrame, m_fFilterExecuted));
 
 #define SIZEOF__FixupPrecode                 24
-#define Offset_PrecodeChunkIndex             15
-#define Offset_MethodDescChunkIndex          14
+//#define Offset_PrecodeChunkIndex             15
+//#define Offset_MethodDescChunkIndex          14
 #define MethodDesc_ALIGNMENT_SHIFT           3
-#define FixupPrecode_ALIGNMENT_SHIFT_1       3
-#define FixupPrecode_ALIGNMENT_SHIFT_2       4
+//#define FixupPrecode_ALIGNMENT_SHIFT_1       3
+//#define FixupPrecode_ALIGNMENT_SHIFT_2       4
 
 ASMCONSTANTS_C_ASSERT(SIZEOF__FixupPrecode == sizeof(FixupPrecode));
-ASMCONSTANTS_C_ASSERT(Offset_PrecodeChunkIndex == offsetof(FixupPrecode, m_PrecodeChunkIndex));
-ASMCONSTANTS_C_ASSERT(Offset_MethodDescChunkIndex == offsetof(FixupPrecode, m_MethodDescChunkIndex));
+//ASMCONSTANTS_C_ASSERT(Offset_PrecodeChunkIndex == offsetof(FixupPrecode, m_PrecodeChunkIndex));
+//ASMCONSTANTS_C_ASSERT(Offset_MethodDescChunkIndex == offsetof(FixupPrecode, m_MethodDescChunkIndex));
 ASMCONSTANTS_C_ASSERT(MethodDesc_ALIGNMENT_SHIFT == MethodDesc::ALIGNMENT_SHIFT);
-ASMCONSTANTS_C_ASSERT((1<<FixupPrecode_ALIGNMENT_SHIFT_1) + (1<<FixupPrecode_ALIGNMENT_SHIFT_2)  == sizeof(FixupPrecode));
+//ASMCONSTANTS_C_ASSERT((1<<FixupPrecode_ALIGNMENT_SHIFT_1) + (1<<FixupPrecode_ALIGNMENT_SHIFT_2)  == sizeof(FixupPrecode));
 
+#define ResolveCacheElem__pMT         0x00
+#define ResolveCacheElem__token       0x08
 #define ResolveCacheElem__target      0x10
 #define ResolveCacheElem__pNext       0x18
 ASMCONSTANTS_C_ASSERT(ResolveCacheElem__target == offsetof(ResolveCacheElem, target));
@@ -207,6 +209,69 @@ ASMCONSTANTS_C_ASSERT(InlinedCallFrame__m_pCalleeSavedFP == offsetof(InlinedCall
 #define               InlinedCallFrame__m_pThread 0x38
 ASMCONSTANTS_C_ASSERT(InlinedCallFrame__m_pThread == offsetof(InlinedCallFrame, m_pThread))
 
+#define FixupPrecodeData__Target 0x00
+ASMCONSTANTS_C_ASSERT(FixupPrecodeData__Target            == offsetof(FixupPrecodeData, Target))
+
+#define FixupPrecodeData__MethodDesc 0x08
+ASMCONSTANTS_C_ASSERT(FixupPrecodeData__MethodDesc        == offsetof(FixupPrecodeData, MethodDesc))
+
+#define FixupPrecodeData__PrecodeFixupThunk 0x10
+ASMCONSTANTS_C_ASSERT(FixupPrecodeData__PrecodeFixupThunk == offsetof(FixupPrecodeData, PrecodeFixupThunk))
+
+#define StubPrecodeData__Target 0x08
+ASMCONSTANTS_C_ASSERT(StubPrecodeData__Target            == offsetof(StubPrecodeData, Target))
+
+#define StubPrecodeData__MethodDesc 0x00
+ASMCONSTANTS_C_ASSERT(StubPrecodeData__MethodDesc        == offsetof(StubPrecodeData, MethodDesc))
+
+#define CallCountingStubData__RemainingCallCountCell 0x00
+ASMCONSTANTS_C_ASSERT(CallCountingStubData__RemainingCallCountCell == offsetof(CallCountingStubData, RemainingCallCountCell))
+
+#define CallCountingStubData__TargetForMethod 0x08
+ASMCONSTANTS_C_ASSERT(CallCountingStubData__TargetForMethod == offsetof(CallCountingStubData, TargetForMethod))
+
+#define CallCountingStubData__TargetForThresholdReached 0x10
+ASMCONSTANTS_C_ASSERT(CallCountingStubData__TargetForThresholdReached == offsetof(CallCountingStubData, TargetForThresholdReached))
+
+#ifdef PROFILING_SUPPORTED
+#define PROFILE_ENTER        0x1
+#define PROFILE_LEAVE        0x2
+#define PROFILE_TAILCALL     0x4
+
+#define SIZEOF__PROFILE_PLATFORM_SPECIFIC_DATA 320
+ASMCONSTANTS_C_ASSERT(SIZEOF__PROFILE_PLATFORM_SPECIFIC_DATA == sizeof(PROFILE_PLATFORM_SPECIFIC_DATA))
+ASMCONSTANTS_C_ASSERT((SIZEOF__PROFILE_PLATFORM_SPECIFIC_DATA & 0xf) == 0)
+
+#define ASMCONSTANTS_C_ASSERT_OFFSET(type, field) \
+    ASMCONSTANTS_C_ASSERT(type##__##field == offsetof(type, field))
+
+#define PROFILE_PLATFORM_SPECIFIC_DATA__Fp 0
+ASMCONSTANTS_C_ASSERT_OFFSET(PROFILE_PLATFORM_SPECIFIC_DATA, Fp)
+#define PROFILE_PLATFORM_SPECIFIC_DATA__Pc 8
+ASMCONSTANTS_C_ASSERT_OFFSET(PROFILE_PLATFORM_SPECIFIC_DATA, Pc)
+#define PROFILE_PLATFORM_SPECIFIC_DATA__x8 16
+ASMCONSTANTS_C_ASSERT_OFFSET(PROFILE_PLATFORM_SPECIFIC_DATA, x8)
+#define PROFILE_PLATFORM_SPECIFIC_DATA__argumentRegisters 24
+ASMCONSTANTS_C_ASSERT_OFFSET(PROFILE_PLATFORM_SPECIFIC_DATA, argumentRegisters)
+#define PROFILE_PLATFORM_SPECIFIC_DATA__functionId 88
+ASMCONSTANTS_C_ASSERT_OFFSET(PROFILE_PLATFORM_SPECIFIC_DATA, functionId)
+#define PROFILE_PLATFORM_SPECIFIC_DATA__floatArgumentRegisters 96
+ASMCONSTANTS_C_ASSERT_OFFSET(PROFILE_PLATFORM_SPECIFIC_DATA, floatArgumentRegisters)
+#define PROFILE_PLATFORM_SPECIFIC_DATA__probeSp 224
+ASMCONSTANTS_C_ASSERT_OFFSET(PROFILE_PLATFORM_SPECIFIC_DATA, probeSp)
+#define PROFILE_PLATFORM_SPECIFIC_DATA__profiledSp 232
+ASMCONSTANTS_C_ASSERT_OFFSET(PROFILE_PLATFORM_SPECIFIC_DATA, profiledSp)
+#define PROFILE_PLATFORM_SPECIFIC_DATA__hiddenArg 240
+ASMCONSTANTS_C_ASSERT_OFFSET(PROFILE_PLATFORM_SPECIFIC_DATA, hiddenArg)
+#define PROFILE_PLATFORM_SPECIFIC_DATA__flags 248
+ASMCONSTANTS_C_ASSERT_OFFSET(PROFILE_PLATFORM_SPECIFIC_DATA, flags)
+#define PROFILE_PLATFORM_SPECIFIC_DATA__unused 252
+ASMCONSTANTS_C_ASSERT_OFFSET(PROFILE_PLATFORM_SPECIFIC_DATA, unused)
+#define PROFILE_PLATFORM_SPECIFIC_DATA__buffer 256
+ASMCONSTANTS_C_ASSERT_OFFSET(PROFILE_PLATFORM_SPECIFIC_DATA, buffer)
+
+#undef ASMCONSTANTS_C_ASSERT_OFFSET
+#endif  // PROFILING_SUPPORTED
 
 #undef ASMCONSTANTS_RUNTIME_ASSERT
 #undef ASMCONSTANTS_C_ASSERT

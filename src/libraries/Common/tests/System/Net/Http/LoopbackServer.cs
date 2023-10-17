@@ -33,6 +33,12 @@ namespace System.Net.Test.Common
         public LoopbackServer(Options options = null)
         {
             _options = options ??= new Options();
+#if !NETSTANDARD2_0 && !NETFRAMEWORK
+            if (_options.UseSsl && _options.CertificateContext == null)
+            {
+                _options.CertificateContext = SslStreamCertificateContext.Create(_options.Certificate ?? Configuration.Certificates.GetServerCertificate(), null);
+            }
+#endif
         }
 
 #pragma warning disable CS1998 // Async method lacks 'await' operators and will run synchronously
@@ -156,7 +162,7 @@ namespace System.Net.Test.Common
 
         public async Task AcceptConnectionAsync(Func<Connection, Task> funcAsync)
         {
-            using (Connection connection = await EstablishConnectionAsync().ConfigureAwait(false))
+            await using (Connection connection = await EstablishConnectionAsync().ConfigureAwait(false))
             {
                 await funcAsync(connection).ConfigureAwait(false);
             }
@@ -436,7 +442,9 @@ namespace System.Net.Test.Common
 #if !NETSTANDARD2_0 && !NETFRAMEWORK
                 SslProtocols.Tls13 |
 #endif
+#pragma warning disable SYSLIB0039 // TLS 1.0 and 1.1 are obsolete
                 SslProtocols.Tls | SslProtocols.Tls11 | SslProtocols.Tls12;
+#pragma warning restore SYSLIB0039
             }
         }
 
@@ -469,6 +477,16 @@ namespace System.Net.Test.Common
                 if (httpOptions.UseSsl)
                 {
                     var sslStream = new SslStream(stream, false, delegate { return true; });
+#if !NETFRAMEWORK
+                    SslServerAuthenticationOptions sslOptions = new SslServerAuthenticationOptions()
+                    {
+                        EnabledSslProtocols = httpOptions.SslProtocols,
+                        ServerCertificateContext = httpOptions.CertificateContext ?? SslStreamCertificateContext.Create(Configuration.Certificates.GetServerCertificate(), null),
+                        ClientCertificateRequired = true,
+                    };
+
+                    await sslStream.AuthenticateAsServerAsync(sslOptions, default).ConfigureAwait(false);
+#else
                     using (X509Certificate2 cert = httpOptions.Certificate ?? Configuration.Certificates.GetServerCertificate())
                     {
                         await sslStream.AuthenticateAsServerAsync(
@@ -477,6 +495,7 @@ namespace System.Net.Test.Common
                             enabledSslProtocols: httpOptions.SslProtocols,
                             checkCertificateRevocation: false).ConfigureAwait(false);
                     }
+#endif
                     stream = sslStream;
                 }
 
@@ -652,7 +671,7 @@ namespace System.Net.Test.Common
                 return null;
             }
 
-            public override void Dispose()
+            public override async ValueTask DisposeAsync()
             {
                 try
                 {
@@ -664,7 +683,12 @@ namespace System.Net.Test.Common
                 }
                 catch (Exception) { }
 
+#if !NETSTANDARD2_0 && !NETFRAMEWORK
+                await _stream.DisposeAsync().ConfigureAwait(false);
+#else
                 _stream.Dispose();
+                await Task.CompletedTask.ConfigureAwait(false);
+#endif
                 _socket?.Dispose();
             }
 
@@ -719,7 +743,7 @@ namespace System.Net.Test.Common
             public async Task WriteStringAsync(string s)
             {
                 byte[] bytes = Encoding.ASCII.GetBytes(s);
-                await _stream.WriteAsync(bytes);
+                await _stream.WriteAsync(bytes, 0, bytes.Length);
             }
 
             public async Task SendResponseAsync(string response)
@@ -729,7 +753,7 @@ namespace System.Net.Test.Common
 
             public async Task SendResponseAsync(byte[] response)
             {
-                await _stream.WriteAsync(response);
+                await _stream.WriteAsync(response, 0, response.Length);
             }
 
             public async Task SendResponseAsync(HttpStatusCode statusCode = HttpStatusCode.OK, string additionalHeaders = null, string content = null)
@@ -866,13 +890,13 @@ namespace System.Net.Test.Common
                 return buffer;
             }
 
-            public void CompleteRequestProcessing()
+            public override void CompleteRequestProcessing()
             {
                 _contentLength = 0;
                 _bodyRead = false;
             }
 
-            public override async Task SendResponseAsync(HttpStatusCode statusCode = HttpStatusCode.OK, IList<HttpHeaderData> headers = null, string content = "", bool isFinal = true, int requestId = 0)
+            public override async Task SendResponseAsync(HttpStatusCode statusCode = HttpStatusCode.OK, IList<HttpHeaderData> headers = null, string content = "", bool isFinal = true)
             {
                 MemoryStream headerBytes = new MemoryStream();
                 int contentLength = -1;
@@ -933,7 +957,7 @@ namespace System.Net.Test.Common
 
                 if (content != null)
                 {
-                    await SendResponseBodyAsync(content, isFinal: isFinal, requestId: requestId).ConfigureAwait(false);
+                    await SendResponseBodyAsync(content, isFinal: isFinal).ConfigureAwait(false);
                 }
             }
 
@@ -955,13 +979,13 @@ namespace System.Net.Test.Common
                 return headerString;
             }
 
-            public override async Task SendResponseHeadersAsync(HttpStatusCode statusCode = HttpStatusCode.OK, IList<HttpHeaderData> headers = null, int requestId = 0)
+            public override async Task SendResponseHeadersAsync(HttpStatusCode statusCode = HttpStatusCode.OK, IList<HttpHeaderData> headers = null)
             {
                 string headerString = GetResponseHeaderString(statusCode, headers);
                 await SendResponseAsync(headerString).ConfigureAwait(false);
             }
 
-            public override async Task SendPartialResponseHeadersAsync(HttpStatusCode statusCode = HttpStatusCode.OK, IList<HttpHeaderData> headers = null, int requestId = 0)
+            public override async Task SendPartialResponseHeadersAsync(HttpStatusCode statusCode = HttpStatusCode.OK, IList<HttpHeaderData> headers = null)
             {
                 string headerString = GetResponseHeaderString(statusCode, headers);
 
@@ -971,7 +995,7 @@ namespace System.Net.Test.Common
                 await SendResponseAsync(headerString).ConfigureAwait(false);
             }
 
-            public override async Task SendResponseBodyAsync(byte[] content, bool isFinal = true, int requestId = 0)
+            public override async Task SendResponseBodyAsync(byte[] content, bool isFinal = true)
             {
                 await SendResponseAsync(content).ConfigureAwait(false);
             }
@@ -1047,7 +1071,7 @@ namespace System.Net.Test.Common
                 return requestData;
             }
 
-            public override async Task WaitForCancellationAsync(bool ignoreIncomingData = true, int requestId = 0)
+            public override async Task WaitForCancellationAsync(bool ignoreIncomingData = true)
             {
                 var buffer = new byte[1024];
                 while (true)
@@ -1065,11 +1089,16 @@ namespace System.Net.Test.Common
                     }
                 }
             }
+
+            public override Task WaitForCloseAsync(CancellationToken cancellationToken)
+            {
+                return _socket.WaitForCloseAsync(cancellationToken);
+            }
         }
 
         public override async Task<HttpRequestData> HandleRequestAsync(HttpStatusCode statusCode = HttpStatusCode.OK, IList<HttpHeaderData> headers = null, string content = "")
         {
-            using (Connection connection = await EstablishConnectionAsync().ConfigureAwait(false))
+            await using (Connection connection = await EstablishConnectionAsync().ConfigureAwait(false))
             {
                 return await connection.HandleRequestAsync(statusCode, headers, content).ConfigureAwait(false);
             }
@@ -1092,7 +1121,7 @@ namespace System.Net.Test.Common
             return loopbackServer;
         }
 
-        public override Task CreateServerAsync(Func<GenericLoopbackServer, Uri, Task> funcAsync, int millisecondsTimeout = 60_000, GenericLoopbackOptions options = null)
+        public override Task CreateServerAsync(Func<GenericLoopbackServer, Uri, Task> funcAsync, int millisecondsTimeout = LoopbackServerTimeoutMilliseconds, GenericLoopbackOptions options = null)
         {
             return LoopbackServer.CreateServerAsync((server, uri) => funcAsync(server, uri), options: CreateOptions(options));
         }
@@ -1109,6 +1138,7 @@ namespace System.Net.Test.Common
             {
                 newOptions.Address = options.Address;
                 newOptions.UseSsl = options.UseSsl;
+                newOptions.Certificate = options.Certificate;
                 newOptions.SslProtocols = options.SslProtocols;
                 newOptions.ListenBacklog = options.ListenBacklog;
             }

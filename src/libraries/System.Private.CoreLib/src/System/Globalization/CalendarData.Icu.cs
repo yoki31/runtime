@@ -3,9 +3,9 @@
 
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
-using Internal.Runtime.CompilerServices;
 
 namespace System.Globalization
 {
@@ -33,6 +33,7 @@ namespace System.Globalization
     {
         private bool IcuLoadCalendarDataFromSystem(string localeName, CalendarId calendarId)
         {
+            // ToDo: think if not to convert this function with multiple calls to JS into one call with multiple data requested at once
             Debug.Assert(!GlobalizationMode.UseNls);
 
             bool result = true;
@@ -81,15 +82,6 @@ namespace System.Globalization
             return result;
         }
 
-        internal static int IcuGetTwoDigitYearMax(CalendarId calendarId)
-        {
-            Debug.Assert(!GlobalizationMode.UseNls);
-
-            // There is no user override for this value on Linux or in ICU.
-            // So just return -1 to use the hard-coded defaults.
-            return -1;
-        }
-
         // Call native side to figure out which calendars are allowed
         internal static int IcuGetCalendars(string localeName, CalendarId[] calendars)
         {
@@ -97,7 +89,15 @@ namespace System.Globalization
             Debug.Assert(!GlobalizationMode.UseNls);
 
             // NOTE: there are no 'user overrides' on Linux
-            int count = Interop.Globalization.GetCalendars(localeName, calendars, calendars.Length);
+            int count;
+#if TARGET_MACCATALYST || TARGET_IOS || TARGET_TVOS
+            if (GlobalizationMode.Hybrid)
+                count = Interop.Globalization.GetCalendarsNative(localeName, calendars, calendars.Length);
+            else
+                count = Interop.Globalization.GetCalendars(localeName, calendars, calendars.Length);
+#else
+            count = Interop.Globalization.GetCalendars(localeName, calendars, calendars.Length);
+#endif
 
             // ensure there is at least 1 calendar returned
             if (count == 0 && calendars.Length > 0)
@@ -258,7 +258,9 @@ namespace System.Globalization
         /// </remarks>
         private static string NormalizeDatePattern(string input)
         {
-            StringBuilder destination = StringBuilderCache.Acquire(input.Length);
+            var destination = input.Length < 128 ?
+                new ValueStringBuilder(stackalloc char[128]) :
+                new ValueStringBuilder(input.Length);
 
             int index = 0;
             while (index < input.Length)
@@ -287,7 +289,7 @@ namespace System.Globalization
                         // maps closest to 3 or 4 'd's in .NET
                         // 'c' in ICU is the stand-alone day of the week, which has no representation in .NET, but
                         // maps closest to 3 or 4 'd's in .NET
-                        NormalizeDayOfWeek(input, destination, ref index);
+                        NormalizeDayOfWeek(input, ref destination, ref index);
                         break;
                     case 'L':
                     case 'M':
@@ -305,7 +307,7 @@ namespace System.Globalization
                         break;
                     case 'G':
                         // 'G' in ICU is the era, which maps to 'g' in .NET
-                        occurrences = CountOccurrences(input, 'G', ref index);
+                        CountOccurrences(input, 'G', ref index);
 
                         // it doesn't matter how many 'G's, since .NET only supports 'g' or 'gg', and they
                         // have the same meaning
@@ -332,10 +334,10 @@ namespace System.Globalization
                 }
             }
 
-            return StringBuilderCache.GetStringAndRelease(destination);
+            return destination.ToString();
         }
 
-        private static void NormalizeDayOfWeek(string input, StringBuilder destination, ref int index)
+        private static void NormalizeDayOfWeek(string input, ref ValueStringBuilder destination, ref int index)
         {
             char dayChar = input[index];
             int occurrences = CountOccurrences(input, dayChar, ref index);
@@ -434,13 +436,15 @@ namespace System.Globalization
             try
             {
                 ReadOnlySpan<char> calendarStringSpan = MemoryMarshal.CreateReadOnlySpanFromNullTerminated(calendarStringPtr);
-                ref IcuEnumCalendarsData callbackContext = ref Unsafe.As<byte, IcuEnumCalendarsData>(ref *(byte*)context);
+#pragma warning disable 8500
+                IcuEnumCalendarsData* callbackContext = (IcuEnumCalendarsData*)context;
+#pragma warning restore 8500
 
-                if (callbackContext.DisallowDuplicates)
+                if (callbackContext->DisallowDuplicates)
                 {
-                    foreach (string existingResult in callbackContext.Results)
+                    foreach (string existingResult in callbackContext->Results)
                     {
-                        if (string.CompareOrdinal(calendarStringSpan, existingResult) == 0)
+                        if (calendarStringSpan.SequenceEqual(existingResult))
                         {
                             // the value is already in the results, so don't add it again
                             return;
@@ -448,7 +452,7 @@ namespace System.Globalization
                     }
                 }
 
-                callbackContext.Results.Add(calendarStringSpan.ToString());
+                callbackContext->Results.Add(calendarStringSpan.ToString());
             }
             catch (Exception e)
             {

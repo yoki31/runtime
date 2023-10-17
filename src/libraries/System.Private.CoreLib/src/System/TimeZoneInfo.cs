@@ -6,7 +6,9 @@ using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
+using System.Runtime.CompilerServices;
 using System.Runtime.Serialization;
+using System.Security;
 using System.Threading;
 
 namespace System
@@ -28,7 +30,7 @@ namespace System
     }
 
     [Serializable]
-    [System.Runtime.CompilerServices.TypeForwardedFrom("System.Core, Version=3.5.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
+    [TypeForwardedFrom("System.Core, Version=3.5.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     public sealed partial class TimeZoneInfo : IEquatable<TimeZoneInfo?>, ISerializable, IDeserializationCallback
     {
         private enum TimeZoneInfoResult
@@ -39,10 +41,12 @@ namespace System
             SecurityException = 3
         }
 
+        private const int MaxKeyLength = 255;
+
         private readonly string _id;
-        private readonly string? _displayName;
-        private readonly string? _standardDisplayName;
-        private readonly string? _daylightDisplayName;
+        private string? _displayName;
+        private string? _standardDisplayName;
+        private string? _daylightDisplayName;
         private readonly TimeSpan _baseUtcOffset;
         private readonly bool _supportsDaylightSavingTime;
         private readonly AdjustmentRule[]? _adjustmentRules;
@@ -81,9 +85,9 @@ namespace System
                         timeZone = new TimeZoneInfo(
                                             timeZone._id,
                                             timeZone._baseUtcOffset,
-                                            timeZone._displayName,
-                                            timeZone._standardDisplayName,
-                                            timeZone._daylightDisplayName,
+                                            timeZone.DisplayName,
+                                            timeZone.StandardName,
+                                            timeZone.DaylightName,
                                             timeZone._adjustmentRules,
                                             disableDaylightSavingTime: false,
                                             timeZone.HasIanaId);
@@ -127,6 +131,8 @@ namespace System
 
             public Dictionary<string, TimeZoneInfo>? _systemTimeZones;
             public ReadOnlyCollection<TimeZoneInfo>? _readOnlySystemTimeZones;
+            public ReadOnlyCollection<TimeZoneInfo>? _readOnlyUnsortedSystemTimeZones;
+            public Dictionary<string, TimeZoneInfo>? _timeZonesUsingAlternativeIds;
             public bool _allSystemTimeZonesRead;
         }
 
@@ -141,11 +147,38 @@ namespace System
         /// </summary>
         public bool HasIanaId { get; }
 
-        public string DisplayName => _displayName ?? string.Empty;
+        public string DisplayName
+        {
+            get
+            {
+                if (_displayName == null)
+                    Interlocked.CompareExchange(ref _displayName, PopulateDisplayName(), null);
 
-        public string StandardName => _standardDisplayName ?? string.Empty;
+                return _displayName ?? string.Empty;
+            }
+        }
 
-        public string DaylightName => _daylightDisplayName ?? string.Empty;
+        public string StandardName
+        {
+            get
+            {
+                if (_standardDisplayName == null)
+                    Interlocked.CompareExchange(ref _standardDisplayName, PopulateStandardDisplayName(), null);
+
+                return _standardDisplayName ?? string.Empty;
+            }
+        }
+
+        public string DaylightName
+        {
+            get
+            {
+                if (_daylightDisplayName == null)
+                    Interlocked.CompareExchange(ref _daylightDisplayName, PopulateDaylightDisplayName(), null);
+
+                return _daylightDisplayName ?? string.Empty;
+            }
+        }
 
         public TimeSpan BaseUtcOffset => _baseUtcOffset;
 
@@ -555,6 +588,90 @@ namespace System
             ConvertTime(dateTime, FindSystemTimeZoneById(destinationTimeZoneId));
 
         /// <summary>
+        /// Helper function for retrieving a <see cref="TimeZoneInfo"/> object by time zone name.
+        /// This function wraps the logic necessary to keep the private
+        /// SystemTimeZones cache in working order.
+        ///
+        /// This function will either return a valid <see cref="TimeZoneInfo"/> instance or
+        /// it will throw <see cref="InvalidTimeZoneException"/> / <see cref="TimeZoneNotFoundException"/> /
+        /// <see cref="SecurityException"/>
+        /// </summary>
+        /// <param name="id">Time zone name.</param>
+        /// <returns>Valid <see cref="TimeZoneInfo"/> instance.</returns>
+        public static TimeZoneInfo FindSystemTimeZoneById(string id)
+        {
+            TimeZoneInfo? value;
+            Exception? e;
+
+            TimeZoneInfoResult result = TryFindSystemTimeZoneById(id, out value, out e);
+            switch (result)
+            {
+                case TimeZoneInfoResult.Success:
+                    return value!;
+                case TimeZoneInfoResult.InvalidTimeZoneException:
+                    Debug.Assert(e is InvalidTimeZoneException,
+                        "TryGetTimeZone must create an InvalidTimeZoneException when it returns TimeZoneInfoResult.InvalidTimeZoneException");
+                    throw e;
+                case TimeZoneInfoResult.SecurityException:
+                    throw new SecurityException(SR.Format(SR.Security_CannotReadFileData, id), e);
+                default:
+                    throw new TimeZoneNotFoundException(SR.Format(SR.TimeZoneNotFound_MissingData, id), e);
+            }
+        }
+
+        /// <summary>
+        /// Helper function for retrieving a <see cref="TimeZoneInfo"/> object by time zone name.
+        /// This function wraps the logic necessary to keep the private
+        /// SystemTimeZones cache in working order.
+        ///
+        /// This function will either return <c>true</c> and a valid <see cref="TimeZoneInfo"/>
+        /// instance or return <c>false</c> and <c>null</c>.
+        /// </summary>
+        /// <param name="id">Time zone name.</param>
+        /// <param name="timeZoneInfo">A valid retrieved <see cref="TimeZoneInfo"/> or <c>null</c>.</param>
+        /// <returns><c>true</c> if the <see cref="TimeZoneInfo"/> object was successfully retrieved, <c>false</c> otherwise.</returns>
+        public static bool TryFindSystemTimeZoneById(string id, [NotNullWhenAttribute(true)] out TimeZoneInfo? timeZoneInfo)
+            => TryFindSystemTimeZoneById(id, out timeZoneInfo, out _) == TimeZoneInfoResult.Success;
+
+        /// <summary>
+        /// Helper function for retrieving a TimeZoneInfo object by time_zone_name.
+        /// This function wraps the logic necessary to keep the private
+        /// SystemTimeZones cache in working order.
+        ///
+        /// This function will either return:
+        /// <c>TimeZoneInfoResult.Success</c> and a valid <see cref="TimeZoneInfo"/>instance and <c>null</c> Exception or
+        /// <c>TimeZoneInfoResult.TimeZoneNotFoundException</c> and <c>null</c> <see cref="TimeZoneInfo"/> and Exception (can be null) or
+        /// other <c>TimeZoneInfoResult</c> and <c>null</c> <see cref="TimeZoneInfo"/> and valid Exception.
+        /// </summary>
+        private static TimeZoneInfoResult TryFindSystemTimeZoneById(string id, out TimeZoneInfo? timeZone, out Exception? e)
+        {
+            // Special case for Utc as it will not exist in the dictionary with the rest
+            // of the system time zones.  There is no need to do this check for Local.Id
+            // since Local is a real time zone that exists in the dictionary cache
+            if (string.Equals(id, UtcId, StringComparison.OrdinalIgnoreCase))
+            {
+                timeZone = Utc;
+                e = default;
+                return TimeZoneInfoResult.Success;
+            }
+
+            ArgumentNullException.ThrowIfNull(id);
+            if (id.Length == 0 || id.Length > MaxKeyLength || id.Contains('\0'))
+            {
+                timeZone = default;
+                e = default;
+                return TimeZoneInfoResult.TimeZoneNotFoundException;
+            }
+
+            CachedData cachedData = s_cachedData;
+
+            lock (cachedData)
+            {
+                return TryGetTimeZone(id, out timeZone, out e, cachedData);
+            }
+        }
+
+        /// <summary>
         /// Converts the value of a DateTime object from sourceTimeZone to destinationTimeZone.
         /// </summary>
         public static DateTime ConvertTimeBySystemTimeZoneId(DateTime dateTime, string sourceTimeZoneId, string destinationTimeZoneId)
@@ -584,10 +701,7 @@ namespace System
         /// </summary>
         public static DateTimeOffset ConvertTime(DateTimeOffset dateTimeOffset, TimeZoneInfo destinationTimeZone)
         {
-            if (destinationTimeZone == null)
-            {
-                throw new ArgumentNullException(nameof(destinationTimeZone));
-            }
+            ArgumentNullException.ThrowIfNull(destinationTimeZone);
 
             // calculate the destination time zone offset
             DateTime utcDateTime = dateTimeOffset.UtcDateTime;
@@ -607,10 +721,7 @@ namespace System
         /// </summary>
         public static DateTime ConvertTime(DateTime dateTime, TimeZoneInfo destinationTimeZone)
         {
-            if (destinationTimeZone == null)
-            {
-                throw new ArgumentNullException(nameof(destinationTimeZone));
-            }
+            ArgumentNullException.ThrowIfNull(destinationTimeZone);
 
             // Special case to give a way clearing the cache without exposing ClearCachedData()
             if (dateTime.Ticks == 0)
@@ -636,15 +747,8 @@ namespace System
 
         private static DateTime ConvertTime(DateTime dateTime, TimeZoneInfo sourceTimeZone, TimeZoneInfo destinationTimeZone, TimeZoneInfoOptions flags, CachedData cachedData)
         {
-            if (sourceTimeZone == null)
-            {
-                throw new ArgumentNullException(nameof(sourceTimeZone));
-            }
-
-            if (destinationTimeZone == null)
-            {
-                throw new ArgumentNullException(nameof(destinationTimeZone));
-            }
+            ArgumentNullException.ThrowIfNull(sourceTimeZone);
+            ArgumentNullException.ThrowIfNull(destinationTimeZone);
 
             DateTimeKind sourceKind = cachedData.GetCorrespondingKind(sourceTimeZone);
             if (((flags & TimeZoneInfoOptions.NoThrowOnInvalidTime) == 0) && (dateTime.Kind != DateTimeKind.Unspecified) && (dateTime.Kind != sourceKind))
@@ -668,7 +772,6 @@ namespace System
                 sourceOffset += sourceRule.BaseUtcOffsetDelta;
                 if (sourceRule.HasDaylightSaving)
                 {
-                    bool sourceIsDaylightSavings = false;
                     DaylightTimeStruct sourceDaylightTime = sourceTimeZone.GetDaylightTime(dateTime.Year, sourceRule, sourceRuleIndex);
 
                     // 'dateTime' might be in an invalid time range since it is in an AdjustmentRule
@@ -677,7 +780,7 @@ namespace System
                     {
                         throw new ArgumentException(SR.Argument_DateTimeIsInvalid, nameof(dateTime));
                     }
-                    sourceIsDaylightSavings = GetIsDaylightSavings(dateTime, sourceRule, sourceDaylightTime);
+                    bool sourceIsDaylightSavings = GetIsDaylightSavings(dateTime, sourceRule, sourceDaylightTime);
 
                     // adjust the sourceOffset according to the Adjustment Rule / Daylight Saving Rule
                     sourceOffset += (sourceIsDaylightSavings ? sourceRule.DaylightDelta : TimeSpan.Zero /*FUTURE: sourceRule.StandardDelta*/);
@@ -760,10 +863,8 @@ namespace System
 
         public static TimeZoneInfo FromSerializedString(string source)
         {
-            if (source == null)
-            {
-                throw new ArgumentNullException(nameof(source));
-            }
+            ArgumentNullException.ThrowIfNull(source);
+
             if (source.Length == 0)
             {
                 throw new ArgumentException(SR.Format(SR.Argument_InvalidSerializedString, source), nameof(source));
@@ -780,41 +881,62 @@ namespace System
         /// <see cref="DisplayName"/>.
         /// This method does *not* throw TimeZoneNotFoundException or InvalidTimeZoneException.
         /// </summary>
-        public static ReadOnlyCollection<TimeZoneInfo> GetSystemTimeZones()
+        public static ReadOnlyCollection<TimeZoneInfo> GetSystemTimeZones() => GetSystemTimeZones(skipSorting: false);
+
+        /// <summary>
+        /// Returns a <see cref="ReadOnlyCollection{TimeZoneInfo}"/> containing all valid TimeZone's from the local machine.
+        /// This method does *not* throw TimeZoneNotFoundException or InvalidTimeZoneException.
+        /// </summary>
+        /// <param name="skipSorting">If true, The collection returned may not necessarily be sorted.</param>
+        /// <remarks>By setting the skipSorting parameter to true, the method will attempt to avoid sorting the returned collection.
+        /// This option can be beneficial when the caller does not require a sorted list and aims to enhance the performance. </remarks>
+        public static ReadOnlyCollection<TimeZoneInfo> GetSystemTimeZones(bool skipSorting)
         {
             CachedData cachedData = s_cachedData;
 
             lock (cachedData)
             {
-                if (cachedData._readOnlySystemTimeZones == null)
+                if ((skipSorting ? cachedData._readOnlyUnsortedSystemTimeZones : cachedData._readOnlySystemTimeZones) is null)
                 {
-                    PopulateAllSystemTimeZones(cachedData);
-                    cachedData._allSystemTimeZonesRead = true;
+                    if (!cachedData._allSystemTimeZonesRead)
+                    {
+                        PopulateAllSystemTimeZones(cachedData);
+                        cachedData._allSystemTimeZonesRead = true;
+                    }
 
-                    List<TimeZoneInfo> list;
                     if (cachedData._systemTimeZones != null)
                     {
                         // return a collection of the cached system time zones
-                        list = new List<TimeZoneInfo>(cachedData._systemTimeZones.Values);
+                        TimeZoneInfo[] array = new TimeZoneInfo[cachedData._systemTimeZones.Count];
+                        cachedData._systemTimeZones.Values.CopyTo(array, 0);
+
+                        if (!skipSorting)
+                        {
+                            // sort and copy the TimeZoneInfo's into a ReadOnlyCollection for the user
+                            Array.Sort(array, static (x, y) =>
+                            {
+                                // sort by BaseUtcOffset first and by DisplayName second - this is similar to the Windows Date/Time control panel
+                                int comparison = x.BaseUtcOffset.CompareTo(y.BaseUtcOffset);
+                                return comparison == 0 ? string.CompareOrdinal(x.DisplayName, y.DisplayName) : comparison;
+                            });
+
+                            // Always reset _readOnlyUnsortedSystemTimeZones even if it was initialized before. This prevents the need to maintain two separate cache lists in memory
+                            // and guarantees that if _readOnlySystemTimeZones is initialized, _readOnlyUnsortedSystemTimeZones is also initialized.
+                            cachedData._readOnlySystemTimeZones = cachedData._readOnlyUnsortedSystemTimeZones = new ReadOnlyCollection<TimeZoneInfo>(array);
+                        }
+                        else
+                        {
+                            cachedData._readOnlyUnsortedSystemTimeZones = new ReadOnlyCollection<TimeZoneInfo>(array);
+                        }
                     }
                     else
                     {
-                        // return an empty collection
-                        list = new List<TimeZoneInfo>();
+                        cachedData._readOnlySystemTimeZones = cachedData._readOnlyUnsortedSystemTimeZones = ReadOnlyCollection<TimeZoneInfo>.Empty;
                     }
-
-                    // sort and copy the TimeZoneInfo's into a ReadOnlyCollection for the user
-                    list.Sort(static (x, y) =>
-                    {
-                        // sort by BaseUtcOffset first and by DisplayName second - this is similar to the Windows Date/Time control panel
-                        int comparison = x.BaseUtcOffset.CompareTo(y.BaseUtcOffset);
-                        return comparison == 0 ? string.CompareOrdinal(x.DisplayName, y.DisplayName) : comparison;
-                    });
-
-                    cachedData._readOnlySystemTimeZones = new ReadOnlyCollection<TimeZoneInfo>(list);
                 }
             }
-            return cachedData._readOnlySystemTimeZones;
+
+            return skipSorting ? cachedData._readOnlyUnsortedSystemTimeZones! : cachedData._readOnlySystemTimeZones!;
         }
 
         /// <summary>
@@ -822,10 +944,7 @@ namespace System
         /// </summary>
         public bool HasSameRules(TimeZoneInfo other)
         {
-            if (other == null)
-            {
-                throw new ArgumentNullException(nameof(other));
-            }
+            ArgumentNullException.ThrowIfNull(other);
 
             // check the utcOffset and supportsDaylightSavingTime members
             if (_baseUtcOffset != other._baseUtcOffset ||
@@ -837,9 +956,9 @@ namespace System
             AdjustmentRule[]? currentRules = _adjustmentRules;
             AdjustmentRule[]? otherRules = other._adjustmentRules;
 
-            if (currentRules is null || otherRules is null)
+            if (currentRules is null && otherRules is null)
             {
-                return currentRules == otherRules;
+                return true;
             }
 
             return currentRules.AsSpan().SequenceEqual(otherRules);
@@ -892,9 +1011,9 @@ namespace System
 
             _id = id;
             _baseUtcOffset = baseUtcOffset;
-            _displayName = displayName;
-            _standardDisplayName = standardDisplayName;
-            _daylightDisplayName = disableDaylightSavingTime ? null : daylightDisplayName;
+            _displayName = displayName ?? string.Empty;
+            _standardDisplayName = standardDisplayName ?? string.Empty;
+            _daylightDisplayName = disableDaylightSavingTime ? string.Empty : daylightDisplayName ?? string.Empty;
             _supportsDaylightSavingTime = adjustmentRulesSupportDst && !disableDaylightSavingTime;
             _adjustmentRules = adjustmentRules;
 
@@ -910,7 +1029,7 @@ namespace System
             string? displayName,
             string? standardDisplayName)
         {
-            bool hasIanaId = TimeZoneInfo.TryConvertIanaIdToWindowsId(id, allocate: false, out string _);
+            bool hasIanaId = TryConvertIanaIdToWindowsId(id, allocate: false, out _);
 
             return new TimeZoneInfo(
                 id,
@@ -961,7 +1080,7 @@ namespace System
                 adjustmentRules = (AdjustmentRule[])adjustmentRules.Clone();
             }
 
-            bool hasIanaId = TimeZoneInfo.TryConvertIanaIdToWindowsId(id, allocate: false, out string _);
+            bool hasIanaId = TryConvertIanaIdToWindowsId(id, allocate: false, out _);
 
             return new TimeZoneInfo(
                 id,
@@ -1022,10 +1141,7 @@ namespace System
 
         void ISerializable.GetObjectData(SerializationInfo info, StreamingContext context)
         {
-            if (info == null)
-            {
-                throw new ArgumentNullException(nameof(info));
-            }
+            ArgumentNullException.ThrowIfNull(info);
 
             info.AddValue("Id", _id); // Do not rename (binary serialization)
             info.AddValue("DisplayName", _displayName); // Do not rename (binary serialization)
@@ -1038,10 +1154,7 @@ namespace System
 
         private TimeZoneInfo(SerializationInfo info, StreamingContext context)
         {
-            if (info == null)
-            {
-                throw new ArgumentNullException(nameof(info));
-            }
+            ArgumentNullException.ThrowIfNull(info);
 
             _id = (string)info.GetValue("Id", typeof(string))!; // Do not rename (binary serialization)
             _displayName = (string?)info.GetValue("DisplayName", typeof(string)); // Do not rename (binary serialization)
@@ -1371,16 +1484,8 @@ namespace System
             DateTime startTime;
             if (rule.IsStartDateMarkerForBeginningOfYear() && daylightTime.Start.Year > DateTime.MinValue.Year)
             {
-                AdjustmentRule? previousYearRule = zone.GetAdjustmentRuleForTime(
-                    new DateTime(daylightTime.Start.Year - 1, 12, 31),
-                    out int? previousYearRuleIndex);
-                if (previousYearRule != null && previousYearRule.IsEndDateMarkerForEndOfYear())
+                if (TryGetStartOfDstIfYearEndWithDst(daylightTime.Start.Year - 1, utc, zone, out startTime))
                 {
-                    DaylightTimeStruct previousDaylightTime = zone.GetDaylightTime(
-                        daylightTime.Start.Year - 1,
-                        previousYearRule,
-                        previousYearRuleIndex);
-                    startTime = previousDaylightTime.Start - utc - previousYearRule.BaseUtcOffsetDelta;
                     ignoreYearAdjustment = true;
                 }
                 else
@@ -1397,24 +1502,8 @@ namespace System
             DateTime endTime;
             if (rule.IsEndDateMarkerForEndOfYear() && daylightTime.End.Year < DateTime.MaxValue.Year)
             {
-                AdjustmentRule? nextYearRule = zone.GetAdjustmentRuleForTime(
-                    new DateTime(daylightTime.End.Year + 1, 1, 1),
-                    out int? nextYearRuleIndex);
-                if (nextYearRule != null && nextYearRule.IsStartDateMarkerForBeginningOfYear())
+                if (TryGetEndOfDstIfYearStartWithDst(daylightTime.End.Year + 1, utc, zone, out endTime))
                 {
-                    if (nextYearRule.IsEndDateMarkerForEndOfYear())
-                    {
-                        // next year end with daylight saving on too
-                        endTime = new DateTime(daylightTime.End.Year + 1, 12, 31) - utc - nextYearRule.BaseUtcOffsetDelta - nextYearRule.DaylightDelta;
-                    }
-                    else
-                    {
-                        DaylightTimeStruct nextdaylightTime = zone.GetDaylightTime(
-                            daylightTime.End.Year + 1,
-                            nextYearRule,
-                            nextYearRuleIndex);
-                        endTime = nextdaylightTime.End - utc - nextYearRule.BaseUtcOffsetDelta - nextYearRule.DaylightDelta;
-                    }
                     ignoreYearAdjustment = true;
                 }
                 else
@@ -1477,6 +1566,82 @@ namespace System
             }
 
             return isDst;
+        }
+
+        // This method checks if a specific year start with DST, if so, will get when the DST ends that year and return true.
+        // Otherwise will return false.
+        private static bool TryGetEndOfDstIfYearStartWithDst(int nextYear, TimeSpan utc, TimeZoneInfo zone, out DateTime dstEnd)
+        {
+            AdjustmentRule? nextYearRule = zone.GetAdjustmentRuleForTime(new DateTime(nextYear, 1, 1), out int? nextYearRuleIndex);
+
+            // DST is not supported if the year doesn't have a rule.
+            if (nextYearRule is null)
+            {
+                dstEnd = default;
+                return false;
+            }
+
+            DaylightTimeStruct nextdaylightTime;
+
+            // If the year starts with DST on, calculate where it ends.
+            if (nextYearRule.IsStartDateMarkerForBeginningOfYear())
+            {
+                // Check if DST ends specified as Jan 1st, 12:00 AM which means the year will end with DST on.
+                if (nextYearRule.IsEndDateMarkerForEndOfYear())
+                {
+                    dstEnd = new DateTime(nextYear, 12, 31) - utc - nextYearRule.BaseUtcOffsetDelta - nextYearRule.DaylightDelta;
+                }
+                else
+                {
+                    // The year doesn't end with DST. Calculate the DST end date regularly as specified in the rule.
+                    nextdaylightTime = zone.GetDaylightTime(nextYear, nextYearRule, nextYearRuleIndex);
+                    dstEnd = nextdaylightTime.End - utc - nextYearRule.BaseUtcOffsetDelta - nextYearRule.DaylightDelta;
+                }
+
+                return true;
+            }
+
+            nextdaylightTime = zone.GetDaylightTime(nextYear, nextYearRule, nextYearRuleIndex);
+
+            // Check if we are dealing with a southern sphere time zone.
+            // If the rule specifies the DST end as of Jan 1st, 12:00 AM that means the year will end with DST on
+            // but also means the year not started with DST as we already checked that before.
+            if (nextdaylightTime.End < nextdaylightTime.Start && !nextYearRule.IsEndDateMarkerForEndOfYear())
+            {
+                // It is the Southern sphere time zone. The year is started with DST on. Use the DST end to get the when DST ends that year.
+                dstEnd =  nextdaylightTime.End - utc - nextYearRule.BaseUtcOffsetDelta - nextYearRule.DaylightDelta;
+                return true;
+            }
+
+            // The year is not starting with DST.
+            dstEnd = default;
+            return false;
+        }
+
+        // This method checks if a specific year end with DST, if so, will get when the DST starts that year and return true.
+        // Otherwise will return false.
+        private static bool TryGetStartOfDstIfYearEndWithDst(int previousYear, TimeSpan utc, TimeZoneInfo zone, out DateTime dstStart)
+        {
+            AdjustmentRule? previousYearRule = zone.GetAdjustmentRuleForTime(new DateTime(previousYear, 12, 31), out int? previousYearRuleIndex);
+
+            // DST is not supported if the year doesn't have a rule.
+            if (previousYearRule is null)
+            {
+                dstStart = default;
+                return false;
+            }
+
+            DaylightTimeStruct previousDaylightTime = zone.GetDaylightTime(previousYear, previousYearRule, previousYearRuleIndex);
+
+            // If the rule is specifying that the year ends with DST on or DST starts after it ends for the year (i.e. it is in the Southern hemisphere), calculate the time DST started
+            if (previousYearRule.IsEndDateMarkerForEndOfYear() || previousDaylightTime.Start > previousDaylightTime.End)
+            {
+                dstStart = previousDaylightTime.Start - utc - previousYearRule.BaseUtcOffsetDelta;
+                return true;
+            }
+
+            dstStart = default;
+            return false;
         }
 
         private static bool CheckIsDst(DateTime startTime, DateTime time, DateTime endTime, bool ignoreYearAdjustment, AdjustmentRule rule)
@@ -1871,6 +2036,9 @@ namespace System
                             }
                         }
 
+                        cachedData._timeZonesUsingAlternativeIds ??= new Dictionary<string, TimeZoneInfo>(StringComparer.OrdinalIgnoreCase);
+                        cachedData._timeZonesUsingAlternativeIds[id] = zone;
+
                         Debug.Assert(zone != null);
                         value = zone;
                     }
@@ -1890,17 +2058,26 @@ namespace System
             // check the cache
             if (cachedData._systemTimeZones != null)
             {
-                if (cachedData._systemTimeZones.TryGetValue(id, out TimeZoneInfo? match))
+                if (cachedData._systemTimeZones.TryGetValue(id, out value))
                 {
-                    if (dstDisabled && match._supportsDaylightSavingTime)
+                    if (dstDisabled && value._supportsDaylightSavingTime)
                     {
                         // we found a cache hit but we want a time zone without DST and this one has DST data
-                        value = CreateCustomTimeZone(match._id, match._baseUtcOffset, match._displayName, match._standardDisplayName);
+                        value = CreateCustomTimeZone(value._id, value._baseUtcOffset, value._displayName, value._standardDisplayName);
                     }
-                    else
+
+                    return result;
+                }
+            }
+
+            if (cachedData._timeZonesUsingAlternativeIds != null)
+            {
+                if (cachedData._timeZonesUsingAlternativeIds.TryGetValue(id, out value))
+                {
+                    if (dstDisabled && value._supportsDaylightSavingTime)
                     {
-                        value = new TimeZoneInfo(match._id, match._baseUtcOffset, match._displayName, match._standardDisplayName,
-                                              match._daylightDisplayName, match._adjustmentRules, disableDaylightSavingTime: false, match.HasIanaId);
+                        // we found a cache hit but we want a time zone without DST and this one has DST data
+                        value = CreateCustomTimeZone(value._id, value._baseUtcOffset, value._displayName, value._standardDisplayName);
                     }
 
                     return result;
@@ -1931,7 +2108,7 @@ namespace System
         {
             TimeZoneInfoResult result;
 
-            result = TryGetTimeZoneFromLocalMachine(id, out TimeZoneInfo? match, out e);
+            result = TryGetTimeZoneFromLocalMachine(id, out value, out e);
 
             if (result == TimeZoneInfoResult.Success)
             {
@@ -1944,23 +2121,14 @@ namespace System
                 // uses reference equality with the Utc object.
                 if (!id.Equals(UtcId, StringComparison.OrdinalIgnoreCase))
                 {
-                    cachedData._systemTimeZones.Add(id, match!);
+                    cachedData._systemTimeZones.Add(id, value!);
                 }
 
-                if (dstDisabled && match!._supportsDaylightSavingTime)
+                if (dstDisabled && value!._supportsDaylightSavingTime)
                 {
                     // we found a cache hit but we want a time zone without DST and this one has DST data
-                    value = CreateCustomTimeZone(match._id, match._baseUtcOffset, match._displayName, match._standardDisplayName);
+                    value = CreateCustomTimeZone(value._id, value._baseUtcOffset, value._displayName, value._standardDisplayName);
                 }
-                else
-                {
-                    value = new TimeZoneInfo(match!._id, match._baseUtcOffset, match._displayName, match._standardDisplayName,
-                                          match._daylightDisplayName, match._adjustmentRules, disableDaylightSavingTime: false, match.HasIanaId);
-                }
-            }
-            else
-            {
-                value = null;
             }
 
             return result;
@@ -1972,15 +2140,7 @@ namespace System
         /// </summary>
         private static void ValidateTimeZoneInfo(string id, TimeSpan baseUtcOffset, AdjustmentRule[]? adjustmentRules, out bool adjustmentRulesSupportDst)
         {
-            if (id == null)
-            {
-                throw new ArgumentNullException(nameof(id));
-            }
-
-            if (id.Length == 0)
-            {
-                throw new ArgumentException(SR.Format(SR.Argument_InvalidId, id), nameof(id));
-            }
+            ArgumentException.ThrowIfNullOrEmpty(id);
 
             if (UtcOffsetOutOfRange(baseUtcOffset))
             {
@@ -2003,11 +2163,10 @@ namespace System
             if (adjustmentRules != null && adjustmentRules.Length != 0)
             {
                 adjustmentRulesSupportDst = true;
-                AdjustmentRule? prev = null;
                 AdjustmentRule? current = null;
                 for (int i = 0; i < adjustmentRules.Length; i++)
                 {
-                    prev = current;
+                    AdjustmentRule? prev = current;
                     current = adjustmentRules[i];
 
                     if (current == null)

@@ -33,7 +33,7 @@ namespace System.Threading.Tasks.Dataflow.Internal
     /// This type expects the first item to be ID==0 and for all subsequent items
     /// to increase IDs sequentially.
     /// </remarks>
-    [DebuggerDisplay("Count={CountForDebugging}")]
+    [DebuggerDisplay("Count = {CountForDebugging}")]
     [DebuggerTypeProxy(typeof(ReorderingBuffer<>.DebugView))]
     internal sealed class ReorderingBuffer<TOutput> : IReorderingBuffer
     {
@@ -86,6 +86,20 @@ namespace System.Threading.Tasks.Dataflow.Internal
                     Debug.Assert((ulong)id > (ulong)_nextReorderedIdToOutput, "Duplicate id.");
                     _reorderingBuffer.Add(id, new KeyValuePair<bool, TOutput>(itemIsValid, item!));
                 }
+            }
+        }
+
+        /// <summary>Determines whether the specified id is next to be output.</summary>
+        /// <param name="id">The id of the item.</param>
+        /// <returns>true if the item is next in line; otherwise, false.</returns>
+        internal bool IsNext(long id)
+        {
+            Debug.Assert(id != Common.INVALID_REORDERING_ID, "This ID should never have been handed out.");
+            Common.ContractAssertMonitorStatus(ValueLock, held: false);
+
+            lock (ValueLock)
+            {
+                return _nextReorderedIdToOutput == id;
             }
         }
 

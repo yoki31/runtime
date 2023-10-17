@@ -18,7 +18,7 @@
 NOINLINE LPVOID __FCThrow(LPVOID __me, RuntimeExceptionKind reKind, UINT resID, LPCWSTR arg1, LPCWSTR arg2, LPCWSTR arg3)
 {
     STATIC_CONTRACT_THROWS;
-    // This isn't strictly true... But the guarentee that we make here is
+    // This isn't strictly true... But the guarantee that we make here is
     // that we won't trigger without having setup a frame.
     // STATIC_CONTRACT_TRIGGER
     STATIC_CONTRACT_GC_NOTRIGGER;
@@ -37,9 +37,16 @@ NOINLINE LPVOID __FCThrow(LPVOID __me, RuntimeExceptionKind reKind, UINT resID, 
     // In V1, throwing an ExecutionEngineException actually never really threw anything... its was the same as a
     // fatal error in the runtime, and we will most probably would have ripped the process down. Starting in
     // Whidbey, this behavior has changed a lot. Its not really legal to try to throw an
-    // ExecutionEngineExcpetion with this function.
+    // ExecutionEngineException with this function.
     _ASSERTE((reKind != kExecutionEngineException) ||
              !"Don't throw kExecutionEngineException from here. Go to EEPolicy directly, or throw something better.");
+
+#ifdef FEATURE_EH_FUNCLETS
+    if (g_isNewExceptionHandlingEnabled)
+    {
+        DispatchManagedException(reKind);
+    }
+#endif // FEATURE_EH_FUNCLETS
 
     if (resID == 0)
     {
@@ -61,7 +68,7 @@ NOINLINE LPVOID __FCThrow(LPVOID __me, RuntimeExceptionKind reKind, UINT resID, 
 NOINLINE LPVOID __FCThrowArgument(LPVOID __me, RuntimeExceptionKind reKind, LPCWSTR argName, LPCWSTR resourceName)
 {
     STATIC_CONTRACT_THROWS;
-    // This isn't strictly true... But the guarentee that we make here is
+    // This isn't strictly true... But the guarantee that we make here is
     // that we won't trigger without having setup a frame.
     // STATIC_CONTRACT_TRIGGER
     STATIC_CONTRACT_GC_NOTRIGGER;
@@ -113,7 +120,7 @@ NOINLINE Object* FC_GCPoll(void* __me, Object* objToProtect)
 {
     CONTRACTL {
         THROWS;
-        // This isn't strictly true... But the guarentee that we make here is
+        // This isn't strictly true... But the guarantee that we make here is
         // that we won't trigger without having setup a frame.
         UNCHECKED(GC_NOTRIGGER);
     } CONTRACTL_END;

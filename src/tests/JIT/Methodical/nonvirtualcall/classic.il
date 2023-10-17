@@ -16,14 +16,13 @@
   .publickeytoken = (B7 7A 5C 56 19 34 E0 89 )                         // .z\V.4..
   .ver 2:0:0:0
 }
-.assembly classic
+.assembly ASSEMBLY_NAME
 {
   .custom instance void [mscorlib]System.Runtime.CompilerServices.CompilationRelaxationsAttribute::.ctor(int32) = ( 01 00 08 00 00 00 00 00 ) 
   .hash algorithm 0x00008004
   .ver 0:0:0:0
 }
 .assembly extern xunit.core {}
-.module program.exe
 .imagebase 0x00400000
 .file alignment 0x00000200
 .stackreserve 0x00100000
@@ -31,8 +30,8 @@
 .corflags 0x00000001    //  ILONLY
 
 
-
-.class public abstract auto ansi beforefieldinit Test_classic.Base
+.namespace Test_classic {
+.class public abstract auto ansi beforefieldinit Base
        extends [mscorlib]System.Object
 {
   .method public hidebysig newslot abstract virtual 
@@ -164,7 +163,7 @@
 
 } // end of class Test.Base
 
-.class public auto ansi beforefieldinit Test_classic.Child
+.class public auto ansi beforefieldinit Child
        extends Test_classic.Base
 {
   .method public hidebysig virtual final 
@@ -373,7 +372,7 @@
 
 } // end of class Test.Child
 
-.class public auto ansi beforefieldinit Test_classic.GrandChild
+.class public auto ansi beforefieldinit GrandChild
        extends Test_classic.Child
 {
   .method public hidebysig virtual final 
@@ -560,7 +559,7 @@
 
 } // end of class Test.GrandChild
 
-.class public auto ansi sealed beforefieldinit Test_classic.SealedGrandChild
+.class public auto ansi sealed beforefieldinit SealedGrandChild
        extends Test_classic.GrandChild
 {
   .method public hidebysig specialname rtspecialname 
@@ -574,7 +573,7 @@
 
 } // end of class Test.SealedGrandChild
 
-.class public abstract auto ansi sealed beforefieldinit Test_classic.Program
+.class public abstract auto ansi sealed beforefieldinit Program
        extends [mscorlib]System.Object
 {
   .method public hidebysig static void  CallSealedGrandChild() cil managed
@@ -682,7 +681,7 @@
     IL_000e:  ret
   } // end of method Program::CallFromInsideGrandChild
 
-  .method public hidebysig static int32  Main(string[] args) cil managed
+  .method public hidebysig static int32  Main() cil managed
   {
     .custom instance void [xunit.core]Xunit.FactAttribute::.ctor() = (
         01 00 00 00
@@ -731,7 +730,7 @@
 
 } // end of class Test.Program
 
-.class public abstract auto ansi sealed beforefieldinit Test_classic.Assert
+.class public abstract auto ansi sealed beforefieldinit Assert
        extends [mscorlib]System.Object
 {
   .method public hidebysig static void  AreEqual(string left,
@@ -791,6 +790,4 @@
   } // end of method Assert::AreEqual
 
 } // end of class Test.Assert
-
-
-
+}

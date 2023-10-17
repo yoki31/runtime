@@ -17,12 +17,11 @@
 .assembly overlap
 {
 }
-.module overlap.exe
 .custom instance void [mscorlib]System.Security.UnverifiableCodeAttribute::.ctor() = ( 01 00 00 00 ) 
 
 .file alignment 512
 
-.class private sequential ansi sealed beforefieldinit Test_overlap
+.class public sequential ansi sealed beforefieldinit Test_overlap
        extends [mscorlib]System.ValueType
 {
   .field public unsigned int32 _uint
@@ -224,7 +223,7 @@
     IL_008d:  ret
   } 
 
-  .method private hidebysig static int32 Main() cil managed
+  .method public hidebysig static int32 Main() cil managed
   {
     .custom instance void [xunit.core]Xunit.FactAttribute::.ctor() = (
         01 00 00 00

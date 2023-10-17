@@ -15,7 +15,7 @@ namespace Microsoft.NET.HostModel.AppHost
     /// Embeds the App Name into the AppHost.exe
     /// If an apphost is a single-file bundle, updates the location of the bundle headers.
     /// </summary>
-    public static class HostWriter
+    public static partial class HostWriter
     {
         /// <summary>
         /// hash value embedded in default apphost executable in a place where the path to the app binary should be stored.
@@ -30,14 +30,14 @@ namespace Microsoft.NET.HostModel.AppHost
         /// <param name="appHostDestinationFilePath">The destination path for desired location to place, including the file name</param>
         /// <param name="appBinaryFilePath">Full path to app binary or relative path to the result apphost file</param>
         /// <param name="windowsGraphicalUserInterface">Specify whether to set the subsystem to GUI. Only valid for PE apphosts.</param>
-        /// <param name="assemblyToCopyResorcesFrom">Path to the intermediate assembly, used for copying resources to PE apphosts.</param>
+        /// <param name="assemblyToCopyResourcesFrom">Path to the intermediate assembly, used for copying resources to PE apphosts.</param>
         /// <param name="enableMacOSCodeSign">Sign the app binary using codesign with an anonymous certificate.</param>
         public static void CreateAppHost(
             string appHostSourceFilePath,
             string appHostDestinationFilePath,
             string appBinaryFilePath,
             bool windowsGraphicalUserInterface = false,
-            string assemblyToCopyResorcesFrom = null,
+            string assemblyToCopyResourcesFrom = null,
             bool enableMacOSCodeSign = false)
         {
             var bytesToWrite = Encoding.UTF8.GetBytes(appBinaryFilePath);
@@ -59,28 +59,10 @@ namespace Microsoft.NET.HostModel.AppHost
                 {
                     if (!appHostIsPEImage)
                     {
-                        throw new AppHostNotPEFileException();
+                        throw new AppHostNotPEFileException("PE file signature not found.");
                     }
 
                     PEUtils.SetWindowsGraphicalUserInterfaceBit(accessor);
-                }
-            }
-
-            void UpdateResources()
-            {
-                if (assemblyToCopyResorcesFrom != null && appHostIsPEImage)
-                {
-                    if (ResourceUpdater.IsSupportedOS())
-                    {
-                        // Copy resources from managed dll to the apphost
-                        new ResourceUpdater(appHostDestinationFilePath)
-                            .AddResourcesFromPEImage(assemblyToCopyResorcesFrom)
-                            .Update();
-                    }
-                    else
-                    {
-                        throw new AppHostCustomizationUnsupportedOSException();
-                    }
                 }
             }
 
@@ -94,7 +76,7 @@ namespace Microsoft.NET.HostModel.AppHost
                     try
                     {
                         // Open the source host file.
-                        appHostSourceStream = new FileStream(appHostSourceFilePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+                        appHostSourceStream = new FileStream(appHostSourceFilePath, FileMode.Open, FileAccess.Read, FileShare.Read, bufferSize: 1);
                         memoryMappedFile = MemoryMappedFile.CreateFromFile(appHostSourceStream, null, 0, MemoryMappedFileAccess.Read, HandleInheritability.None, true);
                         memoryMappedViewAccessor = memoryMappedFile.CreateViewAccessor(0, 0, MemoryMappedFileAccess.CopyOnWrite);
 
@@ -115,6 +97,13 @@ namespace Microsoft.NET.HostModel.AppHost
                             {
                                 MachOUtils.RemoveSignature(fileStream);
                             }
+
+                            if (assemblyToCopyResourcesFrom != null && appHostIsPEImage)
+                            {
+                                using var updater = new ResourceUpdater(fileStream, true);
+                                updater.AddResourcesFromPEImage(assemblyToCopyResourcesFrom);
+                                updater.Update();
+                            }
                         }
                     }
                     finally
@@ -124,8 +113,6 @@ namespace Microsoft.NET.HostModel.AppHost
                         appHostSourceStream?.Dispose();
                     }
                 });
-
-                RetryUtil.RetryOnWin32Error(UpdateResources);
 
                 if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
                 {
@@ -141,7 +128,7 @@ namespace Microsoft.NET.HostModel.AppHost
 
                     if (chmodReturnCode == -1)
                     {
-                        throw new Win32Exception(Marshal.GetLastWin32Error(), $"Could not set file permission {filePermissionOctal} for {appHostDestinationFilePath}.");
+                        throw new Win32Exception(Marshal.GetLastWin32Error(), $"Could not set file permission {Convert.ToString(filePermissionOctal, 8)} for {appHostDestinationFilePath}.");
                     }
 
                     if (enableMacOSCodeSign && RuntimeInformation.IsOSPlatform(OSPlatform.OSX) && HostModelUtils.IsCodesignAvailable())
@@ -224,9 +211,9 @@ namespace Microsoft.NET.HostModel.AppHost
             long headerOffset = 0;
             void FindBundleHeader()
             {
-                using (var memoryMappedFile = MemoryMappedFile.CreateFromFile(appHostFilePath))
+                using (var memoryMappedFile = MemoryMappedFile.CreateFromFile(appHostFilePath, FileMode.Open, null, 0, MemoryMappedFileAccess.Read))
                 {
-                    using (MemoryMappedViewAccessor accessor = memoryMappedFile.CreateViewAccessor())
+                    using (MemoryMappedViewAccessor accessor = memoryMappedFile.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read))
                     {
                         int position = BinaryUtils.SearchInFile(accessor, bundleSignature);
                         if (position == -1)
@@ -245,7 +232,7 @@ namespace Microsoft.NET.HostModel.AppHost
             return headerOffset != 0;
         }
 
-        [DllImport("libc", SetLastError = true)]
-        private static extern int chmod(string pathname, int mode);
+        [LibraryImport("libc", SetLastError = true)]
+        private static partial int chmod([MarshalAs(UnmanagedType.LPStr)] string pathname, int mode);
     }
 }

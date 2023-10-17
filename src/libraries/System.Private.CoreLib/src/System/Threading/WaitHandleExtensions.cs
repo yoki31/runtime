@@ -10,14 +10,11 @@ namespace System.Threading
         /// <summary>
         /// Gets the native operating system handle.
         /// </summary>
-        /// <param name="waitHandle">The <see cref="System.Threading.WaitHandle"/> to operate on.</param>
-        /// <returns>A <see cref="System.Runtime.InteropServices.SafeHandle"/> representing the native operating system handle.</returns>
+        /// <param name="waitHandle">The <see cref="WaitHandle"/> to operate on.</param>
+        /// <returns>A <see cref="Runtime.InteropServices.SafeHandle"/> representing the native operating system handle.</returns>
         public static SafeWaitHandle GetSafeWaitHandle(this WaitHandle waitHandle)
         {
-            if (waitHandle == null)
-            {
-                throw new ArgumentNullException(nameof(waitHandle));
-            }
+            ArgumentNullException.ThrowIfNull(waitHandle);
 
             return waitHandle.SafeWaitHandle;
         }
@@ -25,14 +22,11 @@ namespace System.Threading
         /// <summary>
         /// Sets the native operating system handle
         /// </summary>
-        /// <param name="waitHandle">The <see cref="System.Threading.WaitHandle"/> to operate on.</param>
-        /// <param name="value">A <see cref="System.Runtime.InteropServices.SafeHandle"/> representing the native operating system handle.</param>
+        /// <param name="waitHandle">The <see cref="WaitHandle"/> to operate on.</param>
+        /// <param name="value">A <see cref="Runtime.InteropServices.SafeHandle"/> representing the native operating system handle.</param>
         public static void SetSafeWaitHandle(this WaitHandle waitHandle, SafeWaitHandle? value)
         {
-            if (waitHandle == null)
-            {
-                throw new ArgumentNullException(nameof(waitHandle));
-            }
+            ArgumentNullException.ThrowIfNull(waitHandle);
 
             waitHandle.SafeWaitHandle = value;
         }

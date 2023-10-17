@@ -8,9 +8,10 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Collections.Generic;
-using Microsoft.Diagnostics.Tools.RuntimeClient;
 using Microsoft.Diagnostics.Tracing;
 using Tracing.Tests.Common;
+using Microsoft.Diagnostics.NETCore.Client;
+using Xunit;
 
 namespace Tracing.Tests.ProviderValidation
 {
@@ -23,32 +24,40 @@ namespace Tracing.Tests.ProviderValidation
 
     public class ProviderValidation
     {
-        public static int Main(string[] args)
+        [Fact]
+        public static int TestEntryPoint()
         {
             // This test validates that the rundown events are present
             // and that providers turned on that generate events are being written to
             // the stream.
 
-            var providers = new List<Provider>()
+            var providers = new List<EventPipeProvider>()
             {
-                new Provider("MyEventSource"),
-                new Provider("Microsoft-DotNETCore-SampleProfiler")
+                new EventPipeProvider("MyEventSource", EventLevel.Verbose),
+                new EventPipeProvider("Microsoft-DotNETCore-SampleProfiler", EventLevel.Verbose)
             };
 
-            var config = new SessionConfiguration(circularBufferSizeMB: (uint)Math.Pow(2, 10), format: EventPipeSerializationFormat.NetTrace,  providers: providers);
+            bool enableRundown = TestLibrary.Utilities.IsNativeAot? false: true;
 
-            var ret = IpcTraceTest.RunAndValidateEventCounts(_expectedEventCounts, _eventGeneratingAction, config);
+            Dictionary<string, ExpectedEventCount> _expectedEventCounts = TestLibrary.Utilities.IsNativeAot? _expectedEventCountsNativeAOT: _expectedEventCountsCoreCLR;
+            var ret = IpcTraceTest.RunAndValidateEventCounts(_expectedEventCounts, _eventGeneratingAction, providers, 1024, enableRundownProvider: enableRundown);
             if (ret < 0)
                 return ret;
             else
                 return 100;
         }
 
-        private static Dictionary<string, ExpectedEventCount> _expectedEventCounts = new Dictionary<string, ExpectedEventCount>()
+        private static Dictionary<string, ExpectedEventCount> _expectedEventCountsCoreCLR = new Dictionary<string, ExpectedEventCount>()
         {
             { "MyEventSource", new ExpectedEventCount(100_000, 0.30f) },
             { "Microsoft-Windows-DotNETRuntimeRundown", -1 },
             { "Microsoft-DotNETCore-SampleProfiler", -1 }
+        };
+
+        private static Dictionary<string, ExpectedEventCount> _expectedEventCountsNativeAOT = new Dictionary<string, ExpectedEventCount>()
+        {
+            { "MyEventSource", 100_000 },
+            { "Microsoft-DotNETCore-EventPipe", 1 }
         };
 
         private static Action _eventGeneratingAction = () => 

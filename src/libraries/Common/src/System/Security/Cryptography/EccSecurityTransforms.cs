@@ -14,12 +14,12 @@ namespace System.Security.Cryptography
     {
         private SecKeyPair? _keys;
         private bool _disposed;
-        private readonly string _disposedName;
+        private readonly Type _disposedType;
 
-        internal EccSecurityTransforms(string disposedTypeName)
+        internal EccSecurityTransforms(Type disposedType)
         {
-            Debug.Assert(disposedTypeName != null);
-            _disposedName = disposedTypeName;
+            Debug.Assert(disposedType != null);
+            _disposedType = disposedType;
         }
 
         internal void DisposeKey()
@@ -80,10 +80,7 @@ namespace System.Security.Cryptography
 
         internal void ThrowIfDisposed()
         {
-            if (_disposed)
-            {
-                throw new ObjectDisposedException(_disposedName);
-            }
+            ObjectDisposedException.ThrowIf(_disposed, _disposedType);
         }
 
         internal SecKeyPair GetOrGenerateKeys(int keySizeInBits)
@@ -119,7 +116,32 @@ namespace System.Security.Cryptography
         internal ECParameters ExportParameters(bool includePrivateParameters, int keySizeInBits)
         {
             SecKeyPair keys = GetOrGenerateKeys(keySizeInBits);
+            ECParameters key = default;
 
+            if (!TryExportDataKeyParameters(keys, includePrivateParameters, ref key))
+            {
+                return ExportParametersFromLegacyKey(keys, includePrivateParameters);
+            }
+
+            return key;
+        }
+
+        internal bool TryExportDataKeyParameters(
+            bool includePrivateParameters,
+            int keySizeInBits,
+            ref ECParameters ecParameters)
+        {
+            return TryExportDataKeyParameters(
+                GetOrGenerateKeys(keySizeInBits),
+                includePrivateParameters,
+                ref ecParameters);
+        }
+
+        private static bool TryExportDataKeyParameters(
+            SecKeyPair keys,
+            bool includePrivateParameters,
+            ref ECParameters ecParameters)
+        {
             if (includePrivateParameters && keys.PrivateKey == null)
             {
                 throw new CryptographicException(SR.Cryptography_OpenInvalidHandle);
@@ -131,7 +153,7 @@ namespace System.Security.Cryptography
 
             if (!gotKeyBlob)
             {
-                return ExportParametersFromLegacyKey(keys, includePrivateParameters);
+                return false;
             }
 
             try
@@ -139,19 +161,19 @@ namespace System.Security.Cryptography
                 AsymmetricAlgorithmHelpers.DecodeFromUncompressedAnsiX963Key(
                     keyBlob,
                     includePrivateParameters,
-                    out ECParameters key);
+                    out ecParameters);
 
                 switch (GetKeySize(keys))
                 {
-                    case 256: key.Curve = ECCurve.NamedCurves.nistP256; break;
-                    case 384: key.Curve = ECCurve.NamedCurves.nistP384; break;
-                    case 521: key.Curve = ECCurve.NamedCurves.nistP521; break;
+                    case 256: ecParameters.Curve = ECCurve.NamedCurves.nistP256; break;
+                    case 384: ecParameters.Curve = ECCurve.NamedCurves.nistP384; break;
+                    case 521: ecParameters.Curve = ECCurve.NamedCurves.nistP521; break;
                     default:
                         Debug.Fail("Unsupported curve");
                         throw new CryptographicException();
                 }
 
-                return key;
+                return true;
             }
             finally
             {
@@ -212,9 +234,9 @@ namespace System.Security.Cryptography
 
         private static int GetKeySize(SecKeyPair newKeys)
         {
-            long size = Interop.AppleCrypto.EccGetKeySizeInBits(newKeys.PublicKey);
+            int size = Interop.AppleCrypto.EccGetKeySizeInBits(newKeys.PublicKey);
             Debug.Assert(size == 256 || size == 384 || size == 521, $"Unknown keysize ({size})");
-            return (int)size;
+            return size;
         }
 
         private static SafeSecKeyRefHandle ImportKey(ECParameters parameters)

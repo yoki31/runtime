@@ -22,7 +22,7 @@ inline ULONG PEImage::AddRef()
     }
     CONTRACT_END;
 
-    RETURN (static_cast<ULONG>(FastInterlockIncrement(&m_refCount)));
+    RETURN (static_cast<ULONG>(InterlockedIncrement(&m_refCount)));
 }
 
 inline const SString &PEImage::GetPath()
@@ -78,7 +78,7 @@ inline void PEImage::SetModuleFileNameHintForDAC()
     {
         const WCHAR* pChar = pStartPath + nChars;
         nChars = 0;
-        while ((pChar >= pStartPath) && (*pChar != L'\\'))
+        while ((pChar >= pStartPath) && (*pChar != DIRECTORY_SEPARATOR_CHAR_W))
         {
             pChar--;
             nChars++;
@@ -127,8 +127,6 @@ inline PTR_PEImageLayout PEImage::GetExistingLayoutInternal(DWORD imageLayoutMas
 
     if (imageLayoutMask&PEImageLayout::LAYOUT_LOADED)
         pRetVal=m_pLayouts[IMAGE_LOADED];
-    if (pRetVal==NULL && (imageLayoutMask & PEImageLayout::LAYOUT_MAPPED))
-        pRetVal=m_pLayouts[IMAGE_MAPPED];
     if (pRetVal==NULL && (imageLayoutMask & PEImageLayout::LAYOUT_FLAT))
         pRetVal=m_pLayouts[IMAGE_FLAT];
 
@@ -152,10 +150,19 @@ inline PTR_PEImageLayout PEImage::GetLoadedLayout()
     return m_pLayouts[IMAGE_LOADED];
 }
 
+inline PTR_PEImageLayout PEImage::GetFlatLayout()
+{
+    LIMITED_METHOD_CONTRACT;
+    SUPPORTS_DAC;
+
+    _ASSERTE(m_pLayouts[IMAGE_FLAT] != NULL);
+    return m_pLayouts[IMAGE_FLAT];
+}
+
 inline BOOL PEImage::IsOpened()
 {
     LIMITED_METHOD_CONTRACT;
-    return m_pLayouts[IMAGE_LOADED]!=NULL ||m_pLayouts[IMAGE_MAPPED]!=NULL || m_pLayouts[IMAGE_FLAT] !=NULL;
+    return m_pLayouts[IMAGE_LOADED]!=NULL || m_pLayouts[IMAGE_FLAT] !=NULL;
 }
 
 
@@ -279,8 +286,9 @@ inline void  PEImage::Init(LPCWSTR pPath, BundleFileLocation bundleFileLocation)
     }
     CONTRACTL_END;
 
-    m_path = pPath;
+    m_path.Set(pPath);
     m_path.Normalize();
+    m_pathHash = m_path.HashCaseInsensitive();
     m_bundleFileLocation = bundleFileLocation;
     SetModuleFileNameHintForDAC();
 }
@@ -303,11 +311,7 @@ inline PTR_PEImage PEImage::FindByPath(LPCWSTR pPath, BOOL isInBundle /* = TRUE 
     int CaseHashHelper(const WCHAR *buffer, COUNT_T count);
 
     PEImageLocator locator(pPath, isInBundle);
-#ifdef FEATURE_CASE_SENSITIVE_FILESYSTEM
-    DWORD dwHash=path.Hash();
-#else
-    DWORD dwHash = CaseHashHelper(pPath, (COUNT_T) wcslen(pPath));
-#endif
+    DWORD dwHash = CaseHashHelper(pPath, (COUNT_T) u16_strlen(pPath));
     return (PEImage *) s_Images->LookupValue(dwHash, &locator);
 }
 
@@ -359,7 +363,7 @@ inline void PEImage::AddToHashMap()
     CONTRACTL_END;
 
     _ASSERTE(s_hashLock.OwnedByCurrentThread());
-    s_Images->InsertValue(GetPathHash(),this);
+    s_Images->InsertValue(m_pathHash,this);
     m_bInHashMap=TRUE;
 }
 
@@ -369,31 +373,6 @@ inline BOOL PEImage::Has32BitNTHeaders()
 {
     WRAPPER_NO_CONTRACT;
     return GetOrCreateLayout(PEImageLayout::LAYOUT_ANY)->Has32BitNTHeaders();
-}
-
-inline BOOL PEImage::HasPath()
-{
-    LIMITED_METHOD_CONTRACT;
-
-    return !GetPath().IsEmpty();
-}
-
-inline ULONG PEImage::GetPathHash()
-{
-    CONTRACT(ULONG)
-    {
-        PRECONDITION(HasPath());
-        MODE_ANY;
-        GC_NOTRIGGER;
-        THROWS;
-    }
-    CONTRACT_END;
-
-#ifdef FEATURE_CASE_SENSITIVE_FILESYSTEM
-    RETURN m_path.Hash();
-#else
-    RETURN m_path.HashCaseInsensitive();
-#endif
 }
 
 inline void  PEImage::GetPEKindAndMachine(DWORD* pdwKind, DWORD* pdwMachine)

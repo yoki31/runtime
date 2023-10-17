@@ -2,10 +2,10 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 .assembly extern mscorlib {}
-.assembly ILGEN_MODULE {}
+.assembly 'DevDiv_491211' {}
 .assembly extern xunit.core {}
 
-.class ILGEN_CLASS
+.class public ILGEN_CLASS
 {
     .method static unsigned int64 ILGEN_METHOD(unsigned int64, int16, int32)
     {

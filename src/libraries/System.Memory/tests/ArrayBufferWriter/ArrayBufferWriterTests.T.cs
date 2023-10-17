@@ -57,7 +57,45 @@ namespace System.Buffers.Tests
             Assert.False(ReadOnlySpan<T>.Empty.SequenceEqual(output.WrittenSpan));
             Assert.False(ReadOnlyMemory<T>.Empty.Span.SequenceEqual(output.WrittenMemory.Span));
             Assert.True(output.WrittenSpan.SequenceEqual(output.WrittenMemory.Span));
+
+            ReadOnlyMemory<T> transientMemory = output.WrittenMemory;
+            ReadOnlySpan<T> transientSpan = output.WrittenSpan;
+            T t0 = transientMemory.Span[0];
+            T t1 = transientSpan[1];
+            Assert.NotEqual(default, t0);
+            Assert.NotEqual(default, t1);
             output.Clear();
+            Assert.Equal(default, transientMemory.Span[0]);
+            Assert.Equal(default, transientSpan[1]);
+
+            Assert.Equal(0, output.WrittenCount);
+            Assert.True(ReadOnlySpan<T>.Empty.SequenceEqual(output.WrittenSpan));
+            Assert.True(ReadOnlyMemory<T>.Empty.Span.SequenceEqual(output.WrittenMemory.Span));
+            Assert.Equal(previousAvailable, output.FreeCapacity);
+        }
+
+        [Fact]
+        public void ResetWrittenCount()
+        {
+            var output = new ArrayBufferWriter<T>(256);
+            int previousAvailable = output.FreeCapacity;
+            WriteData(output, 2);
+            Assert.True(output.FreeCapacity < previousAvailable);
+            Assert.True(output.WrittenCount > 0);
+            Assert.False(ReadOnlySpan<T>.Empty.SequenceEqual(output.WrittenSpan));
+            Assert.False(ReadOnlyMemory<T>.Empty.Span.SequenceEqual(output.WrittenMemory.Span));
+            Assert.True(output.WrittenSpan.SequenceEqual(output.WrittenMemory.Span));
+
+            ReadOnlyMemory<T> transientMemory = output.WrittenMemory;
+            ReadOnlySpan<T> transientSpan = output.WrittenSpan;
+            T t0 = transientMemory.Span[0];
+            T t1 = transientSpan[1];
+            Assert.NotEqual(default, t0);
+            Assert.NotEqual(default, t1);
+            output.ResetWrittenCount();
+            Assert.Equal(t0, transientMemory.Span[0]);
+            Assert.Equal(t1, transientSpan[1]);
+
             Assert.Equal(0, output.WrittenCount);
             Assert.True(ReadOnlySpan<T>.Empty.SequenceEqual(output.WrittenSpan));
             Assert.True(ReadOnlyMemory<T>.Empty.Span.SequenceEqual(output.WrittenMemory.Span));
@@ -236,14 +274,12 @@ namespace System.Buffers.Tests
             }
         }
 
-        public static bool IsX64 { get; } = IntPtr.Size == 8;
-
         // NOTE: InvalidAdvance_Large test is constrained to run on Windows and MacOSX because it causes
         //       problems on Linux due to the way deferred memory allocation works. On Linux, the allocation can
         //       succeed even if there is not enough memory but then the test may get killed by the OOM killer at the
         //       time the memory is accessed which triggers the full memory allocation.
         [PlatformSpecific(TestPlatforms.Windows | TestPlatforms.OSX)]
-        [ConditionalFact(nameof(IsX64))]
+        [ConditionalFact(typeof(Environment), nameof(Environment.Is64BitProcess))]
         [OuterLoop]
         public void InvalidAdvance_Large()
         {

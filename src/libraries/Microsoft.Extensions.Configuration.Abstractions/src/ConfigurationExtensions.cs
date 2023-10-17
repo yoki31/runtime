@@ -9,7 +9,7 @@ using System.Linq;
 namespace Microsoft.Extensions.Configuration
 {
     /// <summary>
-    /// Extension methods for configuration classes./>.
+    /// Extension methods for configuration classes.
     /// </summary>
     public static class ConfigurationExtensions
     {
@@ -96,10 +96,7 @@ namespace Microsoft.Extensions.Configuration
         /// <exception cref="System.InvalidOperationException">There is no section with key <paramref name="key"/>.</exception>
         public static IConfigurationSection GetRequiredSection(this IConfiguration configuration, string key)
         {
-            if (configuration == null)
-            {
-                throw new ArgumentNullException(nameof(configuration));
-            }
+            ThrowHelper.ThrowIfNull(configuration);
 
             IConfigurationSection section = configuration.GetSection(key);
             if (section.Exists())

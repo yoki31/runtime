@@ -1,26 +1,22 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
-/*============================================================
-**
-**
-**
-** Purpose: implementation of the FormattableString
-** class.
-**
-===========================================================*/
+using System.Diagnostics.CodeAnalysis;
 
 namespace System
 {
     /// <summary>
-    /// A composite format string along with the arguments to be formatted. An instance of this
-    /// type may result from the use of the C# or VB language primitive "interpolated string".
+    /// Represents a composite format string, along with the arguments to be formatted.
     /// </summary>
+    /// <remarks>
+    /// An instance of this type may result from the use of the C# or VB language primitive "interpolated string".
+    /// </remarks>
     public abstract class FormattableString : IFormattable
     {
         /// <summary>
         /// The composite format string.
         /// </summary>
+        [StringSyntax(StringSyntaxAttribute.CompositeFormat)]
         public abstract string Format { get; }
 
         /// <summary>
@@ -44,10 +40,8 @@ namespace System
         /// </summary>
         public abstract string ToString(IFormatProvider? formatProvider);
 
-        string IFormattable.ToString(string? ignored, IFormatProvider? formatProvider)
-        {
-            return ToString(formatProvider);
-        }
+        string IFormattable.ToString(string? ignored, IFormatProvider? formatProvider) =>
+            ToString(formatProvider);
 
         /// <summary>
         /// Format the given object in the invariant culture. This static method may be
@@ -64,11 +58,7 @@ namespace System
         /// </summary>
         public static string Invariant(FormattableString formattable)
         {
-            if (formattable == null)
-            {
-                throw new ArgumentNullException(nameof(formattable));
-            }
-
+            ArgumentNullException.ThrowIfNull(formattable);
             return formattable.ToString(Globalization.CultureInfo.InvariantCulture);
         }
 
@@ -87,17 +77,11 @@ namespace System
         /// </summary>
         public static string CurrentCulture(FormattableString formattable)
         {
-            if (formattable == null)
-            {
-                throw new ArgumentNullException(nameof(formattable));
-            }
-
+            ArgumentNullException.ThrowIfNull(formattable);
             return formattable.ToString(Globalization.CultureInfo.CurrentCulture);
         }
 
-        public override string ToString()
-        {
-            return ToString(Globalization.CultureInfo.CurrentCulture);
-        }
+        public override string ToString() =>
+            ToString(Globalization.CultureInfo.CurrentCulture);
     }
 }

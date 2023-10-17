@@ -11,6 +11,14 @@
 #ifndef __MONO_MONO_CONTEXT_H__
 #define __MONO_MONO_CONTEXT_H__
 
+/* 
+ * Handle non-gnu libc versions with nothing in features.h 
+ * We have no idea what they're compatible with, so always fail.
+ */
+#ifndef __GLIBC_PREREQ
+# define __GLIBC_PREREQ(x,y) 0
+#endif
+
 #include "mono-compiler.h"
 #include "mono-sigcontext.h"
 #include "mono-machine.h"
@@ -21,16 +29,30 @@
 
 #if defined(TARGET_X86)
 #if defined(__APPLE__)
-#define MONO_HAVE_SIMD_REG
+#if !defined(MONO_CROSS_COMPILE)
 typedef struct __darwin_xmm_reg MonoContextSimdReg;
+#else
+/* if building for an arm64 host machine, a cross compiler that produces x86 modules, fake a MonoContextSimdReg */
+typedef __uint128_t MonoContextSimdReg;
+#endif
 #endif
 #elif defined(TARGET_AMD64)
 #if defined(__APPLE__)
 #define MONO_HAVE_SIMD_REG
+#if !defined(MONO_CROSS_COMPILE)
 typedef struct __darwin_xmm_reg MonoContextSimdReg;
+#else
+/* if building for an arm64 host machine, a cross compiler that produces x64 modules, fake a MonoContextSimdReg */
+typedef __uint128_t MonoContextSimdReg;
+#endif
 #elif defined(__linux__) && defined(__GLIBC__)
 #define MONO_HAVE_SIMD_REG
+#if !defined(MONO_CROSS_COMPILE)
 typedef struct _libc_xmmreg MonoContextSimdReg;
+#else
+/* if building for an arm64 host machine, a cross compiler that produces x64 modules, fake a MonoContextSimdReg */
+typedef __uint128_t MonoContextSimdReg;
+#endif
 #elif defined(HOST_WIN32)
 #define MONO_HAVE_SIMD_REG
 //#define MONO_HAVE_SIMD_REG_AVX
@@ -41,8 +63,13 @@ typedef __m128d MonoContextSimdReg;
 typedef struct _libc_xmmreg MonoContextSimdReg;
 #elif defined(__linux__) || defined(__OpenBSD__)
 #define MONO_HAVE_SIMD_REG
+#if !defined(MONO_CROSS_COMPILE)
 #include <emmintrin.h>
 typedef __m128d MonoContextSimdReg;
+#else
+/* if building for an arm64 host machine, a cross compiler that produces x64 modules, fake a MonoContextSimdReg */
+typedef __uint128_t MonoContextSimdReg;
+#endif
 #endif
 #elif defined(TARGET_ARM64)
 /* We need a definition for MonoContextSimdReg even when cross-compiling
@@ -585,7 +612,7 @@ typedef struct {
 
 #define MONO_ARCH_HAS_MONO_CONTEXT 1
 
-#elif defined(__mono_ppc__) /* defined(__arm__) */
+#elif (defined (HOST_POWERPC) && !defined (MONO_CROSS_COMPILE)) || defined (TARGET_POWERPC) /* defined(__arm__) */
 
 /* we define our own structure and we'll copy the data
  * from sigcontext/ucontext/mach when we need it.
@@ -593,10 +620,10 @@ typedef struct {
  * We might also want to add an additional field to propagate
  * the original context from the signal handler.
  */
-#ifdef __mono_ppc64__
+#if (defined (HOST_POWERPC64) && !defined (MONO_CROSS_COMPILE)) || defined (TARGET_POWERPC64)
 
 typedef struct {
-	gulong sc_ir;          // pc 
+	gulong sc_ir;          // pc
 	gulong sc_sp;          // r1
 	host_mgreg_t regs [32];
 	double fregs [32];
@@ -683,7 +710,7 @@ typedef struct {
 		: "memory"			\
 	)
 
-#else /* !defined(__mono_ppc64__) */
+#else /* !defined(HOST_POWERPC64) */
 
 typedef struct {
 	host_mgreg_t sc_ir;          // pc
@@ -778,129 +805,6 @@ typedef struct {
 
 #define MONO_ARCH_HAS_MONO_CONTEXT 1
 
-#elif defined(__sparc__) || defined(sparc) /* defined(__mono_ppc__) */
-
-typedef struct MonoContext {
-	host_mgreg_t regs [15];
-	guint8 *ip;
-	gpointer *sp;
-	gpointer *fp;
-} MonoContext;
-
-#define MONO_CONTEXT_SET_IP(ctx,eip) do { (ctx)->ip = (gpointer)(eip); } while (0); 
-#define MONO_CONTEXT_SET_BP(ctx,ebp) do { (ctx)->fp = (gpointer*)(ebp); } while (0); 
-#define MONO_CONTEXT_SET_SP(ctx,esp) do { (ctx)->sp = (gpointer*)(esp); } while (0); 
-
-#define MONO_CONTEXT_GET_IP(ctx) ((gpointer)((ctx)->ip))
-#define MONO_CONTEXT_GET_BP(ctx) ((gpointer)((ctx)->fp))
-#define MONO_CONTEXT_GET_SP(ctx) ((gpointer)((ctx)->sp))
-
-#ifdef __sparcv9
-#define MONO_CONTEXT_GET_CURRENT(ctx)	\
-	__asm__ __volatile__(	\
-		"st %%g1,[%0]\n"	\
-		"st %%g2,[%0+0x08]\n"	\
-		"st %%g3,[%0+0x10]\n"	\
-		"st %%g4,[%0+0x18]\n"	\
-		"st %%g5,[%0+0x20]\n"	\
-		"st %%g6,[%0+0x28]\n"	\
-		"st %%g7,[%0+0x30]\n"	\
-		"st %%o0,[%0+0x38]\n"	\
-		"st %%o1,[%0+0x40]\n"	\
-		"st %%o2,[%0+0x48]\n"	\
-		"st %%o3,[%0+0x50]\n"	\
-		"st %%o4,[%0+0x58]\n"	\
-		"st %%o5,[%0+0x60]\n"	\
-		"st %%o6,[%0+0x68]\n"	\
-		"st %%o7,[%0+0x70]\n"	\
-		: 			\
-		: "r" (&(ctx))		\
-		: "memory"			\
-	)
-#else
-#define MONO_CONTEXT_GET_CURRENT(ctx)	\
-	__asm__ __volatile__(	\
-		"st %%g1,[%0]\n"	\
-		"st %%g2,[%0+0x04]\n"	\
-		"st %%g3,[%0+0x08]\n"	\
-		"st %%g4,[%0+0x0c]\n"	\
-		"st %%g5,[%0+0x10]\n"	\
-		"st %%g6,[%0+0x14]\n"	\
-		"st %%g7,[%0+0x18]\n"	\
-		"st %%o0,[%0+0x1c]\n"	\
-		"st %%o1,[%0+0x20]\n"	\
-		"st %%o2,[%0+0x24]\n"	\
-		"st %%o3,[%0+0x28]\n"	\
-		"st %%o4,[%0+0x2c]\n"	\
-		"st %%o5,[%0+0x30]\n"	\
-		"st %%o6,[%0+0x34]\n"	\
-		"st %%o7,[%0+0x38]\n"	\
-		: 			\
-		: "r" (&(ctx))		\
-		: "memory"			\
-	)
-#endif
-
-#define MONO_ARCH_HAS_MONO_CONTEXT 1
-
-#elif ((defined(__mips__) && !defined(MONO_CROSS_COMPILE)) || (defined(TARGET_MIPS))) && SIZEOF_REGISTER == 4
-
-#define MONO_ARCH_HAS_MONO_CONTEXT 1
-
-#include <mono/arch/mips/mips-codegen.h>
-
-typedef struct {
-	host_mgreg_t	    sc_pc;
-	host_mgreg_t		sc_regs [32];
-	gfloat		sc_fpregs [32];
-} MonoContext;
-
-#define MONO_CONTEXT_SET_IP(ctx,ip) do { (ctx)->sc_pc = (host_mgreg_t)(gsize)(ip); } while (0);
-#define MONO_CONTEXT_SET_BP(ctx,bp) do { (ctx)->sc_regs[mips_fp] = (host_mgreg_t)(gsize)(bp); } while (0);
-#define MONO_CONTEXT_SET_SP(ctx,sp) do { (ctx)->sc_regs[mips_sp] = (host_mgreg_t)(gsize)(sp); } while (0);
-
-#define MONO_CONTEXT_GET_IP(ctx) ((gpointer)(gsize)((ctx)->sc_pc))
-#define MONO_CONTEXT_GET_BP(ctx) ((gpointer)(gsize)((ctx)->sc_regs[mips_fp]))
-#define MONO_CONTEXT_GET_SP(ctx) ((gpointer)(gsize)((ctx)->sc_regs[mips_sp]))
-
-#define MONO_CONTEXT_GET_CURRENT(ctx)	\
-	__asm__ __volatile__(	\
-		"sw $0,0(%0)\n\t"	\
-		"sw $1,4(%0)\n\t"	\
-		"sw $2,8(%0)\n\t"	\
-		"sw $3,12(%0)\n\t"	\
-		"sw $4,16(%0)\n\t"	\
-		"sw $5,20(%0)\n\t"	\
-		"sw $6,24(%0)\n\t"	\
-		"sw $7,28(%0)\n\t"	\
-		"sw $8,32(%0)\n\t"	\
-		"sw $9,36(%0)\n\t"	\
-		"sw $10,40(%0)\n\t"	\
-		"sw $11,44(%0)\n\t"	\
-		"sw $12,48(%0)\n\t"	\
-		"sw $13,52(%0)\n\t"	\
-		"sw $14,56(%0)\n\t"	\
-		"sw $15,60(%0)\n\t"	\
-		"sw $16,64(%0)\n\t"	\
-		"sw $17,68(%0)\n\t"	\
-		"sw $18,72(%0)\n\t"	\
-		"sw $19,76(%0)\n\t"	\
-		"sw $20,80(%0)\n\t"	\
-		"sw $21,84(%0)\n\t"	\
-		"sw $22,88(%0)\n\t"	\
-		"sw $23,92(%0)\n\t"	\
-		"sw $24,96(%0)\n\t"	\
-		"sw $25,100(%0)\n\t"	\
-		"sw $26,104(%0)\n\t"	\
-		"sw $27,108(%0)\n\t"	\
-		"sw $28,112(%0)\n\t"	\
-		"sw $29,116(%0)\n\t"	\
-		"sw $30,120(%0)\n\t"	\
-		"sw $31,124(%0)\n\t"	\
-		: : "r" (&(ctx).sc_regs [0])	\
-		: "memory"			\
-	)
-
 #elif defined(__s390x__)
 
 #define MONO_ARCH_HAS_MONO_CONTEXT 1
@@ -917,13 +821,13 @@ typedef struct ucontext MonoContext;
 	do {								\
 		(ctx)->uc_mcontext.gregs[14] = (unsigned long)ip;	\
 		(ctx)->uc_mcontext.psw.addr = (unsigned long)ip;	\
-	} while (0); 
+	} while (0);
 
 #define MONO_CONTEXT_SET_SP(ctx,bp) MONO_CONTEXT_SET_BP((ctx),(bp))
 #define MONO_CONTEXT_SET_BP(ctx,bp) 					\
 	do {		 						\
 		(ctx)->uc_mcontext.gregs[15] = (unsigned long)bp;	\
-	} while (0) 
+	} while (0)
 
 #define MONO_CONTEXT_GET_IP(ctx) (gpointer) (ctx)->uc_mcontext.psw.addr
 #define MONO_CONTEXT_GET_SP(ctx) ((gpointer)((ctx)->uc_mcontext.gregs[15]))

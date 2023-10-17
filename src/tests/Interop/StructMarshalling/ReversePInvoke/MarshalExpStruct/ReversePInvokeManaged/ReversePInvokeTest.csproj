@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <OutputType>Exe</OutputType>
+    <!-- Needed for CLRTestTargetUnsupported, CMakeProjectReference -->
+    <RequiresProcessIsolation>true</RequiresProcessIsolation>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <!-- Test unsupported outside of windows -->
     <CLRTestTargetUnsupported Condition="'$(TargetsWindows)' != 'true'">true</CLRTestTargetUnsupported>
@@ -11,6 +12,6 @@
     <Compile Include="..\..\Struct.cs" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\CMakeLists.txt" />
+    <CMakeProjectReference Include="..\CMakeLists.txt" />
   </ItemGroup>
 </Project>

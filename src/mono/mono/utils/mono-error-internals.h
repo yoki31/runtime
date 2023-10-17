@@ -9,6 +9,7 @@
 #include <mono/utils/mono-forward.h>
 #include "mono/utils/mono-compiler.h"
 
+MONO_DISABLE_WARNING(4201) // nonstandard extension used: nameless struct/union
 /*Keep in sync with MonoError*/
 typedef union _MonoErrorInternal {
 	// Merge two uint16 into one uint32 so it can be initialized
@@ -43,6 +44,7 @@ typedef union _MonoErrorInternal {
 		//void *padding [3];
 	};
 } MonoErrorInternal;
+MONO_RESTORE_WARNING
 
 /* Invariant: the error strings are allocated in the mempool of the given image */
 struct _MonoErrorBoxed {
@@ -160,11 +162,23 @@ do { 							\
 #define mono_error_assert_msg_ok(error, msg)   g_assertf (is_ok (error), msg ", due to %s", mono_error_get_message (error))
 #define mono_error_assertf_ok(error, fmt, ...) g_assertf (is_ok (error), fmt ", due to %s", __VA_ARGS__, mono_error_get_message (error))
 
+/*
+* Returns a pointer to the error message, without fields, empty string if no message is available.
+* Caller should NOT release returned pointer, owned by MonoError.
+*/
+static inline
+const char *
+mono_error_get_message_without_fields (MonoError *oerror)
+{
+	MonoErrorInternal *error = (MonoErrorInternal*)oerror;
+	return error->full_message ? error->full_message : "";
+}
+
 void
 mono_error_dup_strings (MonoError *error, gboolean dup_strings);
 
 /* This function is not very useful as you can't provide any details beyond the message.*/
-MONO_COMPONENT_API 
+MONO_COMPONENT_API
 void
 mono_error_set_error (MonoError *error, int error_code, const char *msg_format, ...) MONO_ATTR_FORMAT_PRINTF(3,4);
 
@@ -202,6 +216,7 @@ mono_error_set_generic_error (MonoError *error, const char * name_space, const c
 void
 mono_error_set_execution_engine (MonoError *error, const char *msg_format, ...) MONO_ATTR_FORMAT_PRINTF(2,3);
 
+MONO_COMPONENT_API
 void
 mono_error_set_not_implemented (MonoError *error, const char *msg_format, ...) MONO_ATTR_FORMAT_PRINTF(2,3);
 
@@ -209,7 +224,7 @@ MONO_COMPONENT_API
 void
 mono_error_set_not_supported (MonoError *error, const char *msg_format, ...) MONO_ATTR_FORMAT_PRINTF(2,3);
 
-void 
+void
 mono_error_set_ambiguous_implementation (MonoError *error, const char *msg_format, ...) MONO_ATTR_FORMAT_PRINTF(2,3);
 
 MONO_COMPONENT_API
@@ -299,6 +314,9 @@ mono_error_set_from_boxed (MonoError *error, const MonoErrorBoxed *from);
 
 const char*
 mono_error_get_exception_name (MonoError *oerror);
+
+const char*
+mono_error_get_exception_name_space (MonoError *oerror);
 
 void
 mono_error_set_specific (MonoError *error, int error_code, const char *missing_method);

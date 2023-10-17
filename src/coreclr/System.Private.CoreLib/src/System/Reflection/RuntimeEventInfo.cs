@@ -3,6 +3,7 @@
 
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Reflection.Metadata;
 using RuntimeTypeCache = System.RuntimeType.RuntimeTypeCache;
 
 namespace System.Reflection
@@ -10,17 +11,17 @@ namespace System.Reflection
     internal sealed unsafe class RuntimeEventInfo : EventInfo
     {
         #region Private Data Members
-        private int m_token;
-        private EventAttributes m_flags;
+        private readonly int m_token;
+        private readonly EventAttributes m_flags;
         private string? m_name;
-        private void* m_utf8name;
-        private RuntimeTypeCache m_reflectedTypeCache;
-        private RuntimeMethodInfo? m_addMethod;
-        private RuntimeMethodInfo? m_removeMethod;
-        private RuntimeMethodInfo? m_raiseMethod;
-        private MethodInfo[]? m_otherMethod;
-        private RuntimeType m_declaringType;
-        private BindingFlags m_bindingFlags;
+        private readonly void* m_utf8name;
+        private readonly RuntimeTypeCache m_reflectedTypeCache;
+        private readonly RuntimeMethodInfo? m_addMethod;
+        private readonly RuntimeMethodInfo? m_removeMethod;
+        private readonly RuntimeMethodInfo? m_raiseMethod;
+        private readonly MethodInfo[]? m_otherMethod;
+        private readonly RuntimeType m_declaringType;
+        private readonly BindingFlags m_bindingFlags;
         #endregion
 
         #region Constructor
@@ -53,8 +54,7 @@ namespace System.Reflection
             return
                 o is RuntimeEventInfo m &&
                 m.m_token == m_token &&
-                RuntimeTypeHandle.GetModule(m_declaringType).Equals(
-                    RuntimeTypeHandle.GetModule(m.m_declaringType));
+                ReferenceEquals(m_declaringType, m.m_declaringType);
         }
 
         internal BindingFlags BindingFlags => m_bindingFlags;
@@ -63,11 +63,26 @@ namespace System.Reflection
         #region Object Overrides
         public override string ToString()
         {
-            if (m_addMethod == null || m_addMethod.GetParametersNoCopy().Length == 0)
+            ReadOnlySpan<ParameterInfo> parameters;
+            if (m_addMethod == null ||
+                (parameters = m_addMethod.GetParametersAsSpan()).Length == 0)
+            {
                 throw new InvalidOperationException(SR.InvalidOperation_NoPublicAddMethod);
+            }
 
-            return m_addMethod.GetParametersNoCopy()[0].ParameterType.FormatTypeName() + " " + Name;
+            return parameters[0].ParameterType.FormatTypeName() + " " + Name;
         }
+
+        public override bool Equals(object? obj) =>
+            ReferenceEquals(this, obj) ||
+            (MetadataUpdater.IsSupported &&
+                obj is RuntimeEventInfo ei &&
+                ei.m_token == m_token &&
+                ReferenceEquals(ei.m_declaringType, m_declaringType) &&
+                ReferenceEquals(ei.m_reflectedTypeCache.GetRuntimeType(), m_reflectedTypeCache.GetRuntimeType()));
+
+        public override int GetHashCode() =>
+            HashCode.Combine(m_token.GetHashCode(), m_declaringType.GetUnderlyingNativeHandle().GetHashCode());
         #endregion
 
         #region ICustomAttributeProvider
@@ -78,8 +93,7 @@ namespace System.Reflection
 
         public override object[] GetCustomAttributes(Type attributeType, bool inherit)
         {
-            if (attributeType == null)
-                throw new ArgumentNullException(nameof(attributeType));
+            ArgumentNullException.ThrowIfNull(attributeType);
 
             if (attributeType.UnderlyingSystemType is not RuntimeType attributeRuntimeType)
                 throw new ArgumentException(SR.Arg_MustBeType, nameof(attributeType));
@@ -89,8 +103,7 @@ namespace System.Reflection
 
         public override bool IsDefined(Type attributeType, bool inherit)
         {
-            if (attributeType == null)
-                throw new ArgumentNullException(nameof(attributeType));
+            ArgumentNullException.ThrowIfNull(attributeType);
 
             if (attributeType.UnderlyingSystemType is not RuntimeType attributeRuntimeType)
                 throw new ArgumentException(SR.Arg_MustBeType, nameof(attributeType));

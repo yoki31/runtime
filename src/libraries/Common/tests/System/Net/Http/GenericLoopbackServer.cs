@@ -8,9 +8,11 @@ using System.Threading.Tasks;
 using System.Security.Authentication;
 using System.Security.Cryptography.X509Certificates;
 using System.IO;
+using System.Net.Security;
 using System.Net.Sockets;
 using System.Net.WebSockets;
 using System.Threading;
+using System.Net.Http.Functional.Tests;
 
 namespace System.Net.Test.Common
 {
@@ -19,8 +21,12 @@ namespace System.Net.Test.Common
 
     public abstract class LoopbackServerFactory
     {
+        // Use a timeout that is a bit higher than PassingTestTimeout so that the client/server callbacks
+        // have a chance to report more specific exception information in case they use the same timeout value.
+        public const int LoopbackServerTimeoutMilliseconds = (int)(TestHelper.PassingTestTimeoutMilliseconds * 1.2);
+
         public abstract GenericLoopbackServer CreateServer(GenericLoopbackOptions options = null);
-        public abstract Task CreateServerAsync(Func<GenericLoopbackServer, Uri, Task> funcAsync, int millisecondsTimeout = 60_000, GenericLoopbackOptions options = null);
+        public abstract Task CreateServerAsync(Func<GenericLoopbackServer, Uri, Task> funcAsync, int millisecondsTimeout = LoopbackServerTimeoutMilliseconds, GenericLoopbackOptions options = null);
 
         public abstract Task<GenericLoopbackConnection> CreateConnectionAsync(SocketWrapper socket, Stream stream, GenericLoopbackOptions options = null);
 
@@ -28,7 +34,7 @@ namespace System.Net.Test.Common
 
         // Common helper methods
 
-        public Task CreateClientAndServerAsync(Func<Uri, Task> clientFunc, Func<GenericLoopbackServer, Task> serverFunc, int millisecondsTimeout = 60_000, GenericLoopbackOptions options = null)
+        public Task CreateClientAndServerAsync(Func<Uri, Task> clientFunc, Func<GenericLoopbackServer, Task> serverFunc, int millisecondsTimeout = LoopbackServerTimeoutMilliseconds, GenericLoopbackOptions options = null)
         {
             return CreateServerAsync(async (server, uri) =>
             {
@@ -42,6 +48,8 @@ namespace System.Net.Test.Common
 
     public abstract class GenericLoopbackServer : IDisposable
     {
+        public const int LoopbackServerTimeoutMilliseconds = LoopbackServerFactory.LoopbackServerTimeoutMilliseconds;
+
         public virtual Uri Address { get; }
 
         // Accept a new connection, process a single request and send the specified response, and gracefully close the connection.
@@ -86,6 +94,17 @@ namespace System.Net.Test.Common
             CloseWebSocket();
         }
 
+        public async Task WaitForCloseAsync(CancellationToken cancellationToken)
+        {
+            while (_websocket != null
+                    ? _websocket.State != WebSocketState.Closed
+                    : !(_socket.Poll(1, SelectMode.SelectRead) && _socket.Available == 0))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                await Task.Delay(100);
+            }
+        }
+
         public void Shutdown(SocketShutdown how)
         {
             _socket?.Shutdown(how);
@@ -111,9 +130,9 @@ namespace System.Net.Test.Common
         }
     }
 
-    public abstract class GenericLoopbackConnection : IDisposable
+    public abstract class GenericLoopbackConnection : IAsyncDisposable
     {
-        public abstract void Dispose();
+        public abstract ValueTask DisposeAsync();
 
         public abstract Task InitializeConnectionAsync();
 
@@ -124,24 +143,30 @@ namespace System.Net.Test.Common
 
         /// <summary>Sends Response back with provided statusCode, headers and content.
         /// If isFinal is false, the body is not completed and you can call SendResponseBodyAsync to send more.</summary>
-        public abstract Task SendResponseAsync(HttpStatusCode statusCode = HttpStatusCode.OK, IList<HttpHeaderData> headers = null, string content = "", bool isFinal = true, int requestId = 0);
+        public abstract Task SendResponseAsync(HttpStatusCode statusCode = HttpStatusCode.OK, IList<HttpHeaderData> headers = null, string content = "", bool isFinal = true);
         /// <summary>Sends response headers.</summary>
-        public abstract Task SendResponseHeadersAsync(HttpStatusCode statusCode = HttpStatusCode.OK, IList<HttpHeaderData> headers = null, int requestId = 0);
+        public abstract Task SendResponseHeadersAsync(HttpStatusCode statusCode = HttpStatusCode.OK, IList<HttpHeaderData> headers = null);
         /// <summary>Sends valid but incomplete headers. Once called, there is no way to continue the response past this point.</summary>
-        public abstract Task SendPartialResponseHeadersAsync(HttpStatusCode statusCode = HttpStatusCode.OK, IList<HttpHeaderData> headers = null, int requestId = 0);
+        public abstract Task SendPartialResponseHeadersAsync(HttpStatusCode statusCode = HttpStatusCode.OK, IList<HttpHeaderData> headers = null);
         /// <summary>Sends Response body after SendResponse was called with isFinal: false.</summary>
-        public abstract Task SendResponseBodyAsync(byte[] content, bool isFinal = true, int requestId = 0);
+        public abstract Task SendResponseBodyAsync(byte[] content, bool isFinal = true);
 
         /// <summary>Reads Request, sends Response and closes connection.</summary>
         public abstract Task<HttpRequestData> HandleRequestAsync(HttpStatusCode statusCode = HttpStatusCode.OK, IList<HttpHeaderData> headers = null, string content = "");
 
         /// <summary>Waits for the client to signal cancellation.</summary>
-        public abstract Task WaitForCancellationAsync(bool ignoreIncomingData = true, int requestId = 0);
+        public abstract Task WaitForCancellationAsync(bool ignoreIncomingData = true);
+
+        /// <summary>Waits for the client to signal cancellation.</summary>
+        public abstract Task WaitForCloseAsync(CancellationToken cancellationToken);
+
+        /// <summary>Reset the connection's internal state so it can process further requests.</summary>
+        public virtual void CompleteRequestProcessing() { }
 
         /// <summary>Helper function to make it easier to convert old test with strings.</summary>
-        public async Task SendResponseBodyAsync(string content, bool isFinal = true, int requestId = 0)
+        public async Task SendResponseBodyAsync(string content, bool isFinal = true)
         {
-            await SendResponseBodyAsync(String.IsNullOrEmpty(content) ? new byte[0] : Encoding.ASCII.GetBytes(content), isFinal, requestId);
+            await SendResponseBodyAsync(String.IsNullOrEmpty(content) ? new byte[0] : Encoding.ASCII.GetBytes(content), isFinal);
         }
     }
 
@@ -157,6 +182,9 @@ namespace System.Net.Test.Common
                 SslProtocols.Tls12;
 
         public int ListenBacklog { get; set; } = 1;
+#if !NETSTANDARD2_0 && !NETFRAMEWORK
+        public SslStreamCertificateContext? CertificateContext { get; set; }
+#endif
     }
 
     public struct HttpHeaderData

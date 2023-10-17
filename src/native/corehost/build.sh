@@ -11,13 +11,11 @@ set -e
 __scriptpath="$(cd "$(dirname "$0")"; pwd -P)"
 __RepoRootDir="$(cd "$__scriptpath"/../../..; pwd -P)"
 
-__BuildArch=x64
-__TargetOS=Linux
+__TargetArch=x64
+__TargetOS=linux
 __BuildType=Debug
 __CMakeArgs=""
 __Compiler=clang
-__CompilerMajorVersion=
-__CompilerMinorVersion=
 __CrossBuild=0
 __PortableBuild=1
 __RootBinDir="$__RepoRootDir/artifacts"
@@ -34,33 +32,8 @@ __commit_hash=
 handle_arguments() {
 
     case "$1" in
-        hostver|-hostver)
-            __host_ver="$2"
-            __ShiftArgs=1
-            ;;
-
-        apphostver|-apphostver)
-            __apphost_ver="$2"
-            __ShiftArgs=1
-            ;;
-
-        fxrver|-fxrver)
-            __fxr_ver="$2"
-            __ShiftArgs=1
-            ;;
-
-        policyver|-policyver)
-            __policy_ver="$2"
-            __ShiftArgs=1
-            ;;
-
         commithash|-commithash)
             __commit_hash="$2"
-            __ShiftArgs=1
-            ;;
-
-        coreclrartifacts|-coreclrartifacts)
-            __CoreClrArtifacts="$2"
             __ShiftArgs=1
             ;;
 
@@ -81,14 +54,12 @@ __LogsDir="$__RootBinDir/log"
 __MsbuildDebugLogsDir="$__LogsDir/MsbuildDebugLogs"
 
 # Set the remaining variables based upon the determined build configuration
-__DistroRidLower="$(echo $__DistroRid | tr '[:upper:]' '[:lower:]')"
-__BinDir="$__RootBinDir/bin/$__DistroRidLower.$__BuildType"
-__IntermediatesDir="$__RootBinDir/obj/$__DistroRidLower.$__BuildType"
+__BinDir="$__RootBinDir/bin/$__OutputRid.$__BuildType"
+__IntermediatesDir="$__RootBinDir/obj/$__OutputRid.$__BuildType"
 
-export __BinDir __IntermediatesDir __CoreClrArtifacts __RuntimeFlavor
+export __BinDir __IntermediatesDir __RuntimeFlavor
 
-__CMakeArgs="-DCLI_CMAKE_HOST_VER=\"$__host_ver\" -DCLI_CMAKE_COMMON_HOST_VER=\"$__apphost_ver\" -DCLI_CMAKE_HOST_FXR_VER=\"$__fxr_ver\" $__CMakeArgs"
-__CMakeArgs="-DCLI_CMAKE_HOST_POLICY_VER=\"$__policy_ver\" -DCLI_CMAKE_PKG_RID=\"$__DistroRid\" -DCLI_CMAKE_COMMIT_HASH=\"$__commit_hash\" $__CMakeArgs"
+__CMakeArgs="-DCLI_CMAKE_PKG_RID=\"$__OutputRid\" -DCLI_CMAKE_FALLBACK_OS=\"$__HostFallbackOS\" -DCLI_CMAKE_COMMIT_HASH=\"$__commit_hash\" $__CMakeArgs"
 __CMakeArgs="-DRUNTIME_FLAVOR=\"$__RuntimeFlavor\" $__CMakeArgs"
 __CMakeArgs="-DFEATURE_DISTRO_AGNOSTIC_SSL=$__PortableBuild $__CMakeArgs"
 
@@ -104,9 +75,4 @@ setup_dirs
 check_prereqs
 
 # Build the installer native components.
-build_native "$__TargetOS" "$__BuildArch" "$__scriptpath" "$__IntermediatesDir" "install" "$__CMakeArgs" "installer component"
-
-if [[ "$__RuntimeFlavor" != "Mono" ]]; then
-    echo Copying "$__CoreClrArtifacts/corehost/."  to "$__CMakeBinDir/corehost"
-    cp -a "$__CoreClrArtifacts/corehost/."  "$__CMakeBinDir/corehost"
-fi
+build_native "$__TargetOS" "$__TargetArch" "$__scriptpath" "$__IntermediatesDir" "install" "$__CMakeArgs" "installer component"

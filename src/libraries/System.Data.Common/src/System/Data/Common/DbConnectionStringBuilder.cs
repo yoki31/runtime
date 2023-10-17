@@ -15,6 +15,9 @@ namespace System.Data.Common
     [UnconditionalSuppressMessage("ReflectionAnalysis", "IL2113:ReflectionToRequiresUnreferencedCode",
         Justification = "The use of GetType preserves ICustomTypeDescriptor members with RequiresUnreferencedCode, but the GetType callsites either "
             + "occur in RequiresUnreferencedCode scopes, or have individually justified suppressions.")]
+    [UnconditionalSuppressMessage("ReflectionAnalysis", "IL2112:ReflectionToRequiresUnreferencedCode",
+        Justification = "The use of GetType preserves implementation of ICustomTypeDescriptor members with RequiresUnreferencedCode, but the GetType callsites either "
+            + "occur in RequiresUnreferencedCode scopes, or have individually justified suppressions.")]
     [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.All)]
     public class DbConnectionStringBuilder : IDictionary, ICustomTypeDescriptor
     {
@@ -88,7 +91,7 @@ namespace System.Data.Common
             set
             {
                 ADP.CheckArgumentNull(keyword, nameof(keyword));
-                bool flag = false;
+                bool flag;
                 if (null != value)
                 {
                     string keyvalue = DbConnectionStringBuilderUtil.ConvertToString(value);
@@ -336,7 +339,7 @@ namespace System.Data.Common
             return Dictionary.GetEnumerator();
         }
 
-        private string ObjectToString(object keyword)
+        private static string ObjectToString(object keyword)
         {
             try
             {
@@ -384,7 +387,7 @@ namespace System.Data.Common
             return CurrentValues.TryGetValue(keyword, out value);
         }
 
-        internal Attribute[] GetAttributesFromCollection(AttributeCollection collection)
+        internal static Attribute[] GetAttributesFromCollection(AttributeCollection collection)
         {
             Attribute[] attributes = new Attribute[collection.Count];
             collection.CopyTo(attributes, 0);
@@ -431,7 +434,7 @@ namespace System.Data.Common
             {
                 // Below call is necessary to tell the trimmer that it should mark derived types appropriately.
                 // We cannot use overload which takes type because the result might differ if derived class implements ICustomTypeDescriptor.
-                Type thisType = GetType();
+                GetType();
 
                 // show all strongly typed properties (not already added)
                 // except ConnectionString iff BrowsableConnectionString
@@ -587,7 +590,7 @@ namespace System.Data.Common
         {
             // Below call is necessary to tell the trimmer that it should mark derived types appropriately.
             // We cannot use overload which takes type because the result might differ if derived class implements ICustomTypeDescriptor.
-            Type thisType = GetType();
+            GetType();
             return TypeDescriptor.GetClassName(this, true);
         }
         [UnconditionalSuppressMessage("ReflectionAnalysis", "IL2026:RequiresUnreferencedCode",
@@ -596,7 +599,7 @@ namespace System.Data.Common
         {
             // Below call is necessary to tell the trimmer that it should mark derived types appropriately.
             // We cannot use overload which takes type because the result might differ if derived class implements ICustomTypeDescriptor.
-            Type thisType = GetType();
+            GetType();
             return TypeDescriptor.GetComponentName(this, true);
         }
         [UnconditionalSuppressMessage("ReflectionAnalysis", "IL2026:RequiresUnreferencedCode",
@@ -641,7 +644,7 @@ namespace System.Data.Common
         {
             // Below call is necessary to tell the trimmer that it should mark derived types appropriately.
             // We cannot use overload which takes type because the result might differ if derived class implements ICustomTypeDescriptor.
-            Type thisType = GetType();
+            GetType();
             return TypeDescriptor.GetEvents(this, true);
         }
         [RequiresUnreferencedCode("The public parameterless constructor or the 'Default' static field may be trimmed from the Attribute's Type.")]

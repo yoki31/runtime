@@ -12,7 +12,7 @@
 // entries in the dictionary are prepopulated).  However at
 // earlier stages in the NGEN, code may have been compiled
 // under the assumption that ComputeNeedsRestore was
-// FALSE for the assocaited method table, and indeed this result
+// FALSE for the associated method table, and indeed this result
 // may have been cached in the ComputeNeedsRestore
 // for the MethodTable.  Thus the combination of populating
 // the dictionary and saving further dictionary slots could lead
@@ -29,6 +29,7 @@
 #include "typectxt.h"
 #include "virtualcallstub.h"
 #include "sigbuilder.h"
+#include "dllimport.h"
 
 #ifndef DACCESS_COMPILE
 
@@ -530,7 +531,7 @@ Dictionary* Dictionary::GetMethodDictionaryWithSizeCheck(MethodDesc* pMD, ULONG 
             *pNewDictionary->GetBackPointerSlot(numGenericArgs) = pDictionary;
 
             // Publish the new dictionary slots to the type.
-            FastInterlockExchangePointer(&pIMD->m_pPerInstInfo, pNewDictionary);
+            InterlockedExchangeT(&pIMD->m_pPerInstInfo, pNewDictionary);
 
             pDictionary = pNewDictionary;
         }
@@ -590,13 +591,77 @@ Dictionary* Dictionary::GetTypeDictionaryWithSizeCheck(MethodTable* pMT, ULONG s
             // Publish the new dictionary slots to the type.
             ULONG dictionaryIndex = pMT->GetNumDicts() - 1;
             Dictionary** pPerInstInfo = pMT->GetPerInstInfo();
-            FastInterlockExchangePointer(pPerInstInfo + dictionaryIndex, pNewDictionary);
+            InterlockedExchangeT(pPerInstInfo + dictionaryIndex, pNewDictionary);
 
             pDictionary = pNewDictionary;
         }
     }
 
     RETURN pDictionary;
+}
+
+struct StaticVirtualDispatchHashBlob : public ILStubHashBlobBase
+{
+    MethodDesc *pExactInterfaceMethod;
+    MethodTable *pTargetMT;
+};
+
+PCODE CreateStubForStaticVirtualDispatch(MethodTable* pTargetMT, MethodTable* pInterfaceMT, MethodDesc *pInterfaceMD)
+{
+    GCX_PREEMP();
+
+    Module* pLoaderModule = ClassLoader::ComputeLoaderModule(pTargetMT, 0, pInterfaceMD->GetMethodInstantiation());
+
+    MethodDesc *pExactMD = MethodDesc::FindOrCreateAssociatedMethodDesc(
+            pInterfaceMD,
+            pInterfaceMT,
+            FALSE,              // forceBoxedEntryPoint
+            pInterfaceMD->GetMethodInstantiation(),    // methodInst
+            FALSE,              // allowInstParam
+            TRUE);              // forceRemotableMethod
+
+    StaticVirtualDispatchHashBlob hashBlob;
+    memset(&hashBlob, 0, sizeof(hashBlob));
+    hashBlob.pExactInterfaceMethod = pExactMD;
+    hashBlob.pTargetMT = pTargetMT;
+    hashBlob.m_cbSizeOfBlob = sizeof(hashBlob);
+    ILStubHashBlob *pHashBlob = (ILStubHashBlob*)&hashBlob;
+
+    MethodDesc *pStubMD = pLoaderModule->GetILStubCache()->LookupStubMethodDesc(pHashBlob);
+    if (pStubMD == NULL)
+    {
+        SigTypeContext context(pExactMD);
+        ILStubLinker sl(pExactMD->GetModule(), pExactMD->GetSignature(), &context, pExactMD, ILSTUB_LINKER_FLAG_NONE);
+        MetaSig sig(pInterfaceMD);
+
+        ILCodeStream *pCode = sl.NewCodeStream(ILStubLinker::kDispatch);
+
+        UINT paramCount = 0;
+        BOOL fReturnVal = !sig.IsReturnTypeVoid();
+        while(paramCount < sig.NumFixedArgs())
+            pCode->EmitLDARG(paramCount++);
+
+        pCode->EmitCONSTRAINED(pCode->GetToken(pTargetMT));
+        pCode->EmitCALL(pCode->GetToken(pInterfaceMD), sig.NumFixedArgs(), fReturnVal);
+        pCode->EmitRET();
+
+        PCCOR_SIGNATURE pSig;
+        DWORD cbSig;
+
+        pInterfaceMD->GetSig(&pSig,&cbSig);
+
+        pStubMD = ILStubCache::CreateAndLinkNewILStubMethodDesc(pLoaderModule->GetLoaderAllocator(),
+                                                            pLoaderModule->GetILStubCache()->GetOrCreateStubMethodTable(pLoaderModule),
+                                                            ILSTUB_STATIC_VIRTUAL_DISPATCH_STUB,
+                                                            pInterfaceMD->GetModule(),
+                                                            pSig, cbSig,
+                                                            &context,
+                                                            &sl);
+
+        pStubMD = pLoaderModule->GetILStubCache()->InsertStubMethodDesc(pStubMD, pHashBlob);
+    }
+
+    return JitILStub(pStubMD);
 }
 
 //---------------------------------------------------------------------------------------
@@ -634,7 +699,7 @@ Dictionary::PopulateEntry(
 
         BYTE fixupKind = *pBlob++;
 
-        Module * pInfoModule = pModule;
+        ModuleBase * pInfoModule = pModule;
         if (fixupKind & ENCODE_MODULE_OVERRIDE)
         {
             DWORD moduleIndex = CorSigUncompressData(pBlob);
@@ -657,7 +722,7 @@ Dictionary::PopulateEntry(
         if (signatureKind & ENCODE_MODULE_OVERRIDE)
         {
             DWORD moduleIndex = CorSigUncompressData(pBlob);
-            Module * pSignatureModule = pModule->GetModuleFromIndex(moduleIndex);
+            ModuleBase * pSignatureModule = pModule->GetModuleFromIndex(moduleIndex);
             if (pInfoModule == pModule)
             {
                 pInfoModule = pSignatureModule;
@@ -690,13 +755,10 @@ Dictionary::PopulateEntry(
         ptr = SigPointer((PCCOR_SIGNATURE)signature);
         IfFailThrow(ptr.GetData(&kind));
 
-        Module * pContainingZapModule = ExecutionManager::FindZapModule(dac_cast<TADDR>(signature));
-
-        zapSigContext = ZapSig::Context(CoreLibBinder::GetModule(), (void *)pContainingZapModule, ZapSig::NormalTokens);
-        pZapSigContext = (pContainingZapModule != NULL) ? &zapSigContext : NULL;
+        pZapSigContext = NULL;
     }
 
-    Module * pLookupModule = (isReadyToRunModule) ? pZapSigContext->pInfoModule : CoreLibBinder::GetModule();
+    ModuleBase * pLookupModule = (isReadyToRunModule) ? pZapSigContext->pInfoModule : CoreLibBinder::GetModule();
 
     if (pMT != NULL)
     {
@@ -887,7 +949,8 @@ Dictionary::PopulateEntry(
                     }
                     else
                     {
-                        pMethod = MemberLoader::GetMethodDescFromMethodDef(pZapSigContext->pInfoModule, TokenFromRid(rid, mdtMethodDef), FALSE);
+                        _ASSERTE(pZapSigContext->pInfoModule->IsFullModule());
+                        pMethod = MemberLoader::GetMethodDescFromMethodDef(static_cast<Module*>(pZapSigContext->pInfoModule), TokenFromRid(rid, mdtMethodDef), FALSE);
                     }
                 }
 
@@ -1070,21 +1133,51 @@ Dictionary::PopulateEntry(
                 }
                 _ASSERTE(!constraintType.IsNull());
 
-                MethodDesc *pResolvedMD = constraintType.GetMethodTable()->TryResolveConstraintMethodApprox(ownerType, pMethod);
+                MethodDesc *pResolvedMD;
 
-                // All such calls should be resolvable.  If not then for now just throw an error.
-                _ASSERTE(pResolvedMD);
-                INDEBUG(if (!pResolvedMD) constraintType.GetMethodTable()->TryResolveConstraintMethodApprox(ownerType, pMethod);)
+                if (pMethod->IsStatic())
+                {
+                    // Virtual Static Method resolution
+                    _ASSERTE(!ownerType.IsTypeDesc());
+                    _ASSERTE(ownerType.IsInterface());
+                    BOOL uniqueResolution;
+                    pResolvedMD = constraintType.GetMethodTable()->ResolveVirtualStaticMethod(
+                        ownerType.GetMethodTable(),
+                        pMethod,
+                        ResolveVirtualStaticMethodFlags::AllowNullResult |
+                        ResolveVirtualStaticMethodFlags::AllowVariantMatches |
+                        ResolveVirtualStaticMethodFlags::InstantiateResultOverFinalMethodDesc,
+                        &uniqueResolution);
+
+                    // If we couldn't get an exact result, fall back to using a stub to make the exact function call
+                    // This will trigger the logic in the JIT which can handle AmbiguousImplementationException and
+                    // EntryPointNotFoundException at exactly the right time
+                    if (!uniqueResolution || pResolvedMD == NULL || pResolvedMD->IsAbstract())
+                    {
+                        _ASSERTE(pResolvedMD == NULL || pResolvedMD->IsStatic());
+                        result = (CORINFO_GENERIC_HANDLE)CreateStubForStaticVirtualDispatch(constraintType.GetMethodTable(), ownerType.GetMethodTable(), pMethod);
+                        break;
+                    }
+                }
+                else
+                {
+                    pResolvedMD = constraintType.GetMethodTable()->TryResolveConstraintMethodApprox(ownerType, pMethod);
+
+                    // All such calls should be resolvable.  If not then for now just throw an error.
+                    _ASSERTE(pResolvedMD);
+                    INDEBUG(if (!pResolvedMD) constraintType.GetMethodTable()->TryResolveConstraintMethodApprox(ownerType, pMethod);)
+                }
                 if (!pResolvedMD)
                     COMPlusThrowHR(COR_E_BADIMAGEFORMAT);
 
 #if FEATURE_DEFAULT_INTERFACES
                 // If we resolved the constrained call on a value type into a method on a reference type, this is a
                 // default interface method implementation.
+                // If the method is a static method, this is ok, but for instance methods there are boxing issues.
                 // In such case we would need to box the value type before we can dispatch to the implementation.
                 // This would require us to make a "boxing stub". For now we leave the boxing stubs unimplemented.
                 // It's not clear if anyone would need them and the implementation complexity is not worth it at this time.
-                if (!pResolvedMD->GetMethodTable()->IsValueType() && constraintType.GetMethodTable()->IsValueType())
+                if (!pResolvedMD->IsStatic() && !pResolvedMD->GetMethodTable()->IsValueType() && constraintType.GetMethodTable()->IsValueType())
                 {
                     SString assemblyName;
 
@@ -1162,6 +1255,7 @@ Dictionary::PopulateEntry(
                 }
                 IfFailThrow(ptr.SkipExactlyOne());
 
+                // Computed by MethodTable::GetIndexForFieldDesc().
                 uint32_t fieldIndex;
                 IfFailThrow(ptr.GetData(&fieldIndex));
 

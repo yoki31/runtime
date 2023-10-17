@@ -32,6 +32,7 @@ namespace CorUnix
 
     PAL_ERROR
     InternalCreateMutex(
+        SharedMemorySystemCallErrors *errors,
         CPalThread *pThread,
         LPSECURITY_ATTRIBUTES lpMutexAttributes,
         BOOL bInitialOwner,
@@ -47,6 +48,7 @@ namespace CorUnix
 
     PAL_ERROR
     InternalOpenMutex(
+        SharedMemorySystemCallErrors *errors,
         CPalThread *pThread,
         LPCSTR lpName,
         HANDLE *phMutex
@@ -120,9 +122,14 @@ Miscellaneous
   existing shared memory, naming, and waiting infrastructure is not suitable for this purpose, and is not used.
 */
 
-// Temporarily disabling usage of pthread process-shared mutexes on ARM/ARM64 due to functional issues that cannot easily be
-// detected with code due to hangs. See https://github.com/dotnet/runtime/issues/6014.
-#if HAVE_FULLY_FEATURED_PTHREAD_MUTEXES && HAVE_FUNCTIONAL_PTHREAD_ROBUST_MUTEXES && !(defined(HOST_ARM) || defined(HOST_ARM64) || defined(__FreeBSD__))
+// - On FreeBSD, pthread process-shared robust mutexes cannot be placed in shared memory mapped independently by the processes
+//   involved. See https://github.com/dotnet/runtime/issues/10519.
+// - On OSX, pthread robust mutexes were/are not available at the time of this writing. In case they are made available in the
+//   future, their use is disabled for compatibility.
+#if HAVE_FULLY_FEATURED_PTHREAD_MUTEXES && \
+    HAVE_FUNCTIONAL_PTHREAD_ROBUST_MUTEXES && \
+    !(defined(__FreeBSD__) || defined(TARGET_OSX))
+
     #define NAMED_MUTEX_USE_PTHREAD_MUTEX 1
 #else
     #define NAMED_MUTEX_USE_PTHREAD_MUTEX 0
@@ -146,10 +153,10 @@ enum class MutexTryAcquireLockResult
 class MutexHelpers
 {
 public:
-    static void InitializeProcessSharedRobustRecursiveMutex(pthread_mutex_t *mutex);
+    static void InitializeProcessSharedRobustRecursiveMutex(SharedMemorySystemCallErrors *errors, pthread_mutex_t *mutex);
     static void DestroyMutex(pthread_mutex_t *mutex);
 
-    static MutexTryAcquireLockResult TryAcquireLock(pthread_mutex_t *mutex, DWORD timeoutMilliseconds);
+    static MutexTryAcquireLockResult TryAcquireLock(SharedMemorySystemCallErrors *errors, pthread_mutex_t *mutex, DWORD timeoutMilliseconds);
     static void ReleaseLock(pthread_mutex_t *mutex);
 };
 #endif // NAMED_MUTEX_USE_PTHREAD_MUTEX
@@ -167,7 +174,7 @@ private:
     bool m_isAbandoned;
 
 public:
-    NamedMutexSharedData();
+    NamedMutexSharedData(SharedMemorySystemCallErrors *errors);
     ~NamedMutexSharedData();
 
 #if NAMED_MUTEX_USE_PTHREAD_MUTEX
@@ -209,10 +216,10 @@ private:
     bool m_hasRefFromLockOwnerThread;
 
 public:
-    static SharedMemoryProcessDataHeader *CreateOrOpen(LPCSTR name, bool acquireLockIfCreated, bool *createdRef);
-    static SharedMemoryProcessDataHeader *Open(LPCSTR name);
+    static SharedMemoryProcessDataHeader *CreateOrOpen(SharedMemorySystemCallErrors *errors, LPCSTR name, bool acquireLockIfCreated, bool *createdRef);
+    static SharedMemoryProcessDataHeader *Open(SharedMemorySystemCallErrors *errors, LPCSTR name);
 private:
-    static SharedMemoryProcessDataHeader *CreateOrOpen(LPCSTR name, bool createIfNotExist, bool acquireLockIfCreated, bool *createdRef);
+    static SharedMemoryProcessDataHeader *CreateOrOpen(SharedMemorySystemCallErrors *errors, LPCSTR name, bool createIfNotExist, bool acquireLockIfCreated, bool *createdRef);
 
 public:
     NamedMutexProcessData(
@@ -243,7 +250,7 @@ public:
     void SetNextInThreadOwnedNamedMutexList(NamedMutexProcessData *next);
 
 public:
-    MutexTryAcquireLockResult TryAcquireLock(DWORD timeoutMilliseconds);
+    MutexTryAcquireLockResult TryAcquireLock(SharedMemorySystemCallErrors *errors, DWORD timeoutMilliseconds);
     void ReleaseLock();
     void Abandon();
 private:

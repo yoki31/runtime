@@ -15,7 +15,9 @@ namespace System.Collections.Immutable
         /// <summary>
         /// Contains all the key/values in the collection that hash to the same value.
         /// </summary>
+#pragma warning disable CA1066 // Implement IEquatable when overriding Object.Equals
         internal readonly struct HashBucket : IEnumerable<KeyValuePair<TKey, TValue>>
+#pragma warning restore CA1066
         {
             /// <summary>
             /// One of the values in this bucket.
@@ -186,7 +188,7 @@ namespace System.Collections.Immutable
                             result = OperationResult.NoChangeRequired;
                             return this;
                         case KeyCollisionBehavior.ThrowIfValueDifferent:
-                            ref readonly var existingEntry = ref _additionalElements.ItemRef(keyCollisionIndex);
+                            ref readonly KeyValuePair<TKey, TValue> existingEntry = ref _additionalElements.ItemRef(keyCollisionIndex);
                             if (!valueComparer.Equals(existingEntry.Value, value))
                             {
                                 throw new ArgumentException(SR.Format(SR.DuplicateKey, key));
@@ -270,7 +272,7 @@ namespace System.Collections.Immutable
                 }
 
                 var kv = new KeyValuePair<TKey, TValue>(key, default(TValue)!);
-                var index = _additionalElements.IndexOf(kv, comparers.KeyOnlyComparer);
+                int index = _additionalElements.IndexOf(kv, comparers.KeyOnlyComparer);
                 if (index < 0)
                 {
                     value = default;
@@ -309,7 +311,7 @@ namespace System.Collections.Immutable
                 }
 
                 var kv = new KeyValuePair<TKey, TValue>(equalKey, default(TValue)!);
-                var index = _additionalElements.IndexOf(kv, comparers.KeyOnlyComparer);
+                int index = _additionalElements.IndexOf(kv, comparers.KeyOnlyComparer);
                 if (index < 0)
                 {
                     actualKey = equalKey;
@@ -325,10 +327,7 @@ namespace System.Collections.Immutable
             /// </summary>
             internal void Freeze()
             {
-                if (_additionalElements != null)
-                {
-                    _additionalElements.Freeze();
-                }
+                _additionalElements?.Freeze();
             }
 
             /// <summary>

@@ -197,7 +197,7 @@ struct OUTER3
 static_assert_no_msg(sizeof(OUTER3) == 28);
 #endif
 #else // WINDOWS
-#if defined(__x86_64__) || defined(__aarch64__)
+#if defined(__x86_64__) || defined(__aarch64__) || defined(__loongarch64) || defined(__riscv)
 union OUTER3
 {
     struct InnerSequential arr[2];
@@ -974,3 +974,26 @@ struct Int32CLongStruct
     int32_t i;
     long l;
 };
+
+typedef enum
+{
+    SDL_CONTROLLER_BINDTYPE_NONE = 0,
+    SDL_CONTROLLER_BINDTYPE_BUTTON,
+    SDL_CONTROLLER_BINDTYPE_AXIS,
+    SDL_CONTROLLER_BINDTYPE_HAT
+} SDL_GameControllerBindType;
+
+typedef struct SDL_GameControllerButtonBind
+{
+    SDL_GameControllerBindType bindType;
+    union
+    {
+        int button;
+        int axis;
+        struct {
+            int hat;
+            int hat_mask;
+        } hat;
+    } value;
+
+} SDL_GameControllerButtonBind;

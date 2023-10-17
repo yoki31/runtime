@@ -245,8 +245,7 @@ namespace System.Diagnostics
 
         public static void CreateEventSource(EventSourceCreationData sourceData)
         {
-            if (sourceData == null)
-                throw new ArgumentNullException(nameof(sourceData));
+            ArgumentNullException.ThrowIfNull(sourceData);
 
             string logName = sourceData.LogName;
             string source = sourceData.Source;
@@ -257,11 +256,11 @@ namespace System.Diagnostics
                 throw new ArgumentException(SR.Format(SR.InvalidParameter, nameof(machineName), machineName));
             }
 
-            if (logName == null || logName.Length == 0)
+            if (string.IsNullOrEmpty(logName))
                 logName = "Application";
             if (!ValidLogName(logName, false))
                 throw new ArgumentException(SR.BadLogName);
-            if (source == null || source.Length == 0)
+            if (string.IsNullOrEmpty(source))
                 throw new ArgumentException(SR.Format(SR.MissingParameter, nameof(source)));
             if (source.Length + EventLogKey.Length > 254)
                 throw new ArgumentException(SR.Format(SR.ParameterTooLong, nameof(source), 254 - EventLogKey.Length));
@@ -321,7 +320,7 @@ namespace System.Diagnostics
                         }
 
                         logKey = eventKey.CreateSubKey(logName);
-                        SetSpecialLogRegValues(logKey, logName);
+                        SetSpecialLogRegValues(logKey);
                         // A source with the same name as the log has to be created
                         // by default. It is the behavior expected by EventLog API.
                         sourceLogKey = logKey.CreateSubKey(logName);
@@ -332,7 +331,7 @@ namespace System.Diagnostics
                     {
                         if (!createLogKey)
                         {
-                            SetSpecialLogRegValues(logKey, logName);
+                            SetSpecialLogRegValues(logKey);
                         }
 
                         sourceKey = logKey.CreateSubKey(source);
@@ -364,7 +363,7 @@ namespace System.Diagnostics
         {
             if (!SyntaxCheck.CheckMachineName(machineName))
                 throw new ArgumentException(SR.Format(SR.InvalidParameterFormat, nameof(machineName)), nameof(machineName));
-            if (logName == null || logName.Length == 0)
+            if (string.IsNullOrEmpty(logName))
                 throw new ArgumentException(SR.NoLogName);
             if (!ValidLogName(logName, false))
                 throw new InvalidOperationException(SR.BadLogName);
@@ -502,7 +501,7 @@ namespace System.Diagnostics
             if (!SyntaxCheck.CheckMachineName(machineName))
                 throw new ArgumentException(SR.Format(SR.InvalidParameterFormat, nameof(machineName)));
 
-            if (logName == null || logName.Length == 0)
+            if (string.IsNullOrEmpty(logName))
                 return false;
 
             RegistryKey eventkey = null;
@@ -531,7 +530,7 @@ namespace System.Diagnostics
 
         private static RegistryKey FindSourceRegistration(string source, string machineName, bool readOnly, bool wantToCreate)
         {
-            if (source != null && source.Length != 0)
+            if (!string.IsNullOrEmpty(source))
             {
                 RegistryKey eventkey = null;
                 try
@@ -769,7 +768,7 @@ namespace System.Diagnostics
             _underlyingEventLog.RegisterDisplayName(resourceFile, resourceId);
         }
 
-        private static void SetSpecialLogRegValues(RegistryKey logKey, string logName)
+        private static void SetSpecialLogRegValues(RegistryKey logKey)
         {
             // Set all the default values for this log.  AutoBackupLogfiles only makes sense in
             // Win2000 SP4, WinXP SP1, and Win2003, but it should alright elsewhere.
@@ -849,7 +848,7 @@ namespace System.Diagnostics
 
                         if (sb.Length > 0)
                         {
-                            int num = -1;
+                            int num;
                             if (int.TryParse(sb.ToString(), NumberStyles.None, CultureInfo.InvariantCulture, out num))
                             {
                                 largestNumber = Math.Max(largestNumber, num);
@@ -1054,8 +1053,7 @@ namespace System.Diagnostics
         // The EventLog.set_Source used to do some normalization and throw some exceptions.  We mimic that behavior here.
         private static string CheckAndNormalizeSourceName(string source)
         {
-            if (source == null)
-                source = string.Empty;
+            source ??= string.Empty;
 
             // this 254 limit is the max length of a registry key.
             if (source.Length + EventLogKey.Length > 254)

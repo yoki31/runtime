@@ -15,7 +15,7 @@ namespace System.Net.Http
         // WINHTTP_AUTH_SCHEME_DIGEST = 0x00000008;
         // WINHTTP_AUTH_SCHEME_NEGOTIATE = 0x00000010;
         private static readonly string?[] s_authSchemeStringMapping =
-        {
+        [
             null,
             "Basic",
             "NTLM",
@@ -33,15 +33,15 @@ namespace System.Net.Http
             null,
             null,
             "Negotiate"
-        };
+        ];
 
-        private static readonly uint[] s_authSchemePriorityOrder =
-        {
+        private static ReadOnlySpan<uint> AuthSchemePriorityOrder =>
+        [
             Interop.WinHttp.WINHTTP_AUTH_SCHEME_NEGOTIATE,
             Interop.WinHttp.WINHTTP_AUTH_SCHEME_NTLM,
             Interop.WinHttp.WINHTTP_AUTH_SCHEME_DIGEST,
             Interop.WinHttp.WINHTTP_AUTH_SCHEME_BASIC
-        };
+        ];
 
         private readonly CredentialCache _credentialCache = new CredentialCache();
         private readonly object _credentialCacheLock = new object();
@@ -51,9 +51,8 @@ namespace System.Net.Http
             ref uint proxyAuthScheme,
             ref uint serverAuthScheme)
         {
-            uint supportedSchemes = 0;
-            uint firstSchemeIgnored = 0;
-            uint authTarget = 0;
+            uint supportedSchemes;
+            uint authTarget;
 
             Debug.Assert(state.RequestMessage != null);
             Debug.Assert(state.RequestMessage.RequestUri != null);
@@ -87,7 +86,7 @@ namespace System.Net.Http
                     if (!Interop.WinHttp.WinHttpQueryAuthSchemes(
                         state.RequestHandle,
                         out supportedSchemes,
-                        out firstSchemeIgnored,
+                        out _,
                         out authTarget))
                     {
                         // WinHTTP returns an error for schemes it doesn't handle.
@@ -140,7 +139,7 @@ namespace System.Net.Http
                     if (!Interop.WinHttp.WinHttpQueryAuthSchemes(
                         state.RequestHandle,
                         out supportedSchemes,
-                        out firstSchemeIgnored,
+                        out _,
                         out authTarget))
                     {
                         // WinHTTP returns an error for schemes it doesn't handle.
@@ -244,11 +243,11 @@ namespace System.Net.Http
             serverAuthScheme = 0;
             serverCredentials = null;
 
-            NetworkCredential? cred = null;
+            NetworkCredential? cred;
 
             lock (_credentialCacheLock)
             {
-                foreach (uint authScheme in s_authSchemePriorityOrder)
+                foreach (uint authScheme in AuthSchemePriorityOrder)
                 {
                     cred = _credentialCache.GetCredential(uri, s_authSchemeStringMapping[authScheme]!);
                     if (cred != null)
@@ -400,7 +399,7 @@ namespace System.Net.Http
 
             Debug.Assert(uri != null);
 
-            foreach (uint authScheme in s_authSchemePriorityOrder)
+            foreach (uint authScheme in AuthSchemePriorityOrder)
             {
                 if ((supportedSchemes & authScheme) != 0 && credentials.GetCredential(uri, s_authSchemeStringMapping[authScheme]!) != null)
                 {

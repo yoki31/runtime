@@ -21,7 +21,7 @@ namespace System.Data.SqlTypes
     [StructLayout(LayoutKind.Sequential)]
     [XmlSchemaProvider("GetXsdType")]
     [System.Runtime.CompilerServices.TypeForwardedFrom("System.Data, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
-    public struct SqlDateTime : INullable, IComparable, IXmlSerializable
+    public struct SqlDateTime : INullable, IComparable, IXmlSerializable, IEquatable<SqlDateTime>
     {
         private bool m_fNotNull;    // false if null. Do not rename (binary serialization)
         private int m_day;      // Day from 1900/1/1, could be negative. Range: Jan 1 1753 - Dec 31 9999. Do not rename (binary serialization)
@@ -36,8 +36,6 @@ namespace System.Data.SqlTypes
         public static readonly int SQLTicksPerHour = SQLTicksPerMinute * 60;
         private static readonly int s_SQLTicksPerDay = SQLTicksPerHour * 24;
 
-        private const long s_ticksPerSecond = TimeSpan.TicksPerMillisecond * 1000;
-
         private static readonly DateTime s_SQLBaseDate = new DateTime(1900, 1, 1);
         private static readonly long s_SQLBaseDateTicks = s_SQLBaseDate.Ticks;
 
@@ -51,17 +49,12 @@ namespace System.Data.SqlTypes
 
         private const int s_dayBase = 693595;               // Jan 1 1900 is this many days from Jan 1 0001
 
+        private static ReadOnlySpan<int> DaysToMonth365 => [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334, 365];
+        private static ReadOnlySpan<int> DaysToMonth366 => [0, 31, 60, 91, 121, 152, 182, 213, 244, 274, 305, 335, 366];
 
-        private static readonly int[] s_daysToMonth365 = new int[] {
-            0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334, 365};
-        private static readonly int[] s_daysToMonth366 = new int[] {
-            0, 31, 60, 91, 121, 152, 182, 213, 244, 274, 305, 335, 366};
-
-        private static readonly DateTime s_minDateTime = new DateTime(1753, 1, 1);
-        private static readonly DateTime s_maxDateTime = DateTime.MaxValue;
-        private static readonly TimeSpan s_minTimeSpan = s_minDateTime.Subtract(s_SQLBaseDate);
-        private static readonly TimeSpan s_maxTimeSpan = s_maxDateTime.Subtract(s_SQLBaseDate);
-        private const string s_ISO8601_DateTimeFormat = "yyyy-MM-ddTHH:mm:ss.fff";
+        private static readonly TimeSpan s_minTimeSpan = new DateTime(1753, 1, 1).Subtract(s_SQLBaseDate);
+        private static readonly TimeSpan s_maxTimeSpan = DateTime.MaxValue.Subtract(s_SQLBaseDate);
+        private const string ISO8601_DateTimeFormat = "yyyy-MM-ddTHH:mm:ss.fff";
 
         // These formats are valid styles in SQL Server (style 9, 12, 13, 14)
         // but couldn't be recognized by the default parse. Needs to call
@@ -79,7 +72,7 @@ namespace System.Data.SqlTypes
         private const DateTimeStyles x_DateTimeStyle = DateTimeStyles.AllowWhiteSpaces;
 
         // construct a Null
-        private SqlDateTime(bool fNull)
+        private SqlDateTime(bool _)
         {
             m_fNotNull = false;
             m_day = 0;
@@ -105,7 +98,9 @@ namespace System.Data.SqlTypes
         {
             if (year >= s_minYear && year <= s_maxYear && month >= 1 && month <= 12)
             {
-                int[] days = IsLeapYear(year) ? s_daysToMonth366 : s_daysToMonth365;
+                ReadOnlySpan<int> days = IsLeapYear(year) ?
+                    DaysToMonth366 :
+                    DaysToMonth365;
                 if (day >= 1 && day <= days[month] - days[month - 1])
                 {
                     int y = year - 1;
@@ -597,10 +592,8 @@ namespace System.Data.SqlTypes
         // If object is not of same type, this method throws an ArgumentException.
         public int CompareTo(object? value)
         {
-            if (value is SqlDateTime)
+            if (value is SqlDateTime i)
             {
-                SqlDateTime i = (SqlDateTime)value;
-
                 return CompareTo(i);
             }
             throw ADP.WrongType(value!.GetType(), typeof(SqlDateTime));
@@ -621,26 +614,18 @@ namespace System.Data.SqlTypes
         }
 
         // Compares this instance with a specified object
-        public override bool Equals([NotNullWhen(true)] object? value)
-        {
-            if (!(value is SqlDateTime))
-            {
-                return false;
-            }
+        public override bool Equals([NotNullWhen(true)] object? value) =>
+            value is SqlDateTime other && Equals(other);
 
-            SqlDateTime i = (SqlDateTime)value;
-
-            if (i.IsNull || IsNull)
-                return (i.IsNull && IsNull);
-            else
-                return (this == i).Value;
-        }
+        /// <summary>Indicates whether the current instance is equal to another instance of the same type.</summary>
+        /// <param name="other">An instance to compare with this instance.</param>
+        /// <returns>true if the current instance is equal to the other instance; otherwise, false.</returns>
+        public bool Equals(SqlDateTime other) =>
+            other.IsNull || IsNull ? other.IsNull && IsNull :
+            (this == other).Value;
 
         // For hashing purpose
-        public override int GetHashCode()
-        {
-            return IsNull ? 0 : Value.GetHashCode();
-        }
+        public override int GetHashCode() => IsNull ? 0 : Value.GetHashCode();
 
         XmlSchema? IXmlSerializable.GetSchema() { return null; }
 
@@ -680,7 +665,7 @@ namespace System.Data.SqlTypes
             }
             else
             {
-                writer.WriteString(XmlConvert.ToString(Value, s_ISO8601_DateTimeFormat));
+                writer.WriteString(XmlConvert.ToString(Value, ISO8601_DateTimeFormat));
             }
         }
 

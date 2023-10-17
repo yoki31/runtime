@@ -86,10 +86,7 @@ namespace System.Xml
         // By default, convert base64 value to string and call WriteString.
         public override void WriteBase64(byte[] buffer, int index, int count)
         {
-            if (_base64Encoder == null)
-            {
-                _base64Encoder = new XmlRawWriterBase64Encoder(this);
-            }
+            _base64Encoder ??= new XmlRawWriterBase64Encoder(this);
 
             // Encode will call WriteRaw to write out the encoded characters
             _base64Encoder.Encode(buffer, index, count);
@@ -155,8 +152,7 @@ namespace System.Xml
         // Forward call to WriteString(string).
         public override void WriteSurrogateCharEntity(char lowChar, char highChar)
         {
-            ReadOnlySpan<char> entity = stackalloc char[] { lowChar, highChar };
-            WriteString(new string(entity));
+            WriteString(new string([lowChar, highChar]));
         }
 
         // Forward call to WriteString(string).
@@ -186,10 +182,7 @@ namespace System.Xml
         // Override in order to handle Xml simple typed values and to pass resolver for QName values
         public override void WriteValue(object value)
         {
-            if (value == null)
-            {
-                throw new ArgumentNullException(nameof(value));
-            }
+            ArgumentNullException.ThrowIfNull(value);
 
             WriteString(XmlUntypedConverter.Untyped.ToString(value, _resolver));
         }

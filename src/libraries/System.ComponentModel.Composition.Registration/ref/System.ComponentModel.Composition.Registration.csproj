@@ -1,6 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFrameworks>$(NetCoreAppCurrent);$(NetCoreAppMinimum);netstandard2.1</TargetFrameworks>
+    <TargetFrameworks>$(NetCoreAppCurrent);$(NetCoreAppPrevious);$(NetCoreAppMinimum);netstandard2.1</TargetFrameworks>
+
+    <!-- TODO https://github.com/dotnet/runtime/issues/90400: Annotate for nullable reference types -->
+    <Nullable>disable</Nullable>
+    <NoWarn>$(NoWarn);nullable</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
@@ -10,10 +14,5 @@
   <ItemGroup>
     <ProjectReference Include="$(LibrariesProjectRoot)System.ComponentModel.Composition\ref\System.ComponentModel.Composition.csproj" />
     <ProjectReference Include="$(LibrariesProjectRoot)System.Reflection.Context\ref\System.Reflection.Context.csproj" />
-  </ItemGroup>
-
-  <ItemGroup Condition="'$(TargetFrameworkIdentifier)' == '.NETCoreApp' and '$(TargetFramework)' != '$(NetCoreAppCurrent)'">
-    <Reference Include="System.Linq.Expressions" />
-    <Reference Include="System.Runtime" />
   </ItemGroup>
 </Project>

@@ -11,13 +11,25 @@
 #include "utilcode.h"
 #include "ex.h"
 
-#include "minipal.h"
+#include <minipal.h>
 
 #ifndef DACCESS_COMPILE
+
+//#define LOG_EXECUTABLE_ALLOCATOR_STATISTICS
 
 // This class is responsible for allocation of all the executable memory in the runtime.
 class ExecutableAllocator
 {
+public:
+
+    enum CacheableMapping
+    {
+        AddToCache,
+        DoNotAddToCache,
+    };
+
+private:
+
     // RX address range block descriptor
     struct BlockRX
     {
@@ -49,7 +61,22 @@ class ExecutableAllocator
     };
 
     typedef void (*FatalErrorHandler)(UINT errorCode, LPCWSTR pszMessage);
+#ifdef LOG_EXECUTABLE_ALLOCATOR_STATISTICS
+    static int64_t g_mapTimeSum;
+    static int64_t g_mapTimeWithLockSum;
+    static int64_t g_unmapTimeSum;
+    static int64_t g_unmapTimeWithLockSum;
+    static int64_t g_mapFindRXTimeSum;
+    static int64_t g_mapCreateTimeSum;
 
+    static int64_t g_releaseCount;
+    static int64_t g_reserveCount;
+
+    static int64_t g_MapRW_Calls;
+    static int64_t g_MapRW_CallsWithCacheMiss;
+    static int64_t g_MapRW_LinkedListWalkDepth;
+    static int64_t g_LinkedListTotalDepth;
+#endif
     // Instance of the allocator
     static ExecutableAllocator* g_instance;
 
@@ -68,7 +95,7 @@ class ExecutableAllocator
     static BYTE* g_preferredRangeMin;
     static BYTE* g_preferredRangeMax;
 
-    // Caches the COMPlus_EnableWXORX setting
+    // Caches the DOTNET_EnableWXORX setting
     static bool g_isWXorXEnabled;
 
     // Head of the linked list of all RX blocks that were allocated by this allocator
@@ -90,9 +117,19 @@ class ExecutableAllocator
     // for platforms that don't use shared memory.
     size_t m_freeOffset = 0;
 
-    // Last RW mapping cached so that it can be reused for the next mapping
+// Uncomment these to gather information to better choose caching parameters
+//#define VARIABLE_SIZED_CACHEDMAPPING_SIZE
+
+    // Last RW mappings cached so that it can be reused for the next mapping
     // request if it goes into the same range.
-    BlockRW* m_cachedMapping = NULL;
+    // This is handled as a 3 element cache with an LRU replacement policy
+#ifdef VARIABLE_SIZED_CACHEDMAPPING_SIZE
+    // If variable sized mappings enabled, make the cache physically big enough to cover all interesting sizes
+    static int g_cachedMappingSize;
+    BlockRW* m_cachedMapping[16] = { 0 };
+#else
+    BlockRW* m_cachedMapping[3] = { 0 };
+#endif
 
     // Synchronization of the public allocator methods
     CRITSEC_COOKIE m_CriticalSection;
@@ -102,12 +139,18 @@ class ExecutableAllocator
     // and replaces it by the passed in one.
     void UpdateCachedMapping(BlockRW *pBlock);
 
+    // Remove the cached mapping (1 based indexing)
+    void RemoveCachedMapping(size_t indexToRemove);
+
+    // Find an overlapped cached mapping with pBlock, or return 0
+    size_t FindOverlappingCachedMapping(BlockRX* pBlock);
+
     // Find existing RW block that maps the whole specified range of RX memory.
     // Return NULL if no such block exists.
-    void* FindRWBlock(void* baseRX, size_t size);
+    void* FindRWBlock(void* baseRX, size_t size, CacheableMapping cacheMapping);
 
     // Add RW block to the list of existing RW blocks
-    bool AddRWBlock(void* baseRW, void* baseRX, size_t size);
+    bool AddRWBlock(void* baseRW, void* baseRX, size_t size, CacheableMapping cacheMapping);
 
     // Remove RW block from the list of existing RW blocks and return the base
     // address and size the underlying memory was mapped at.
@@ -142,7 +185,27 @@ class ExecutableAllocator
     // Initialize the allocator instance
     bool Initialize();
 
+#ifdef LOG_EXECUTABLE_ALLOCATOR_STATISTICS
+    static CRITSEC_COOKIE s_LoggerCriticalSection;
+
+    struct LogEntry
+    {
+        const char* source;
+        const char* function;
+        int line;
+        int count;
+    };
+
+    static LogEntry s_usageLog[256];
+    static int s_logMaxIndex;
+#endif
+
 public:
+
+#ifdef LOG_EXECUTABLE_ALLOCATOR_STATISTICS
+    static void LogUsage(const char* source, int line, const char* function);
+    static void DumpHolderUsage();
+#endif
 
     // Return the ExecuteAllocator singleton instance
     static ExecutableAllocator* Instance();
@@ -195,11 +258,13 @@ public:
     void Release(void* pRX);
 
     // Map the specified block of executable memory as RW
-    void* MapRW(void* pRX, size_t size);
+    void* MapRW(void* pRX, size_t size, CacheableMapping cacheMapping);
 
     // Unmap the RW mapping at the specified address
     void UnmapRW(void* pRW);
 };
+
+#define ExecutableWriterHolder ExecutableWriterHolderNoLog
 
 // Holder class to map read-execute memory as read-write so that it can be modified without using read-write-execute mapping.
 // At the moment the implementation is dummy, returning the same addresses for both cases and expecting them to be read-write-execute.
@@ -253,14 +318,14 @@ public:
     {
     }
 
-    ExecutableWriterHolder(T* addressRX, size_t size)
+    ExecutableWriterHolder(T* addressRX, size_t size, ExecutableAllocator::CacheableMapping cacheMapping = ExecutableAllocator::AddToCache)
     {
         m_addressRX = addressRX;
 #if defined(HOST_OSX) && defined(HOST_ARM64)
         m_addressRW = addressRX;
         PAL_JitWriteProtect(true);
 #else
-        m_addressRW = (T *)ExecutableAllocator::Instance()->MapRW((void*)addressRX, size);
+        m_addressRW = (T *)ExecutableAllocator::Instance()->MapRW((void*)addressRX, size, cacheMapping);
 #endif
     }
 
@@ -274,6 +339,24 @@ public:
     {
         return m_addressRW;
     }
+
+    void AssignExecutableWriterHolder(T* addressRX, size_t size)
+    {
+        *this = ExecutableWriterHolder(addressRX, size);
+    }
 };
+
+#ifdef LOG_EXECUTABLE_ALLOCATOR_STATISTICS
+#undef ExecutableWriterHolder
+#ifdef HOST_UNIX
+#define ExecutableWriterHolder ExecutableAllocator::LogUsage(__FILE__, __LINE__, __PRETTY_FUNCTION__); ExecutableWriterHolderNoLog
+#define AssignExecutableWriterHolder(addressRX, size) AssignExecutableWriterHolder(addressRX, size); ExecutableAllocator::LogUsage(__FILE__, __LINE__, __PRETTY_FUNCTION__);
+#else
+#define ExecutableWriterHolder ExecutableAllocator::LogUsage(__FILE__, __LINE__, __FUNCTION__); ExecutableWriterHolderNoLog
+#define AssignExecutableWriterHolder(addressRX, size) AssignExecutableWriterHolder(addressRX, size); ExecutableAllocator::LogUsage(__FILE__, __LINE__, __FUNCTION__);
+#endif
+#else
+#define ExecutableWriterHolder ExecutableWriterHolderNoLog
+#endif
 
 #endif // !DACCESS_COMPILE

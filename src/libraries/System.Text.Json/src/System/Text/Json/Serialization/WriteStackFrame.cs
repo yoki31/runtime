@@ -3,12 +3,14 @@
 
 using System.Collections;
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
 
 namespace System.Text.Json
 {
-    [DebuggerDisplay("ConverterStrategy.{JsonTypeInfo.PropertyInfoForTypeInfo.ConverterStrategy}, {JsonTypeInfo.Type.Name}")]
+    [StructLayout(LayoutKind.Auto)]
+    [DebuggerDisplay("{DebuggerDisplay,nq}")]
     internal struct WriteStackFrame
     {
         /// <summary>
@@ -34,7 +36,7 @@ namespace System.Text.Json
         /// For objects, it is either the actual (real) JsonPropertyInfo or the <see cref="JsonTypeInfo.PropertyInfoForTypeInfo"/> for the class.
         /// For collections, it is the <see cref="JsonTypeInfo.PropertyInfoForTypeInfo"/> for the class and current element.
         /// </remarks>
-        public JsonPropertyInfo? DeclaredJsonPropertyInfo;
+        public JsonPropertyInfo? JsonPropertyInfo;
 
         /// <summary>
         /// Used when processing extension data dictionaries.
@@ -71,54 +73,99 @@ namespace System.Text.Json
         // Preserve Reference
         public MetadataPropertyName MetadataPropertyName;
 
-        /// <summary>
-        /// The run-time JsonPropertyInfo that contains the TypeInfo and ConverterBase for polymorphic scenarios.
-        /// </summary>
-        /// <remarks>
-        /// For objects, it is the <see cref="JsonTypeInfo.PropertyInfoForTypeInfo"/> for the class and current property.
-        /// For collections, it is the <see cref="JsonTypeInfo.PropertyInfoForTypeInfo"/> for the class and current element.
-        /// </remarks>
-        private JsonPropertyInfo? PolymorphicJsonPropertyInfo;
+        // Serialization state for the child value serialized by the current frame.
+        public PolymorphicSerializationState PolymorphicSerializationState;
+        // Holds the entered polymorphic type info and acts as an LRU cache for element/field serializations.
+        public JsonTypeInfo? PolymorphicTypeInfo;
 
         // Whether to use custom number handling.
         public JsonNumberHandling? NumberHandling;
 
-        public void EndDictionaryElement()
+        public bool IsPushedReferenceForCycleDetection;
+
+        public void EndCollectionElement()
+        {
+            PolymorphicSerializationState = PolymorphicSerializationState.None;
+        }
+
+        public void EndDictionaryEntry()
         {
             PropertyState = StackFramePropertyState.None;
+            PolymorphicSerializationState = PolymorphicSerializationState.None;
         }
 
         public void EndProperty()
         {
-            DeclaredJsonPropertyInfo = null!;
+            JsonPropertyInfo = null!;
             JsonPropertyNameAsString = null;
-            PolymorphicJsonPropertyInfo = null;
             PropertyState = StackFramePropertyState.None;
+            PolymorphicSerializationState = PolymorphicSerializationState.None;
         }
 
         /// <summary>
-        /// Return the property that contains the correct polymorphic properties including
-        /// the ConverterStrategy and ConverterBase.
+        /// Returns the JsonTypeInfo instance for the nested value we are trying to access.
         /// </summary>
-        public JsonPropertyInfo GetPolymorphicJsonPropertyInfo()
+        public readonly JsonTypeInfo GetNestedJsonTypeInfo()
         {
-            return PolymorphicJsonPropertyInfo ?? DeclaredJsonPropertyInfo!;
+            return PolymorphicSerializationState is PolymorphicSerializationState.PolymorphicReEntryStarted
+                ? PolymorphicTypeInfo!
+                : JsonPropertyInfo!.JsonTypeInfo;
         }
 
         /// <summary>
-        /// Initializes the state for polymorphic cases and returns the appropriate converter.
+        /// Configures the next stack frame for a polymorphic converter.
         /// </summary>
-        public JsonConverter InitializeReEntry(Type type, JsonSerializerOptions options)
+        public JsonTypeInfo InitializePolymorphicReEntry(Type runtimeType, JsonSerializerOptions options)
         {
-            // For perf, avoid the dictionary lookup in GetOrAddClass() for every element of a collection
+            Debug.Assert(PolymorphicSerializationState == PolymorphicSerializationState.None);
+
+            // For perf, avoid the dictionary lookup in GetTypeInfoInternal() for every element of a collection
             // if the current element is the same type as the previous element.
-            if (PolymorphicJsonPropertyInfo?.RuntimePropertyType != type)
+            if (PolymorphicTypeInfo?.Type != runtimeType)
             {
-                JsonTypeInfo typeInfo = options.GetOrAddClass(type);
-                PolymorphicJsonPropertyInfo = typeInfo.PropertyInfoForTypeInfo;
+                // To determine the contract for an object value:
+                // 1. Find the JsonTypeInfo for the runtime type with fallback to the nearest ancestor, if not available.
+                // 2. If the resolved type is deriving from a polymorphic type, use the contract of the polymorphic type instead.
+                JsonTypeInfo typeInfo = options.GetTypeInfoInternal(runtimeType, fallBackToNearestAncestorType: true);
+                PolymorphicTypeInfo = typeInfo.AncestorPolymorphicType ?? typeInfo;
             }
 
-            return PolymorphicJsonPropertyInfo.ConverterBase;
+            PolymorphicSerializationState = PolymorphicSerializationState.PolymorphicReEntryStarted;
+            return PolymorphicTypeInfo;
         }
+
+        /// <summary>
+        /// Configures the next stack frame for a polymorphic converter.
+        /// </summary>
+        public JsonConverter InitializePolymorphicReEntry(JsonTypeInfo derivedJsonTypeInfo)
+        {
+            Debug.Assert(PolymorphicSerializationState is PolymorphicSerializationState.None or PolymorphicSerializationState.PolymorphicReEntryStarted);
+
+            PolymorphicTypeInfo = derivedJsonTypeInfo;
+            PolymorphicSerializationState = PolymorphicSerializationState.PolymorphicReEntryStarted;
+            return derivedJsonTypeInfo.Converter;
+        }
+
+        /// <summary>
+        /// Configures the next frame for a continuation of a polymorphic converter.
+        /// </summary>
+        public JsonConverter ResumePolymorphicReEntry()
+        {
+            Debug.Assert(PolymorphicSerializationState == PolymorphicSerializationState.PolymorphicReEntrySuspended);
+            Debug.Assert(PolymorphicTypeInfo is not null);
+            PolymorphicSerializationState = PolymorphicSerializationState.PolymorphicReEntryStarted;
+            return PolymorphicTypeInfo.Converter;
+        }
+
+        /// <summary>
+        /// Updates frame state after a polymorphic converter has returned.
+        /// </summary>
+        public void ExitPolymorphicConverter(bool success)
+        {
+            PolymorphicSerializationState = success ? PolymorphicSerializationState.None : PolymorphicSerializationState.PolymorphicReEntrySuspended;
+        }
+
+        [DebuggerBrowsable(DebuggerBrowsableState.Never)]
+        private readonly string DebuggerDisplay => $"ConverterStrategy.{JsonTypeInfo?.Converter.ConverterStrategy}, {JsonTypeInfo?.Type.Name}";
     }
 }

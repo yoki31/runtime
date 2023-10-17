@@ -68,7 +68,7 @@ namespace System.IO.Pipelines.Tests
                 Task reading = doRead();
 
                 PipeWriter buffer = pipe.Writer;
-                buffer.Write(Encoding.UTF8.GetBytes("Hello World"));
+                buffer.Write("Hello World"u8.ToArray());
 
                 // Don't run code on our sync context (we just want to make sure the callbacks)
                 // are scheduled on the sync context
@@ -112,7 +112,7 @@ namespace System.IO.Pipelines.Tests
                 Task reading = doRead();
 
                 PipeWriter buffer = pipe.Writer;
-                buffer.Write(Encoding.UTF8.GetBytes("Hello World"));
+                buffer.Write("Hello World"u8.ToArray());
 
                 // Don't run code on our sync context (we just want to make sure the callbacks)
                 // are scheduled on the sync context
@@ -160,7 +160,7 @@ namespace System.IO.Pipelines.Tests
                 Task reading = doRead();
 
                 PipeWriter buffer = pipe.Writer;
-                buffer.Write(Encoding.UTF8.GetBytes("Hello World"));
+                buffer.Write("Hello World"u8.ToArray());
 
                 // We don't want to run any code on our fake sync context
                 await buffer.FlushAsync().ConfigureAwait(false);
@@ -181,6 +181,7 @@ namespace System.IO.Pipelines.Tests
         }
 
         [ConditionalFact(typeof(PlatformDetection), nameof(PlatformDetection.IsThreadingSupported))]
+        [ActiveIssue("https://github.com/dotnet/runtime/issues/91538", typeof(PlatformDetection), nameof(PlatformDetection.IsWasmThreadingSupported))]
         public async Task DefaultReaderSchedulerRunsOnThreadPool()
         {
             var pipe = new Pipe(new PipeOptions(useSynchronizationContext: false));
@@ -201,7 +202,7 @@ namespace System.IO.Pipelines.Tests
             Task reading = ExecuteOnNonThreadPoolThread(doRead);
 
             PipeWriter buffer = pipe.Writer;
-            buffer.Write(Encoding.UTF8.GetBytes("Hello World"));
+            buffer.Write("Hello World"u8.ToArray());
             await buffer.FlushAsync();
 
             pipe.Writer.Complete();
@@ -210,6 +211,7 @@ namespace System.IO.Pipelines.Tests
         }
 
         [ConditionalFact(typeof(PlatformDetection), nameof(PlatformDetection.IsThreadingSupported))]
+        [ActiveIssue("https://github.com/dotnet/runtime/issues/91538", typeof(PlatformDetection), nameof(PlatformDetection.IsWasmThreadingSupported))]
         public async Task DefaultWriterSchedulerRunsOnThreadPool()
         {
             using (var pool = new TestMemoryPool())
@@ -411,6 +413,7 @@ namespace System.IO.Pipelines.Tests
         }
 
         [ConditionalFact(typeof(PlatformDetection), nameof(PlatformDetection.IsThreadingSupported))]
+        [ActiveIssue("https://github.com/dotnet/runtime/issues/91538", typeof(PlatformDetection), nameof(PlatformDetection.IsWasmThreadingSupported))]
         public async Task FlushCallbackRunsOnWriterScheduler()
         {
             using (var pool = new TestMemoryPool())
@@ -456,6 +459,7 @@ namespace System.IO.Pipelines.Tests
         }
 
         [ConditionalFact(typeof(PlatformDetection), nameof(PlatformDetection.IsThreadingSupported))]
+        [ActiveIssue("https://github.com/dotnet/runtime/issues/91538", typeof(PlatformDetection), nameof(PlatformDetection.IsWasmThreadingSupported))]
         public async Task ReadAsyncCallbackRunsOnReaderScheduler()
         {
             using (var pool = new TestMemoryPool())
@@ -480,7 +484,7 @@ namespace System.IO.Pipelines.Tests
                     Task reading = ExecuteOnNonThreadPoolThread(doRead);
 
                     PipeWriter buffer = pipe.Writer;
-                    buffer.Write(Encoding.UTF8.GetBytes("Hello World"));
+                    buffer.Write("Hello World"u8.ToArray());
                     await buffer.FlushAsync();
 
                     await reading;
@@ -489,6 +493,7 @@ namespace System.IO.Pipelines.Tests
         }
 
         [ConditionalFact(typeof(PlatformDetection), nameof(PlatformDetection.IsThreadingSupported))]
+        [ActiveIssue("https://github.com/dotnet/runtime/issues/91538", typeof(PlatformDetection), nameof(PlatformDetection.IsWasmThreadingSupported))]
         public async Task ThreadPoolScheduler_SchedulesOnThreadPool()
         {
             var pipe = new Pipe(new PipeOptions(readerScheduler: PipeScheduler.ThreadPool, writerScheduler: PipeScheduler.Inline, useSynchronizationContext: false));
@@ -525,7 +530,7 @@ namespace System.IO.Pipelines.Tests
             null);
 #pragma warning restore CS0618 // Type or member is obsolete
 
-            buffer.Write(Encoding.UTF8.GetBytes("Hello World"));
+            buffer.Write("Hello World"u8.ToArray());
             await buffer.FlushAsync();
 
             await reading;

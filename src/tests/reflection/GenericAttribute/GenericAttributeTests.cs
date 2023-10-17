@@ -3,12 +3,13 @@ using System.Reflection;
 using System.Collections;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
+using Xunit;
 
-class Program
+public class Program
 {
-    static int Main(string[] args)
+    [Fact]
+    public static void TestEntryPoint()
     {
-/* Re-enable once the fix to https://github.com/dotnet/msbuild/issues/6734 propagates to this repo.
         Assembly assembly = typeof(Class).GetTypeInfo().Assembly;
         Assert(CustomAttributeExtensions.GetCustomAttribute<SingleAttribute<int>>(assembly) != null);
         Assert(((ICustomAttributeProvider)assembly).GetCustomAttributes(typeof(SingleAttribute<int>), true) != null);
@@ -18,8 +19,16 @@ class Program
         Assert(((ICustomAttributeProvider)assembly).IsDefined(typeof(SingleAttribute<int>), true));
         Assert(CustomAttributeExtensions.IsDefined(assembly, typeof(SingleAttribute<bool>)));
         Assert(((ICustomAttributeProvider)assembly).IsDefined(typeof(SingleAttribute<bool>), true));
+        Assert(CustomAttributeExtensions.GetCustomAttributes(assembly, typeof(SingleAttribute<>)).GetEnumerator().MoveNext());
+        Assert(CustomAttributeExtensions.GetCustomAttributes(assembly, typeof(SingleAttribute<>)).GetEnumerator().MoveNext());
 
-*/
+        // Uncomment when https://github.com/dotnet/runtime/issues/66168 is resolved
+        // Module module = programTypeInfo.Module;
+        // AssertAny(CustomAttributeExtensions.GetCustomAttributes(module), a => a is SingleAttribute<long>);
+        // Assert(CustomAttributeExtensions.GetCustomAttributes(module, typeof(SingleAttribute<long>)).GetEnumerator().MoveNext());
+        // Assert(CustomAttributeExtensions.GetCustomAttributes(module, typeof(SingleAttribute<long>)).GetEnumerator().MoveNext());
+        // Assert(CustomAttributeExtensions.GetCustomAttributes(module, typeof(SingleAttribute<>)).GetEnumerator().MoveNext());
+        // Assert(CustomAttributeExtensions.GetCustomAttributes(module, typeof(SingleAttribute<>)).GetEnumerator().MoveNext());	
 
         TypeInfo programTypeInfo = typeof(Class).GetTypeInfo();
         Assert(CustomAttributeExtensions.GetCustomAttribute<SingleAttribute<int>>(programTypeInfo) != null);
@@ -152,9 +161,9 @@ class Program
         AssertAny(b10, a => (a as MultiAttribute<Type>)?.Value == typeof(Class));
         AssertAny(b10, a => (a as MultiAttribute<Type>)?.Value == typeof(Class.Derive));
 
-        Assert(CustomAttributeExtensions.GetCustomAttributes(programTypeInfo, typeof(MultiAttribute<>), false) == null);
-        Assert(CustomAttributeExtensions.GetCustomAttributes(programTypeInfo, typeof(MultiAttribute<>), true) == null);
-        Assert(!((ICustomAttributeProvider)programTypeInfo).GetCustomAttributes(typeof(MultiAttribute<>), true).GetEnumerator().MoveNext());
+        Assert(CustomAttributeExtensions.GetCustomAttributes(programTypeInfo, typeof(MultiAttribute<>), false).GetEnumerator().MoveNext());
+        Assert(CustomAttributeExtensions.GetCustomAttributes(programTypeInfo, typeof(MultiAttribute<>), true).GetEnumerator().MoveNext());
+        Assert(((ICustomAttributeProvider)programTypeInfo).GetCustomAttributes(typeof(MultiAttribute<>), true).GetEnumerator().MoveNext());
 
         // Test coverage for CustomAttributeData api surface
         var a1_data = CustomAttributeData.GetCustomAttributes(programTypeInfo);
@@ -173,8 +182,6 @@ class Program
 
         AssertAny(a1_data, a => a.AttributeType == typeof(MultiAttribute<Type>) && a.ConstructorArguments.Count == 1 && a.NamedArguments.Count == 0 && a.ConstructorArguments[0].ArgumentType == typeof(Type) &&  ((Type)a.ConstructorArguments[0].Value) == typeof(Class));
         AssertAny(a1_data, a => a.AttributeType == typeof(MultiAttribute<Type>) && a.ConstructorArguments.Count == 0 && a.NamedArguments.Count == 1 && a.NamedArguments[0].TypedValue.ArgumentType == typeof(Type) &&  ((Type)a.NamedArguments[0].TypedValue.Value) == typeof(Class.Derive));
-
-        return 100;
     }
 
     static void Assert(bool condition, [CallerLineNumberAttribute]int line = 0)

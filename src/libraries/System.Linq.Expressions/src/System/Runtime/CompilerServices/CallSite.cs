@@ -9,6 +9,8 @@ using System.Dynamic.Utils;
 using System.Linq.Expressions;
 using System.Reflection;
 using System.Threading;
+using System.Threading.Tasks;
+using System.Threading.Tasks.Sources;
 using static System.Linq.Expressions.CachedReflectionInfo;
 
 namespace System.Runtime.CompilerServices
@@ -80,10 +82,12 @@ namespace System.Runtime.CompilerServices
         /// <param name="delegateType">The CallSite delegate type.</param>
         /// <param name="binder">The CallSite binder.</param>
         /// <returns>The new CallSite.</returns>
+        [UnconditionalSuppressMessage("DynamicCode", "IL3050",
+            Justification = "MakeGenericType is only used for a Type that should be a delegate type, which are always reference types.")]
         public static CallSite Create(Type delegateType, CallSiteBinder binder)
         {
-            ContractUtils.RequiresNotNull(delegateType, nameof(delegateType));
-            ContractUtils.RequiresNotNull(binder, nameof(binder));
+            ArgumentNullException.ThrowIfNull(delegateType);
+            ArgumentNullException.ThrowIfNull(binder);
             if (!delegateType.IsSubclassOf(typeof(MulticastDelegate))) throw System.Linq.Expressions.Error.TypeMustBeDerivedFromSystemDelegate();
 
             CacheDict<Type, Func<CallSiteBinder, CallSite>>? ctors = s_siteCtors;
@@ -160,6 +164,7 @@ namespace System.Runtime.CompilerServices
         // Cached noMatch delegate for all sites with a given T
         private static volatile T? s_cachedNoMatch;
 
+        [RequiresDynamicCode(Expression.NewArrayRequiresDynamicCode)]
         private CallSite(CallSiteBinder binder)
             : base(binder)
         {
@@ -171,7 +176,7 @@ namespace System.Runtime.CompilerServices
         {
         }
 
-        internal CallSite<T> CreateMatchMaker()
+        internal static CallSite<T> CreateMatchMaker()
         {
             return new CallSite<T>();
         }
@@ -206,13 +211,15 @@ namespace System.Runtime.CompilerServices
         /// </summary>
         /// <param name="binder">The binder responsible for the runtime binding of the dynamic operations at this call site.</param>
         /// <returns>The new instance of dynamic call site.</returns>
+        [RequiresDynamicCode(Expression.NewArrayRequiresDynamicCode)]
         public static CallSite<T> Create(CallSiteBinder binder)
         {
             if (!typeof(T).IsSubclassOf(typeof(MulticastDelegate))) throw System.Linq.Expressions.Error.TypeMustBeDerivedFromSystemDelegate();
-            ContractUtils.RequiresNotNull(binder, nameof(binder));
+            ArgumentNullException.ThrowIfNull(binder);
             return new CallSite<T>(binder);
         }
 
+        [RequiresDynamicCode(Expression.NewArrayRequiresDynamicCode)]
         private T GetUpdateDelegate()
         {
             // This is intentionally non-static to speed up creation - in particular MakeUpdateDelegate
@@ -221,18 +228,12 @@ namespace System.Runtime.CompilerServices
             return GetUpdateDelegate(ref s_cachedUpdate);
         }
 
-        private T GetUpdateDelegate(ref T? addr)
-        {
-            if (addr == null)
-            {
-                // reduce creation cost by not using Interlocked.CompareExchange.  Calling I.CE causes
-                // us to spend 25% of our creation time in JIT_GenericHandle.  Instead we'll rarely
-                // create 2 delegates with no other harm caused.
-                addr = MakeUpdateDelegate();
-            }
-            return addr;
-        }
-
+        [RequiresDynamicCode(Expression.NewArrayRequiresDynamicCode)]
+        private T GetUpdateDelegate(ref T? addr) =>
+            // reduce creation cost by not using Interlocked.CompareExchange.  Calling I.CE causes
+            // us to spend 25% of our creation time in JIT_GenericHandle.  Instead we'll rarely
+            // create 2 delegates with no other harm caused.
+            addr ??= MakeUpdateDelegate();
 
         private const int MaxRules = 10;
 
@@ -279,24 +280,29 @@ namespace System.Runtime.CompilerServices
             }
         }
 
-#if FEATURE_COMPILE
-        [UnconditionalSuppressMessage("ReflectionAnalysis", "IL2060:MakeGenericMethod",
-            Justification = "UpdateDelegates methods don't have ILLink annotations.")]
-#endif
+        [RequiresDynamicCode(Expression.NewArrayRequiresDynamicCode)]
         internal T MakeUpdateDelegate()
         {
-#if !FEATURE_COMPILE
             Type target = typeof(T);
             MethodInfo invoke = target.GetInvokeMethod();
+
+            if (System.Linq.Expressions.LambdaExpression.CanCompileToIL
+                && target.IsGenericType && IsSimpleSignature(invoke, out Type[] args))
+            {
+#pragma warning disable IL3050
+                // Analyzer doesn't yet understand feature switches
+                return MakeUpdateDelegateWhenCanCompileToIL();
+#pragma warning restore IL3050
+            }
 
             s_cachedNoMatch = CreateCustomNoMatchDelegate(invoke);
             return CreateCustomUpdateDelegate(invoke);
-#else
-            Type target = typeof(T);
-            Type[] args;
-            MethodInfo invoke = target.GetInvokeMethod();
 
-            if (target.IsGenericType && IsSimpleSignature(invoke, out args))
+
+            [UnconditionalSuppressMessage("ReflectionAnalysis", "IL2060:MakeGenericMethod",
+                Justification = "UpdateDelegates methods don't have ILLink annotations.")]
+            [RequiresDynamicCode(Expression.GenericMethodRequiresDynamicCode)]
+            T MakeUpdateDelegateWhenCanCompileToIL()
             {
                 MethodInfo? method = null;
                 MethodInfo? noMatchMethod = null;
@@ -322,14 +328,12 @@ namespace System.Runtime.CompilerServices
                     s_cachedNoMatch = (T)(object)noMatchMethod!.MakeGenericMethod(args).CreateDelegate(target);
                     return (T)(object)method.MakeGenericMethod(args).CreateDelegate(target);
                 }
-            }
 
-            s_cachedNoMatch = CreateCustomNoMatchDelegate(invoke);
-            return CreateCustomUpdateDelegate(invoke);
-#endif
+                s_cachedNoMatch = CreateCustomNoMatchDelegate(invoke);
+                return CreateCustomUpdateDelegate(invoke);
+            }
         }
 
-#if FEATURE_COMPILE
         private static bool IsSimpleSignature(MethodInfo invoke, out Type[] sig)
         {
             ParameterInfo[] pis = invoke.GetParametersCached();
@@ -354,10 +358,8 @@ namespace System.Runtime.CompilerServices
             sig = args;
             return supported;
         }
-#endif
 
-        [UnconditionalSuppressMessage("ReflectionAnalysis", "IL2060:MakeGenericMethod",
-            Justification = "CallSiteOps methods don't have trimming annotations.")]
+        [RequiresDynamicCode(Expression.NewArrayRequiresDynamicCode)]
         private T CreateCustomUpdateDelegate(MethodInfo invoke)
         {
             Type returnType = invoke.GetReturnType();
@@ -404,7 +406,9 @@ namespace System.Runtime.CompilerServices
                 Expression.Assign(
                     site,
                     Expression.Call(
-                        CallSiteOps_CreateMatchmaker.MakeGenericMethod(typeArgs),
+#pragma warning disable CS0618 // CallSiteOps.CreateMatchmaker is obsolete
+                        CallSiteOpsReflectionCache<T>.CreateMatchmaker,
+#pragma warning restore CS0618
                         @this
                     )
                 )
@@ -419,7 +423,9 @@ namespace System.Runtime.CompilerServices
             Expression invokeRule = Expression.Invoke(rule, new TrueReadOnlyCollection<Expression>(@params));
 
             Expression onMatch = Expression.Call(
-                CallSiteOps_UpdateRules.MakeGenericMethod(typeArgs),
+#pragma warning disable CS0618 // CallSiteOps is obsolete
+                CallSiteOpsReflectionCache<T>.UpdateRules,
+#pragma warning restore CS0618
                 @this,
                 index
             );
@@ -463,7 +469,9 @@ namespace System.Runtime.CompilerServices
                         Expression.Assign(
                             applicable,
                             Expression.Call(
-                                CallSiteOps_GetRules.MakeGenericMethod(typeArgs),
+#pragma warning disable CS0618 // CallSiteOps is obsolete
+                                CallSiteOpsReflectionCache<T>.GetRules,
+#pragma warning restore CS0618
                                 @this
                             )
                         ),
@@ -512,14 +520,18 @@ namespace System.Runtime.CompilerServices
             body.UncheckedAdd(
                 Expression.Assign(
                     cache,
-                    Expression.Call(CallSiteOps_GetRuleCache.MakeGenericMethod(typeArgs), @this)
+#pragma warning disable CS0618 // CallSiteOps is obsolete
+                    Expression.Call(CallSiteOpsReflectionCache<T>.GetRuleCache, @this)
+#pragma warning restore CS0618
                 )
             );
 
             body.UncheckedAdd(
                 Expression.Assign(
                     applicable,
-                    Expression.Call(CallSiteOps_GetCachedRules.MakeGenericMethod(typeArgs), cache)
+#pragma warning disable CS0618 // CallSiteOps is obsolete
+                    Expression.Call(CallSiteOpsReflectionCache<T>.GetCachedRules, cache)
+#pragma warning restore CS0618
                 )
             );
 
@@ -550,8 +562,10 @@ namespace System.Runtime.CompilerServices
                 Expression.IfThen(
                     getMatch,
                     Expression.Block(
-                        Expression.Call(CallSiteOps_AddRule.MakeGenericMethod(typeArgs), @this, rule),
-                        Expression.Call(CallSiteOps_MoveRule.MakeGenericMethod(typeArgs), cache, rule, index)
+#pragma warning disable CS0618
+                        Expression.Call(CallSiteOpsReflectionCache<T>.AddRule, @this, rule),
+                        Expression.Call(CallSiteOpsReflectionCache<T>.MoveRule, cache, rule, index)
+#pragma warning restore CS0618
                     )
                 )
             );
@@ -588,7 +602,7 @@ namespace System.Runtime.CompilerServices
             body.UncheckedAdd(
                 Expression.Assign(
                     args,
-                    Expression.NewArrayInit(typeof(object), new TrueReadOnlyCollection<Expression>(argsElements))
+                    Expression.NewObjectArrayInit(new TrueReadOnlyCollection<Expression>(argsElements))
                 )
             );
 
@@ -602,7 +616,9 @@ namespace System.Runtime.CompilerServices
                 Expression.Assign(
                     rule,
                     Expression.Call(
-                        CallSiteOps_Bind.MakeGenericMethod(typeArgs),
+#pragma warning disable CS0618 // Type or member is obsolete
+                        CallSiteOpsReflectionCache<T>.Bind,
+#pragma warning restore CS0618
                         Expression.Property(@this, typeof(CallSite).GetProperty(nameof(Binder))!),
                         @this,
                         args
@@ -615,7 +631,9 @@ namespace System.Runtime.CompilerServices
                 Expression.IfThen(
                     getMatch,
                     Expression.Call(
-                        CallSiteOps_AddRule.MakeGenericMethod(typeArgs),
+#pragma warning disable 0618 // CallSiteOps.AddRule_Internal is obsolete
+                        CallSiteOpsReflectionCache<T>.AddRule,
+#pragma warning restore 0618
                         @this,
                         rule
                     )
@@ -650,6 +668,7 @@ namespace System.Runtime.CompilerServices
             return lambda.Compile();
         }
 
+        [RequiresDynamicCode(Expression.NewArrayRequiresDynamicCode)]
         private T CreateCustomNoMatchDelegate(MethodInfo invoke)
         {
             ParameterExpression[] @params = Array.ConvertAll(invoke.GetParametersCached(), p => Expression.Parameter(p.ParameterType, p.Name));

@@ -4,8 +4,7 @@
 .assembly extern System.Console { }
 .assembly extern xunit.core {}
 .assembly extern mscorlib {}
-.assembly Generated0 {}
-.module Generated0.exe
+.assembly 'dev10_788724' {}
 
 .class public sequential sealed MyStruct0 extends [mscorlib]System.ValueType
 {
@@ -23,7 +22,7 @@
 	.method public hidebysig virtual instance int32 GetHashCode() cil managed { ldc.i4.0 ret }
 	.method public hidebysig virtual instance string ToString() cil managed { ldstr "ToString()" ret }
 }
-.class private auto ansi beforefieldinit Framework {
+.class public auto ansi beforefieldinit Framework {
 	.method public hidebysig static void StructCallvirtVerificationTest() cil managed
 	{
 		.maxstack  10

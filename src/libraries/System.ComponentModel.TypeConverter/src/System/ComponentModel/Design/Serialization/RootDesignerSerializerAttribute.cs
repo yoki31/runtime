@@ -9,7 +9,7 @@ namespace System.ComponentModel.Design.Serialization
     /// being used as a root object.
     /// </summary>
     [AttributeUsage(AttributeTargets.Class | AttributeTargets.Interface, AllowMultiple = true, Inherited = true)]
-    [Obsolete("RootDesignerSerializerAttribute has been deprecated. Use DesignerSerializerAttribute instead. For example, to specify a root designer for CodeDom, use DesignerSerializerAttribute(...,typeof(TypeCodeDomSerializer)).")]
+    [Obsolete("RootDesignerSerializerAttribute has been deprecated. Use DesignerSerializerAttribute instead. For example, to specify a root designer for CodeDom, use DesignerSerializerAttribute(...,typeof(TypeCodeDomSerializer)) instead.")]
     public sealed class RootDesignerSerializerAttribute : Attribute
     {
         private string? _typeId;
@@ -19,14 +19,8 @@ namespace System.ComponentModel.Design.Serialization
         /// </summary>
         public RootDesignerSerializerAttribute(Type serializerType, Type baseSerializerType, bool reloadable)
         {
-            if (serializerType == null)
-            {
-                throw new ArgumentNullException(nameof(serializerType));
-            }
-            if (baseSerializerType == null)
-            {
-                throw new ArgumentNullException(nameof(baseSerializerType));
-            }
+            ArgumentNullException.ThrowIfNull(serializerType);
+            ArgumentNullException.ThrowIfNull(baseSerializerType);
 
             SerializerTypeName = serializerType.AssemblyQualifiedName;
             SerializerBaseTypeName = baseSerializerType.AssemblyQualifiedName;
@@ -38,10 +32,7 @@ namespace System.ComponentModel.Design.Serialization
         /// </summary>
         public RootDesignerSerializerAttribute(string serializerTypeName, Type baseSerializerType, bool reloadable)
         {
-            if (baseSerializerType == null)
-            {
-                throw new ArgumentNullException(nameof(baseSerializerType));
-            }
+            ArgumentNullException.ThrowIfNull(baseSerializerType);
 
             SerializerTypeName = serializerTypeName;
             SerializerBaseTypeName = baseSerializerType.AssemblyQualifiedName;
@@ -88,13 +79,13 @@ namespace System.ComponentModel.Design.Serialization
             {
                 if (_typeId == null)
                 {
-                    string baseType = SerializerBaseTypeName ?? string.Empty;
+                    ReadOnlySpan<char> baseType = SerializerBaseTypeName;
                     int comma = baseType.IndexOf(',');
-                    if (comma != -1)
+                    if (comma >= 0)
                     {
-                        baseType = baseType.Substring(0, comma);
+                        baseType = baseType.Slice(0, comma);
                     }
-                    _typeId = GetType().FullName + baseType;
+                    _typeId = string.Concat(GetType().FullName, baseType);
                 }
                 return _typeId;
             }

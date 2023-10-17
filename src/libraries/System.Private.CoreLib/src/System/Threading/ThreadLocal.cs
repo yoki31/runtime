@@ -23,7 +23,7 @@ namespace System.Threading
     /// </para>
     /// </remarks>
     [DebuggerTypeProxy(typeof(SystemThreading_ThreadLocalDebugView<>))]
-    [DebuggerDisplay("IsValueCreated={IsValueCreated}, Value={ValueForDebugDisplay}, Count={ValuesCountForDebugDisplay}")]
+    [DebuggerDisplay("IsValueCreated = {IsValueCreated}, Value = {ValueForDebugDisplay}, Count = {ValuesCountForDebugDisplay}")]
     public class ThreadLocal<T> : IDisposable
     {
         // a delegate that returns the created value, if null the created value will be default(T)
@@ -61,7 +61,7 @@ namespace System.Threading
         private bool _trackAllValues;
 
         /// <summary>
-        /// Initializes the <see cref="System.Threading.ThreadLocal{T}"/> instance.
+        /// Initializes the <see cref="ThreadLocal{T}"/> instance.
         /// </summary>
         public ThreadLocal()
         {
@@ -69,7 +69,7 @@ namespace System.Threading
         }
 
         /// <summary>
-        /// Initializes the <see cref="System.Threading.ThreadLocal{T}"/> instance.
+        /// Initializes the <see cref="ThreadLocal{T}"/> instance.
         /// </summary>
         /// <param name="trackAllValues">Whether to track all values set on the instance and expose them through the Values property.</param>
         public ThreadLocal(bool trackAllValues)
@@ -79,40 +79,38 @@ namespace System.Threading
 
 
         /// <summary>
-        /// Initializes the <see cref="System.Threading.ThreadLocal{T}"/> instance with the
+        /// Initializes the <see cref="ThreadLocal{T}"/> instance with the
         /// specified <paramref name="valueFactory"/> function.
         /// </summary>
         /// <param name="valueFactory">
-        /// The <see cref="System.Func{T}"/> invoked to produce a lazily-initialized value when
+        /// The <see cref="Func{T}"/> invoked to produce a lazily-initialized value when
         /// an attempt is made to retrieve <see cref="Value"/> without it having been previously initialized.
         /// </param>
-        /// <exception cref="System.ArgumentNullException">
-        /// <paramref name="valueFactory"/> is a null reference (Nothing in Visual Basic).
+        /// <exception cref="ArgumentNullException">
+        /// <paramref name="valueFactory"/> is a null reference (<see langword="Nothing" /> in Visual Basic).
         /// </exception>
         public ThreadLocal(Func<T> valueFactory)
         {
-            if (valueFactory == null)
-                throw new ArgumentNullException(nameof(valueFactory));
+            ArgumentNullException.ThrowIfNull(valueFactory);
 
             Initialize(valueFactory, false);
         }
 
         /// <summary>
-        /// Initializes the <see cref="System.Threading.ThreadLocal{T}"/> instance with the
+        /// Initializes the <see cref="ThreadLocal{T}"/> instance with the
         /// specified <paramref name="valueFactory"/> function.
         /// </summary>
         /// <param name="valueFactory">
-        /// The <see cref="System.Func{T}"/> invoked to produce a lazily-initialized value when
+        /// The <see cref="Func{T}"/> invoked to produce a lazily-initialized value when
         /// an attempt is made to retrieve <see cref="Value"/> without it having been previously initialized.
         /// </param>
         /// <param name="trackAllValues">Whether to track all values set on the instance and expose them via the Values property.</param>
-        /// <exception cref="System.ArgumentNullException">
-        /// <paramref name="valueFactory"/> is a null reference (Nothing in Visual Basic).
+        /// <exception cref="ArgumentNullException">
+        /// <paramref name="valueFactory"/> is a null reference (<see langword="Nothing" /> in Visual Basic).
         /// </exception>
         public ThreadLocal(Func<T> valueFactory, bool trackAllValues)
         {
-            if (valueFactory == null)
-                throw new ArgumentNullException(nameof(valueFactory));
+            ArgumentNullException.ThrowIfNull(valueFactory);
 
             Initialize(valueFactory, trackAllValues);
         }
@@ -131,7 +129,7 @@ namespace System.Threading
         }
 
         /// <summary>
-        /// Releases the resources used by this <see cref="System.Threading.ThreadLocal{T}" /> instance.
+        /// Releases the resources used by this <see cref="ThreadLocal{T}" /> instance.
         /// </summary>
         ~ThreadLocal()
         {
@@ -142,10 +140,10 @@ namespace System.Threading
         #region IDisposable Members
 
         /// <summary>
-        /// Releases the resources used by this <see cref="System.Threading.ThreadLocal{T}" /> instance.
+        /// Releases the resources used by this <see cref="ThreadLocal{T}" /> instance.
         /// </summary>
         /// <remarks>
-        /// Unlike most of the members of <see cref="System.Threading.ThreadLocal{T}"/>, this method is not thread-safe.
+        /// Unlike most of the members of <see cref="ThreadLocal{T}"/>, this method is not thread-safe.
         /// </remarks>
         public void Dispose()
         {
@@ -154,13 +152,13 @@ namespace System.Threading
         }
 
         /// <summary>
-        /// Releases the resources used by this <see cref="System.Threading.ThreadLocal{T}" /> instance.
+        /// Releases the resources used by this <see cref="ThreadLocal{T}" /> instance.
         /// </summary>
         /// <param name="disposing">
         /// A Boolean value that indicates whether this method is being called due to a call to <see cref="Dispose()"/>.
         /// </param>
         /// <remarks>
-        /// Unlike most of the members of <see cref="System.Threading.ThreadLocal{T}"/>, this method is not thread-safe.
+        /// Unlike most of the members of <see cref="ThreadLocal{T}"/>, this method is not thread-safe.
         /// </remarks>
         protected virtual void Dispose(bool disposing)
         {
@@ -208,13 +206,13 @@ namespace System.Threading
 
         /// <summary>Creates and returns a string representation of this instance for the current thread.</summary>
         /// <returns>The result of calling <see cref="object.ToString"/> on the <see cref="Value"/>.</returns>
-        /// <exception cref="System.NullReferenceException">
-        /// The <see cref="Value"/> for the current thread is a null reference (Nothing in Visual Basic).
+        /// <exception cref="NullReferenceException">
+        /// The <see cref="Value"/> for the current thread is a null reference (<see langword="Nothing" /> in Visual Basic).
         /// </exception>
-        /// <exception cref="System.InvalidOperationException">
+        /// <exception cref="InvalidOperationException">
         /// The initialization function referenced <see cref="Value"/> in an improper manner.
         /// </exception>
-        /// <exception cref="System.ObjectDisposedException">
+        /// <exception cref="ObjectDisposedException">
         /// The <see cref="ThreadLocal{T}"/> instance has been disposed.
         /// </exception>
         /// <remarks>
@@ -229,10 +227,10 @@ namespace System.Threading
         /// <summary>
         /// Gets or sets the value of this instance for the current thread.
         /// </summary>
-        /// <exception cref="System.InvalidOperationException">
+        /// <exception cref="InvalidOperationException">
         /// The initialization function referenced <see cref="Value"/> in an improper manner.
         /// </exception>
-        /// <exception cref="System.ObjectDisposedException">
+        /// <exception cref="ObjectDisposedException">
         /// The <see cref="ThreadLocal{T}"/> instance has been disposed.
         /// </exception>
         /// <remarks>
@@ -304,10 +302,7 @@ namespace System.Threading
         {
             // If the object has been disposed, the id will be -1.
             int id = ~_idComplement;
-            if (id < 0)
-            {
-                throw new ObjectDisposedException(SR.ThreadLocal_Disposed);
-            }
+            ObjectDisposedException.ThrowIf(id < 0, this);
 
             Debugger.NotifyOfCrossThreadDependency();
 
@@ -337,10 +332,7 @@ namespace System.Threading
             int id = ~_idComplement;
 
             // If the object has been disposed, id will be -1.
-            if (id < 0)
-            {
-                throw new ObjectDisposedException(SR.ThreadLocal_Disposed);
-            }
+            ObjectDisposedException.ThrowIf(id < 0, this);
 
             // If a slot array has not been created on this thread yet, create it.
             if (slotArray == null)
@@ -376,10 +368,7 @@ namespace System.Threading
                 // if this ThreadLocal instance was disposed on another thread and another ThreadLocal instance was
                 // created, we definitely won't assign the value into the wrong instance.
 
-                if (!_initialized)
-                {
-                    throw new ObjectDisposedException(SR.ThreadLocal_Disposed);
-                }
+                ObjectDisposedException.ThrowIf(!_initialized, this);
 
                 slot!._value = value;
             }
@@ -398,10 +387,7 @@ namespace System.Threading
             {
                 // Check that the instance has not been disposed. It is important to check this under a lock, since
                 // Dispose also executes under a lock.
-                if (!_initialized)
-                {
-                    throw new ObjectDisposedException(SR.ThreadLocal_Disposed);
-                }
+                ObjectDisposedException.ThrowIf(!_initialized, this);
 
                 Debug.Assert(_linkedSlot != null, "Should only be null if disposed");
                 LinkedSlot? firstRealNode = _linkedSlot._next;
@@ -428,7 +414,7 @@ namespace System.Threading
         /// <summary>
         /// Gets a list for all of the values currently stored by all of the threads that have accessed this instance.
         /// </summary>
-        /// <exception cref="System.ObjectDisposedException">
+        /// <exception cref="ObjectDisposedException">
         /// The <see cref="ThreadLocal{T}"/> instance has been disposed.
         /// </exception>
         public IList<T> Values
@@ -441,7 +427,7 @@ namespace System.Threading
                 }
 
                 List<T>? list = GetValuesAsList(); // returns null if disposed
-                if (list == null) throw new ObjectDisposedException(SR.ThreadLocal_Disposed);
+                ObjectDisposedException.ThrowIf(list is null, this);
                 return list;
             }
         }
@@ -485,7 +471,7 @@ namespace System.Threading
         /// <summary>
         /// Gets whether <see cref="Value"/> is initialized on the current thread.
         /// </summary>
-        /// <exception cref="System.ObjectDisposedException">
+        /// <exception cref="ObjectDisposedException">
         /// The <see cref="ThreadLocal{T}"/> instance has been disposed.
         /// </exception>
         public bool IsValueCreated
@@ -493,10 +479,7 @@ namespace System.Threading
             get
             {
                 int id = ~_idComplement;
-                if (id < 0)
-                {
-                    throw new ObjectDisposedException(SR.ThreadLocal_Disposed);
-                }
+                ObjectDisposedException.ThrowIf(id < 0, this);
 
                 LinkedSlotVolatile[]? slotArray = ts_slotArray;
                 return slotArray != null && id < slotArray.Length && slotArray[id].Value != null;

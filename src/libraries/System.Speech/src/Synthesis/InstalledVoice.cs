@@ -9,7 +9,7 @@ using System.Speech.Internal.Synthesis;
 
 namespace System.Speech.Synthesis
 {
-    [DebuggerDisplay("{VoiceInfo.Name} [{Enabled ? \"Enabled\" : \"Disabled\"}]")]
+    [DebuggerDisplay("{VoiceInfo.Name} = [{Enabled ? \"Enabled\" : \"Disabled\"}]")]
     public class InstalledVoice
     {
         #region Constructors
@@ -88,10 +88,7 @@ namespace System.Speech.Synthesis
                     {
                         return ti;
                     }
-                    if (voiceFirst == null)
-                    {
-                        voiceFirst = ti;
-                    }
+                    voiceFirst ??= ti;
                 }
             }
             return voiceFirst;

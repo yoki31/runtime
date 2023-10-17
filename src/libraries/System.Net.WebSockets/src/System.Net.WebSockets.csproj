@@ -1,10 +1,14 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <AllowUnsafeBlocks>True</AllowUnsafeBlocks>
-    <TargetFrameworks>$(NetCoreAppCurrent)-windows;$(NetCoreAppCurrent)-Unix;$(NetCoreAppCurrent)-Browser</TargetFrameworks>
-    <Nullable>enable</Nullable>
+    <TargetFrameworks>$(NetCoreAppCurrent)-windows;$(NetCoreAppCurrent)-unix;$(NetCoreAppCurrent)-browser;$(NetCoreAppCurrent)</TargetFrameworks>
   </PropertyGroup>
-  <ItemGroup>
+  <!-- DesignTimeBuild requires all the TargetFramework Derived Properties to not be present in the first property group. -->
+  <PropertyGroup>
+    <TargetPlatformIdentifier>$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)'))</TargetPlatformIdentifier>
+    <GeneratePlatformNotSupportedAssemblyMessage Condition="'$(TargetPlatformIdentifier)' == ''">SR.PlatformNotSupported_WebSockets</GeneratePlatformNotSupportedAssemblyMessage>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(TargetPlatformIdentifier)' != ''">
     <Compile Include="System\Net\WebSockets\AsyncMutex.cs" />
     <Compile Include="System\Net\WebSockets\Compression\WebSocketDeflater.cs" />
     <Compile Include="System\Net\WebSockets\Compression\WebSocketInflater.cs" />
@@ -29,14 +33,16 @@
              Link="Common\System\IO\Compression\ZLibNative.ZStream.cs" />
     <Compile Include="$(CommonPath)Interop\Interop.zlib.cs"
              Link="Common\Interop\Interop.zlib.cs" />
+    <Compile Include="$(CommonPath)System\Obsoletions.cs"
+             Link="Common\System\Obsoletions.cs" />
   </ItemGroup>
   <!-- Windows specific files -->
-  <ItemGroup Condition=" '$(TargetsWindows)' == 'true'">
+  <ItemGroup Condition="'$(TargetPlatformIdentifier)' == 'windows'">
     <Compile Include="$(CommonPath)Interop\Windows\Interop.Libraries.cs"
              Link="Common\Interop\Windows\Interop.Libraries.cs" />
   </ItemGroup>
   <!-- Unix specific files -->
-  <ItemGroup Condition=" '$(TargetsUnix)' == 'true' or '$(TargetsBrowser)' == 'true' ">
+  <ItemGroup Condition="'$(TargetPlatformIdentifier)' == 'unix' or '$(TargetPlatformIdentifier)' == 'browser' ">
     <Compile Include="$(CommonPath)Interop\Unix\Interop.Libraries.cs"
              Link="Common\Interop\Unix\Interop.Libraries.cs" />
   </ItemGroup>
@@ -48,11 +54,8 @@
     <Reference Include="System.Net.Primitives" />
     <Reference Include="System.Numerics.Vectors" />
     <Reference Include="System.Runtime" />
-    <Reference Include="System.Runtime.CompilerServices.Unsafe" />
-    <Reference Include="System.Runtime.Extensions" />
     <Reference Include="System.Runtime.InteropServices" />
     <Reference Include="System.Security.Cryptography" />
-    <Reference Include="System.Security.Principal" />
     <Reference Include="System.Text.Encoding.Extensions" />
     <Reference Include="System.Threading" />
   </ItemGroup>

@@ -96,8 +96,8 @@ namespace System.Reflection.PortableExecutable
 
         public const int ManagedResourcesDataAlignment = 8;
 
-        private const string CorEntryPointDll = "mscoree.dll";
-        private string CorEntryPointName => (ImageCharacteristics & Characteristics.Dll) != 0 ? "_CorDllMain" : "_CorExeMain";
+        private static ReadOnlySpan<byte> CorEntryPointDll => "mscoree.dll"u8;
+        private ReadOnlySpan<byte> CorEntryPointName => (ImageCharacteristics & Characteristics.Dll) != 0 ? "_CorDllMain"u8 : "_CorExeMain"u8;
 
         private int SizeOfImportAddressTable => RequiresStartupStub ? (Is32Bit ? 2 * sizeof(uint) : 2 * sizeof(ulong)) : 0;
 
@@ -121,7 +121,7 @@ namespace System.Reflection.PortableExecutable
 
         public const int MappedFieldDataAlignment = 8;
 
-        public int CalculateOffsetToMappedFieldDataStream()
+        internal int CalculateOffsetToMappedFieldDataStreamUnaligned()
         {
             int result = ComputeOffsetToImportTable();
 
@@ -133,6 +133,16 @@ namespace System.Reflection.PortableExecutable
             }
 
             return result;
+        }
+
+        public int CalculateOffsetToMappedFieldDataStream()
+        {
+             int result = CalculateOffsetToMappedFieldDataStreamUnaligned();
+             if (MappedFieldDataSize != 0)
+             {
+                 result = BitArithmetic.Align(result, MappedFieldDataAlignment);
+             }
+             return result;
         }
 
         internal int ComputeOffsetToDebugDirectory()
@@ -185,7 +195,7 @@ namespace System.Reflection.PortableExecutable
         {
             // TODO: constants
             return RequiresStartupStub ?
-                rva + CalculateOffsetToMappedFieldDataStream() - (Is32Bit ? 6 : 10) :
+                rva + CalculateOffsetToMappedFieldDataStreamUnaligned() - (Is32Bit ? 6 : 10) :
                 0;
         }
 
@@ -293,6 +303,8 @@ namespace System.Reflection.PortableExecutable
             // mapped field data:
             if (mappedFieldDataBuilderOpt != null)
             {
+                if (mappedFieldDataBuilderOpt.Count != 0)
+                    builder.Align(MappedFieldDataAlignment);
                 builder.LinkSuffix(mappedFieldDataBuilderOpt);
             }
 
@@ -353,11 +365,7 @@ namespace System.Reflection.PortableExecutable
             // Hint table
             builder.WriteUInt16(0); // Hint 54|58
 
-            foreach (char ch in CorEntryPointName)
-            {
-                builder.WriteByte((byte)ch); // 65|69
-            }
-
+            builder.WriteBytes(CorEntryPointName); // 65|69
             builder.WriteByte(0); // 66|70
             Debug.Assert(builder.Count - start == SizeOfImportTable);
         }
@@ -366,11 +374,7 @@ namespace System.Reflection.PortableExecutable
         {
             int start = builder.Count;
 
-            foreach (char ch in CorEntryPointDll)
-            {
-                builder.WriteByte((byte)ch);
-            }
-
+            builder.WriteBytes(CorEntryPointDll);
             builder.WriteByte(0);
             builder.WriteUInt16(0);
             Debug.Assert(builder.Count - start == SizeOfNameTable);

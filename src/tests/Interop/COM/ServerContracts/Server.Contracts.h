@@ -375,12 +375,17 @@ IErrorMarshalTesting : IUnknown
         /*[in]*/ int hresultToReturn ) = 0;
       virtual int STDMETHODCALLTYPE Return_As_HResult_Struct (
         /*[in]*/ int hresultToReturn ) = 0;
+      virtual HRESULT STDMETHODCALLTYPE Throw_HResult_HelpLink (
+        /*[in]*/ int hresultToReturn,
+        /*[in]*/ LPCWSTR helpLink,
+        /*[in]*/ DWORD helpContext ) = 0;
 };
 
 enum IDispatchTesting_Exception
 {
     IDispatchTesting_Exception_Disp,
     IDispatchTesting_Exception_HResult,
+    IDispatchTesting_Exception_Int,
 };
 
 struct __declspec(uuid("a5e04c1c-474e-46d2-bbc0-769d04e12b54"))

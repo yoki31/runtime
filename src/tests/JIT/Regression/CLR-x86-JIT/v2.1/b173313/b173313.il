@@ -9,7 +9,7 @@
 .assembly extern mscorlib
 {
 }
-.assembly a
+.assembly 'b173313'
 {
   .custom instance void [mscorlib]System.Runtime.CompilerServices.CompilationRelaxationsAttribute::.ctor(int32) = ( 01 00 08 00 00 00 00 00 ) 
   .custom instance void [mscorlib]System.Runtime.CompilerServices.RuntimeCompatibilityAttribute::.ctor() = ( 01 00 01 00 54 02 16 57 72 61 70 4E 6F 6E 45 78   // ....T..WrapNonEx
@@ -18,7 +18,6 @@
   .ver 0:0:0:0
 }
 .assembly extern xunit.core {}
-.module a.exe
 // MVID: {36FD279A-AF08-423E-A45C-4915EAB873CD}
 .imagebase 0x00400000
 .file alignment 0x00000200
@@ -60,7 +59,7 @@
 
 } // end of class B
 
-.class private auto ansi beforefieldinit My
+.class public auto ansi beforefieldinit My
        extends B
 {
   .method private hidebysig static object 
@@ -85,7 +84,7 @@
     IL_001b:  ret
   } // end of method My::foo
 
-  .method private hidebysig static int32 Main() cil managed
+  .method public hidebysig static int32 Main() cil managed
   {
     .custom instance void [xunit.core]Xunit.FactAttribute::.ctor() = (
         01 00 00 00

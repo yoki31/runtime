@@ -2,6 +2,7 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 using System;
+using System.Diagnostics.CodeAnalysis;
 
 namespace Microsoft.Extensions.DependencyInjection.ServiceLookup
 {
@@ -11,7 +12,7 @@ namespace Microsoft.Extensions.DependencyInjection.ServiceLookup
 
         private RuntimeServiceProviderEngine() { }
 
-        public override Func<ServiceProviderEngineScope, object> RealizeService(ServiceCallSite callSite)
+        public override Func<ServiceProviderEngineScope, object?> RealizeService(ServiceCallSite callSite)
         {
             return scope =>
             {

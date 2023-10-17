@@ -102,9 +102,9 @@ STDAPI GetAssemblyMDInternalImportByStreamEx( // Return code.
 
 __success(SUCCEEDED(return))
 STDAPI GetNativeImageDescription(
-    __in_z LPCWSTR wzCustomString,                     // [IN] Custom string of the native image
+    _In_z_ LPCWSTR wzCustomString,                     // [IN] Custom string of the native image
     DWORD dwConfigMask,                         // [IN] Config mask of the native image
-    __out_ecount_part_opt(*pdwLength,*pdwLength) LPWSTR pwzZapInfo,// [OUT] The description string. Can be NULL to find the size of buffer to allocate
+    _Out_writes_to_opt_(*pdwLength,*pdwLength) LPWSTR pwzZapInfo,// [OUT] The description string. Can be NULL to find the size of buffer to allocate
     LPDWORD pdwLength);                         // [IN/OUT] Length of the pwzZapInfo buffer on IN.
                                                 //          Number of WCHARs (including termintating NULL) on OUT
 
@@ -283,9 +283,6 @@ typedef enum CorOpenFlagsInternal
 #endif
 
 // %%Classes: ----------------------------------------------------------------
-#ifndef lengthof
-#define lengthof(rg)    (sizeof(rg)/sizeof(rg[0]))
-#endif
 
 #define COR_MODULE_CLASS    "<Module>"
 #define COR_WMODULE_CLASS   W("<Module>")
@@ -337,17 +334,8 @@ typedef enum {
     // code relative address fixup
     srRelocCodeRelative,
 
-    // generate a .reloc for a 64 bit address in an ia64 movl instruction
-    srRelocIA64Imm64,
-
     // generate a .reloc for a 64 bit address
     srRelocDir64,
-
-    // generate a .reloc for a 25-bit PC relative address in an ia64 br.call instruction
-    srRelocIA64PcRel25,
-
-    // generate a .reloc for a 64-bit PC relative address in an ia64 brl.call instruction
-    srRelocIA64PcRel64,
 
     // generate a 30-bit section-relative reloc, used for tagged pointer values
     srRelocAbsoluteTagged,
@@ -369,7 +357,6 @@ typedef enum {
     srRelocAbsolutePtr = srRelocPtr + srRelocAbsolute,
     srRelocHighLowPtr = srRelocPtr + srRelocHighLow,
     srRelocRelativePtr = srRelocPtr + srRelocRelative,
-    srRelocIA64Imm64Ptr = srRelocPtr + srRelocIA64Imm64,
     srRelocDir64Ptr = srRelocPtr + srRelocDir64,
 
 } CeeSectionRelocType;
@@ -405,9 +392,6 @@ DECLARE_INTERFACE_(ICeeGenInternal, IUnknown)
     STDMETHOD(GetMethodBuffer) (
         ULONG RVA,                          // [IN] RVA for method to return
         UCHAR * *lpBuffer) PURE;             // [OUT] Returned buffer
-
-    STDMETHOD(GetIMapTokenIface) (
-        IUnknown * *pIMapToken) PURE;
 
     STDMETHOD(GenerateCeeFile) () PURE;
 

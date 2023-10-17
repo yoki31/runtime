@@ -5,10 +5,17 @@ using System;
 using System.Linq;
 using System.Text;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
 using Xunit;
 using TypeEquivalenceTypes;
+
+[TypeIdentifier("MyScope", "MyTypeId")]
+public struct EquivalentValueType
+{
+    public int A;
+}
 
 public class Simple
 {
@@ -214,7 +221,71 @@ public class Simple
         Assert.True(typeof(IGeneric<>).MakeGenericType(inAsmInterfaceType).IsEquivalentTo(typeof(IGeneric<>).MakeGenericType(otherAsmInterfaceType)));
     }
 
-    public static int Main(string[] noArgs)
+    private static unsafe void TestTypeEquivalenceWithTypePunning()
+    {
+        Console.WriteLine($"{nameof(TestTypeEquivalenceWithTypePunning)}");
+
+        {
+            Console.WriteLine($"-- GetFunctionPointer()");
+            IntPtr fptr = typeof(CreateFunctionPointer).GetMethod("For_1").MethodHandle.GetFunctionPointer();
+            Assert.NotEqual(IntPtr.Zero, fptr);
+            var s = new OnlyLoadOnce_1()
+            {
+                Field = 0x11
+            };
+            int res = ((delegate* <OnlyLoadOnce_1, int>)fptr)(s);
+            Assert.Equal(s.Field, res);
+        }
+        {
+            Console.WriteLine($"-- Ldftn");
+            IntPtr fptr = CreateFunctionPointer.For_2_Ldftn();
+            Assert.NotEqual(IntPtr.Zero, fptr);
+            var s = new OnlyLoadOnce_2()
+            {
+                Field = 0x22
+            };
+            int res = ((delegate* <OnlyLoadOnce_2, int>)fptr)(s);
+            Assert.Equal(s.Field, res);
+        }
+        {
+            Console.WriteLine($"-- Ldvirtftn");
+            IntPtr fptr = CreateFunctionPointer.For_3_Ldvirtftn(out object inst);
+            Assert.NotEqual(IntPtr.Zero, fptr);
+            var s = new OnlyLoadOnce_3()
+            {
+                Field = 0x33
+            };
+            int res = ((delegate* <object, OnlyLoadOnce_3, int>)fptr)(inst, s);
+            Assert.Equal(s.Field, res);
+        }
+    }
+
+    [MethodImpl (MethodImplOptions.NoInlining)]
+    private static void TestLoadingValueTypesWithMethod() 
+    {
+        Console.WriteLine($"{nameof(TestLoadingValueTypesWithMethod)}");
+        Console.WriteLine($"-- {typeof(ValueTypeWithStaticMethod).Name}");
+        Assert.Throws<TypeLoadException>(() => LoadInvalidType());
+    }
+
+    [MethodImpl (MethodImplOptions.NoInlining)]
+    private static void LoadInvalidType()
+    {
+        Console.WriteLine($"-- {typeof(ValueTypeWithInstanceMethod).Name}");
+    }
+
+    private static void TestCastsOptimizations()
+    {
+        string otherTypeName = $"{typeof(EquivalentValueType).FullName},{typeof(EmptyType).Assembly.GetName().Name}";
+        Type otherEquivalentValueType = Type.GetType(otherTypeName);
+
+        // ensure that an instance of otherEquivalentValueType can cast to EquivalentValueType
+        object otherEquivalentValueTypeInstance = Activator.CreateInstance(otherEquivalentValueType);
+        Assert.True(otherEquivalentValueTypeInstance is EquivalentValueType);
+        EquivalentValueType inst = (EquivalentValueType)otherEquivalentValueTypeInstance;
+    }
+
+    public static int Main()
     {
         if (!OperatingSystem.IsWindows())
         {
@@ -230,6 +301,9 @@ public class Simple
             TestArrayEquivalence();
             TestGenericClassNonEquivalence();
             TestGenericInterfaceEquivalence();
+            TestTypeEquivalenceWithTypePunning();
+            TestLoadingValueTypesWithMethod();
+            TestCastsOptimizations();
         }
         catch (Exception e)
         {

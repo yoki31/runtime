@@ -12,7 +12,6 @@
 {}
 .assembly extern xunit.core {}
 
-.module b124443_il.exe
 
 .class private auto ansi sealed TestDelegate
        extends [mscorlib]System.MulticastDelegate
@@ -42,7 +41,7 @@
 
 } // end of class TestDelegate
 
-.class private auto ansi beforefieldinit ArrayBounds
+.class public auto ansi beforefieldinit ArrayBounds
        extends [mscorlib]System.Object
 {
   .method public hidebysig static void  f1a() cil managed

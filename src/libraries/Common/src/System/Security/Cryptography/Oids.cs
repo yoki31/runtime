@@ -24,6 +24,9 @@ namespace System.Security.Cryptography
         internal const string RsaPkcs1Sha256 = "1.2.840.113549.1.1.11";
         internal const string RsaPkcs1Sha384 = "1.2.840.113549.1.1.12";
         internal const string RsaPkcs1Sha512 = "1.2.840.113549.1.1.13";
+        internal const string RsaPkcs1Sha3_256 = "2.16.840.1.101.3.4.3.14";
+        internal const string RsaPkcs1Sha3_384 = "2.16.840.1.101.3.4.3.15";
+        internal const string RsaPkcs1Sha3_512 = "2.16.840.1.101.3.4.3.16";
         internal const string Esdh = "1.2.840.113549.1.9.16.3.5";
         internal const string EcDiffieHellman = "1.3.132.1.12";
         internal const string DiffieHellman = "1.2.840.10046.2.1";
@@ -65,6 +68,9 @@ namespace System.Security.Cryptography
         internal const string Sha256 = "2.16.840.1.101.3.4.2.1";
         internal const string Sha384 = "2.16.840.1.101.3.4.2.2";
         internal const string Sha512 = "2.16.840.1.101.3.4.2.3";
+        internal const string Sha3_256 = "2.16.840.1.101.3.4.2.8";
+        internal const string Sha3_384 = "2.16.840.1.101.3.4.2.9";
+        internal const string Sha3_512 = "2.16.840.1.101.3.4.2.10";
 
         // DSA CMS uses the combined signature+digest OID
         internal const string DsaWithSha1 = "1.2.840.10040.4.3";
@@ -84,6 +90,10 @@ namespace System.Security.Cryptography
         internal const string ECDsaWithSha384 = "1.2.840.10045.4.3.3";
         internal const string ECDsaWithSha512 = "1.2.840.10045.4.3.4";
 
+        internal const string ECDsaWithSha3_256 = "2.16.840.1.101.3.4.3.10";
+        internal const string ECDsaWithSha3_384 = "2.16.840.1.101.3.4.3.11";
+        internal const string ECDsaWithSha3_512 = "2.16.840.1.101.3.4.3.12";
+
         internal const string Mgf1 = "1.2.840.113549.1.1.8";
         internal const string PSpecified = "1.2.840.113549.1.1.9";
 
@@ -92,6 +102,9 @@ namespace System.Security.Cryptography
 
         // X500 Names
         internal const string CommonName = "2.5.4.3";
+        internal const string CountryOrRegionName = "2.5.4.6";
+        internal const string LocalityName = "2.5.4.7";
+        internal const string StateOrProvinceName = "2.5.4.8";
         internal const string Organization = "2.5.4.10";
         internal const string OrganizationalUnit = "2.5.4.11";
         internal const string EmailAddress = "1.2.840.113549.1.9.1";
@@ -103,10 +116,13 @@ namespace System.Security.Cryptography
         internal const string SubjectAltName = "2.5.29.17";
         internal const string IssuerAltName = "2.5.29.18";
         internal const string BasicConstraints2 = "2.5.29.19";
+        internal const string CrlNumber = "2.5.29.20";
+        internal const string CrlReasons = "2.5.29.21";
         internal const string CrlDistributionPoints = "2.5.29.31";
         internal const string CertPolicies = "2.5.29.32";
         internal const string AnyCertPolicy = "2.5.29.32.0";
         internal const string CertPolicyMappings = "2.5.29.33";
+        internal const string AuthorityKeyIdentifier = "2.5.29.35";
         internal const string CertPolicyConstraints = "2.5.29.36";
         internal const string EnhancedKeyUsage = "2.5.29.37";
         internal const string InhibitAnyPolicyExtension = "2.5.29.54";
@@ -151,5 +167,8 @@ namespace System.Security.Cryptography
         internal const string secp256r1 = "1.2.840.10045.3.1.7";
         internal const string secp384r1 = "1.3.132.0.34";
         internal const string secp521r1 = "1.3.132.0.35";
+
+        // LDAP
+        internal const string DomainComponent = "0.9.2342.19200300.100.1.25";
     }
 }

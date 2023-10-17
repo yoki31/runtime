@@ -77,7 +77,7 @@ namespace Internal.IL
 
         public bool IsBoxedValueType
         {
-            get { return Kind == StackValueKind.ObjRef && Type.IsValueType; }
+            get { return Kind == StackValueKind.ObjRef && Type != null && Type.IsValueType; }
         }
 
         public StackValue DereferenceByRef()
@@ -611,7 +611,8 @@ namespace Internal.IL
             return FALSE;
 
         // Structures are compatible if they are equivalent
-        return jitInfo->areTypesEquivalent(child.m_cls, parent.m_cls);
+        // return jitInfo->areTypesEquivalent(child.m_cls, parent.m_cls);
+        return child.m_cls == parent.m_cls;
     }
     else if (parent.IsByRef())
     {

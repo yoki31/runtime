@@ -1,11 +1,6 @@
 ; Licensed to the .NET Foundation under one or more agreements.
 ; The .NET Foundation licenses this file to you under the MIT license.
 
-; ==++==
-;
-
-;
-; ==--==
 ;
 ; FILE: asmhelpers.asm
 ;
@@ -43,16 +38,12 @@ EXTERN _COMPlusFrameHandlerRevCom:PROC
 endif ; FEATURE_COMINTEROP
 EXTERN __alloca_probe:PROC
 EXTERN _NDirectImportWorker@4:PROC
-EXTERN _UMThunkStubRareDisableWorker@8:PROC
 
 EXTERN _VarargPInvokeStubWorker@12:PROC
 EXTERN _GenericPInvokeCalliStubWorker@12:PROC
 
-ifndef FEATURE_CORECLR
-EXTERN _CopyCtorCallStubWorker@4:PROC
-endif
-
 EXTERN _PreStubWorker@8:PROC
+EXTERN _TheUMEntryPrestubWorker@4:PROC
 
 ifdef FEATURE_COMINTEROP
 EXTERN _CLRToCOMWorker@8:PROC
@@ -244,7 +235,7 @@ _RestoreFPUContext@4 ENDP
 
 ; Register CLR exception handlers defined on the C++ side with SAFESEH.
 ; Note that these directives must be in a file that defines symbols that will be used during linking,
-; otherwise it's possible that the resulting .obj will completly be ignored by the linker and these
+; otherwise it's possible that the resulting .obj will completely be ignored by the linker and these
 ; directives will have no effect.
 COMPlusFrameHandler proto c
 .safeseh COMPlusFrameHandler
@@ -255,12 +246,13 @@ COMPlusNestedExceptionHandler proto c
 FastNExportExceptHandler proto c
 .safeseh FastNExportExceptHandler
 
-UMThunkPrestubHandler proto c
-.safeseh UMThunkPrestubHandler
-
 ifdef FEATURE_COMINTEROP
 COMPlusFrameHandlerRevCom proto c
 .safeseh COMPlusFrameHandlerRevCom
+endif
+
+ifdef HAS_ADDRESS_SANITIZER
+EXTERN ___asan_handle_no_return:PROC
 endif
 
 ; Note that RtlUnwind trashes EBX, ESI and EDI, so this wrapper preserves them
@@ -280,6 +272,10 @@ CallRtlUnwind PROC stdcall public USES ebx esi edi, pEstablisherFrame :DWORD, ca
 CallRtlUnwind ENDP
 
 _ResumeAtJitEHHelper@4 PROC public
+        ; Call ___asan_handle_no_return here as we are not going to return.
+ifdef HAS_ADDRESS_SANITIZER
+        call    ___asan_handle_no_return
+endif
         mov     edx, [esp+4]     ; edx = pContext (EHContext*)
 
         mov     ebx, [edx+EHContext_Ebx]
@@ -305,6 +301,10 @@ _ResumeAtJitEHHelper@4 ENDP
 ; int __stdcall CallJitEHFilterHelper(size_t *pShadowSP, EHContext *pContext);
 ;   on entry, only the pContext->Esp, Ebx, Esi, Edi, Ebp, and Eip are initialized
 _CallJitEHFilterHelper@8 PROC public
+        ; Call ___asan_handle_no_return here as we touch registers that ASAN uses.
+ifdef HAS_ADDRESS_SANITIZER
+        call    ___asan_handle_no_return
+endif
         push    ebp
         mov     ebp, esp
         push    ebx
@@ -346,6 +346,10 @@ _CallJitEHFilterHelper@8 ENDP
 ; void __stdcall CallJITEHFinallyHelper(size_t *pShadowSP, EHContext *pContext);
 ;   on entry, only the pContext->Esp, Ebx, Esi, Edi, Ebp, and Eip are initialized
 _CallJitEHFinallyHelper@8 PROC public
+        ; Call ___asan_handle_no_return here as we touch registers that ASAN uses.
+ifdef HAS_ADDRESS_SANITIZER
+        call    ___asan_handle_no_return
+endif
         push    ebp
         mov     ebp, esp
         push    ebx
@@ -388,91 +392,6 @@ endif
         pop     ebp ; don't use 'leave' here, as ebp as been trashed
         retn    8
 _CallJitEHFinallyHelper@8 ENDP
-
-
-_GetSpecificCpuTypeAsm@0 PROC public
-        push    ebx         ; ebx is trashed by the cpuid calls
-
-        ; See if the chip supports CPUID
-        pushfd
-        pop     ecx         ; Get the EFLAGS
-        mov     eax, ecx    ; Save for later testing
-        xor     ecx, 200000h ; Invert the ID bit.
-        push    ecx
-        popfd               ; Save the updated flags.
-        pushfd
-        pop     ecx         ; Retrieve the updated flags
-        xor     ecx, eax    ; Test if it actually changed (bit set means yes)
-        push    eax
-        popfd               ; Restore the flags
-
-        test    ecx, 200000h
-        jz      Assume486
-
-        xor     eax, eax
-        cpuid
-
-        test    eax, eax
-        jz      Assume486   ; brif CPUID1 not allowed
-
-        mov     eax, 1
-        cpuid
-
-        ; filter out everything except family and model
-        ; Note that some multi-procs have different stepping number for each proc
-        and     eax, 0ff0h
-
-        jmp     CpuTypeDone
-
-Assume486:
-        mov     eax, 0400h ; report 486
-CpuTypeDone:
-        pop     ebx
-        retn
-_GetSpecificCpuTypeAsm@0 ENDP
-
-; uint32_t __stdcall GetSpecificCpuFeaturesAsm(uint32_t *pInfo);
-_GetSpecificCpuFeaturesAsm@4 PROC public
-        push    ebx         ; ebx is trashed by the cpuid calls
-
-        ; See if the chip supports CPUID
-        pushfd
-        pop     ecx         ; Get the EFLAGS
-        mov     eax, ecx    ; Save for later testing
-        xor     ecx, 200000h ; Invert the ID bit.
-        push    ecx
-        popfd               ; Save the updated flags.
-        pushfd
-        pop     ecx         ; Retrieve the updated flags
-        xor     ecx, eax    ; Test if it actually changed (bit set means yes)
-        push    eax
-        popfd               ; Restore the flags
-
-        test    ecx, 200000h
-        jz      CpuFeaturesFail
-
-        xor     eax, eax
-        cpuid
-
-        test    eax, eax
-        jz      CpuFeaturesDone ; br if CPUID1 not allowed
-
-        mov     eax, 1
-        cpuid
-        mov     eax, edx        ; return all feature flags
-        mov     edx, [esp+8]
-        test    edx, edx
-        jz      CpuFeaturesDone
-        mov     [edx],ebx       ; return additional useful information
-        jmp     CpuFeaturesDone
-
-CpuFeaturesFail:
-        xor     eax, eax    ; Nothing to report
-CpuFeaturesDone:
-        pop     ebx
-        retn    4
-_GetSpecificCpuFeaturesAsm@4 ENDP
-
 
 ;-----------------------------------------------------------------------
 ; The out-of-line portion of the code to enable preemptive GC.
@@ -641,7 +560,7 @@ else
 FASTCALL_FUNC HelperMethodFrameRestoreState,4
     mov         eax, ecx        ; eax = MachState*
 endif
-    ; restore the registers from the m_MachState stucture.  Note that
+    ; restore the registers from the m_MachState structure.  Note that
     ; we only do this for register that where not saved on the stack
     ; at the time the machine state snapshot was taken.
 
@@ -811,27 +730,6 @@ _NDirectImportThunk@0 proc public
         jmp     eax     ; Jump to DLL target
 _NDirectImportThunk@0 endp
 
-;==========================================================================
-; The call in fixup precode initally points to this function.
-; The pupose of this function is to load the MethodDesc and forward the call the prestub.
-_PrecodeFixupThunk@0 proc public
-
-        pop     eax         ; Pop the return address. It points right after the call instruction in the precode.
-        push    esi
-        push    edi
-
-        ; Inline computation done by FixupPrecode::GetMethodDesc()
-        movzx   esi,byte ptr [eax+2]    ; m_PrecodeChunkIndex
-        movzx   edi,byte ptr [eax+1]    ; m_MethodDescChunkIndex
-        mov     eax,dword ptr [eax+esi*8+3]
-        lea     eax,[eax+edi*4]
-
-        pop     edi
-        pop     esi
-        jmp     _ThePreStub@0
-
-_PrecodeFixupThunk@0 endp
-
 ; void __stdcall setFPReturn(int fpSize, INT64 retVal)
 _setFPReturn@12 proc public
     mov     ecx, [esp+4]
@@ -871,23 +769,6 @@ getFPReturn4:
    fstp    dword ptr [eax]
    retn    8
 _getFPReturn@8 endp
-
-; VOID __cdecl UMThunkStubRareDisable()
-;<TODO>
-; @todo: this is very similar to StubRareDisable
-;</TODO>
-_UMThunkStubRareDisable proc public
-    push    eax
-    push    ecx
-
-    push    eax          ; Push the UMEntryThunk
-    push    ecx          ; Push thread
-    call    _UMThunkStubRareDisableWorker@8
-
-    pop     ecx
-    pop     eax
-    retn
-_UMThunkStubRareDisable endp
 
 
 ; void __stdcall JIT_ProfilerEnterLeaveTailcallStub(UINT_PTR ProfilerHandle)
@@ -1286,75 +1167,6 @@ FASTCALL_ENDFUNC
 
 endif ; FEATURE_COMINTEROP
 
-ifndef FEATURE_CORECLR
-
-;==========================================================================
-; This is small stub whose purpose is to record current stack pointer and
-; call CopyCtorCallStubWorker to invoke copy constructors and destructors
-; as appropriate. This stub operates on arguments already pushed to the
-; stack by JITted IL stub and must not create a new frame, i.e. it must tail
-; call to the target for it to see the arguments that copy ctors have been
-; called on.
-;
-_CopyCtorCallStub@0 proc public
-    ; there may be an argument in ecx - save it
-    push    ecx
-
-    ; push pointer to arguments
-    lea     edx, [esp + 8]
-    push    edx
-
-    call    _CopyCtorCallStubWorker@4
-
-    ; restore ecx and tail call to the target
-    pop     ecx
-    jmp     eax
-_CopyCtorCallStub@0 endp
-
-endif ; !FEATURE_CORECLR
-
-;==========================================================================
-_ExternalMethodFixupStub@0 proc public
-
-    pop     eax             ; pop off the return address to the stub
-                            ; leaving the actual caller's return address on top of the stack
-
-    STUB_PROLOG
-
-    mov         esi, esp
-
-    ; EAX is return address into CORCOMPILE_EXTERNAL_METHOD_THUNK. Subtract 5 to get start address.
-    sub         eax, 5
-
-    push        0
-    push        0
-
-    push        eax
-
-    ; pTransitionBlock
-    push        esi
-
-    call        _ExternalMethodFixupWorker@16
-
-    ; eax now contains replacement stub. PreStubWorker will never return
-    ; NULL (it throws an exception if stub creation fails.)
-
-    ; From here on, mustn't trash eax
-
-    STUB_EPILOG
-
-_ExternalMethodFixupPatchLabel@0:
-public _ExternalMethodFixupPatchLabel@0
-
-    ; Tailcall target
-    jmp eax
-
-    ; This will never be executed. It is just to help out stack-walking logic
-    ; which disassembles the epilog to unwind the stack.
-    ret
-
-_ExternalMethodFixupStub@0 endp
-
 ifdef FEATURE_READYTORUN
 ;==========================================================================
 _DelayLoad_MethodCall@0 proc public
@@ -1380,8 +1192,11 @@ _DelayLoad_MethodCall@0 proc public
 
     STUB_EPILOG
 
-    ; Share the patch label
-    jmp _ExternalMethodFixupPatchLabel@0
+_ExternalMethodFixupPatchLabel@0:
+public _ExternalMethodFixupPatchLabel@0
+
+    ; Tailcall target
+    jmp eax
 
     ; This will never be executed. It is just to help out stack-walking logic
     ; which disassembles the epilog to unwind the stack.
@@ -1431,6 +1246,22 @@ _ThePreStubPatchLabel@0:
 public _ThePreStubPatchLabel@0
     ret
 _ThePreStubPatch@0 endp
+
+_TheUMEntryPrestub@0 proc public
+    ; push argument registers
+    push        ecx
+    push        edx
+
+    push    eax     ; UMEntryThunk*
+    call    _TheUMEntryPrestubWorker@4
+
+    ; pop argument registers
+    pop         edx
+    pop         ecx
+
+    ; eax = PCODE
+    jmp     eax     ; Tail Jmp
+_TheUMEntryPrestub@0 endp
 
 ifdef FEATURE_COMINTEROP
 ;==========================================================================
@@ -1599,12 +1430,6 @@ ifdef FEATURE_TIERED_COMPILATION
 EXTERN _OnCallCountThresholdReached@8:proc
 
 _OnCallCountThresholdReachedStub@0 proc public
-    ; Pop the return address (the stub-identifying token) into a non-argument volatile register that can be trashed
-    pop     eax
-    jmp     _OnCallCountThresholdReachedStub2@0
-_OnCallCountThresholdReachedStub@0 endp
-
-_OnCallCountThresholdReachedStub2@0 proc public
     STUB_PROLOG
 
     mov     esi, esp
@@ -1619,7 +1444,7 @@ _OnCallCountThresholdReachedStub2@0 proc public
     ; This will never be executed. It is just to help out stack-walking logic
     ; which disassembles the epilog to unwind the stack.
     ret
-_OnCallCountThresholdReachedStub2@0 endp
+_OnCallCountThresholdReachedStub@0 endp
 
 endif ; FEATURE_TIERED_COMPILATION
 

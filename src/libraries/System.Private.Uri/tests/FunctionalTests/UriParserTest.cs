@@ -78,6 +78,21 @@ namespace System.PrivateUri.Tests
         private const string Prefix = "unit.test.";
 
         [Fact]
+        public static void AnyValidPort_CanBeRegistered()
+        {
+            for (int i = -1; i <= 65535; i++)
+            {
+                string scheme = $"custom-port-scheme-{i:X2}";
+                UriParser.Register(new HttpStyleUriParser(), scheme, defaultPort: i);
+                var uri = new Uri($"{scheme}://host/path");
+                Assert.Equal(i, uri.Port);
+            }
+
+            Assert.Throws<ArgumentOutOfRangeException>(() => UriParser.Register(new HttpStyleUriParser(), "invalid-port", -2));
+            Assert.Throws<ArgumentOutOfRangeException>(() => UriParser.Register(new HttpStyleUriParser(), "invalid-port", 65536));
+        }
+
+        [Fact]
         public static void GetComponents_test()
         {
             Uri http = new Uri(FullHttpUri);
@@ -257,10 +272,9 @@ namespace System.PrivateUri.Tests
             Assert.False(parser.IsBaseOf(u, http), "http-4a");
             Assert.True(parser.IsBaseOf(http, u), "http-4b");
 
-            // docs says the UserInfo isn't evaluated, but...
             u = new Uri("http://username:password@www.mono-project.com/Main_Page");
-            Assert.False(parser.IsBaseOf(u, http), "http-5a");
-            Assert.False(parser.IsBaseOf(http, u), "http-5b");
+            Assert.True(parser.IsBaseOf(u, http), "http-5a");
+            Assert.True(parser.IsBaseOf(http, u), "http-5b");
 
             // scheme case sensitive ? no
             u = new Uri("HTTP://www.mono-project.com/Main_Page");
@@ -442,34 +456,6 @@ namespace System.PrivateUri.Tests
         {
             TestUriParser parser = new TestUriParser();
             Assert.Throws<ArgumentNullException>(() => UriParser.Register(parser, null, 2006));
-        }
-
-        [Fact]
-        public static void Register_NegativePort()
-        {
-            TestUriParser parser = new TestUriParser();
-            Assert.Throws<ArgumentOutOfRangeException>(() => UriParser.Register(parser, Prefix + "negative.port", -2));
-        }
-
-        [Fact]
-        public static void Register_Minus1Port()
-        {
-            TestUriParser parser = new TestUriParser();
-            UriParser.Register(parser, Prefix + "minus1.port", -1);
-        }
-
-        [Fact]
-        public static void Register_UInt16PortMinus1()
-        {
-            TestUriParser parser = new TestUriParser();
-            UriParser.Register(parser, Prefix + "uint16.minus.1.port", ushort.MaxValue - 1);
-        }
-
-        [Fact]
-        public static void Register_TooBigPort()
-        {
-            TestUriParser parser = new TestUriParser();
-            Assert.Throws<ArgumentOutOfRangeException>(() => UriParser.Register(parser, Prefix + "too.big.port", ushort.MaxValue));
         }
 
         [Fact]

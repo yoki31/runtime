@@ -56,7 +56,7 @@ namespace
                 pfwalk->m_sequence = (ULONG)-1;
 
                 // Treat base class as an initial member.
-                if (!SafeAddUINT32(&(pfwalk->m_placement.m_offset), cbAdjustedParentLayoutNativeSize))
+                if (!ClrSafeInt<UINT32>::addition(pfwalk->m_placement.m_offset, cbAdjustedParentLayoutNativeSize, pfwalk->m_placement.m_offset))
                     COMPlusThrowOM();
             }
         }
@@ -148,7 +148,7 @@ namespace
             LayoutRawFieldInfo* pfwalk = *pSortWalk;
             RawFieldPlacementInfo* placementInfo = &pfwalk->m_placement;
 
-            BYTE alignmentRequirement = placementInfo->m_alignment;
+            BYTE alignmentRequirement = (BYTE)placementInfo->m_alignment;
 
             alignmentRequirement = min(alignmentRequirement, packingSize);
 
@@ -162,6 +162,7 @@ namespace
             case 8:
             case 16:
             case 32:
+            case 64:
                 break;
             default:
                 COMPlusThrowHR(COR_E_INVALIDPROGRAM, BFA_METADATA_CORRUPT);
@@ -172,7 +173,7 @@ namespace
                 // Insert enough padding to align the current data member.
                 while (cbCurOffset % alignmentRequirement)
                 {
-                    if (!SafeAddUINT32(&cbCurOffset, 1))
+                    if (!ClrSafeInt<UINT32>::addition(cbCurOffset, 1, cbCurOffset))
                         COMPlusThrowOM();
                 }
 
@@ -192,11 +193,11 @@ namespace
 
         if (classSizeInMetadata != 0)
         {
-            ULONG classSize = classSizeInMetadata;
-            if (!SafeAddULONG(&classSize, (ULONG)parentSize))
+            ULONG classSize;
+            if (!ClrSafeInt<ULONG>::addition(classSizeInMetadata, (ULONG)parentSize, classSize))
                 COMPlusThrowOM();
 
-            // size must be large enough to accomodate layout. If not, we use the layout size instead.
+            // size must be large enough to accommodate layout. If not, we use the layout size instead.
             calcTotalSize = max(classSize, calcTotalSize);
         }
         else
@@ -207,7 +208,7 @@ namespace
 
             if (calcTotalSize % LargestAlignmentRequirement != 0)
             {
-                if (!SafeAddUINT32(&calcTotalSize, LargestAlignmentRequirement - (calcTotalSize % LargestAlignmentRequirement)))
+                if (!ClrSafeInt<uint32_t>::addition(calcTotalSize, LargestAlignmentRequirement - (calcTotalSize % LargestAlignmentRequirement), calcTotalSize))
                     COMPlusThrowOM();
             }
         }
@@ -226,23 +227,18 @@ namespace
         *pLargestAlignmentRequirementOut = LargestAlignmentRequirement;
     }
 
-    //=======================================================================
-    // This function returns TRUE if the provided corElemType disqualifies
-    // the structure from being a managed-sequential structure.
-    // The fsig parameter is used when the corElemType doesn't contain enough information
-    // to successfully determine if this field disqualifies the type from being
-    // managed-sequential.
-    // This function also fills in the pManagedPlacementInfo structure for this field.
-    //=======================================================================
-    BOOL CheckIfDisqualifiedFromManagedSequential(CorElementType corElemType, MetaSig& fsig, RawFieldPlacementInfo* pManagedPlacementInfo)
+    RawFieldPlacementInfo GetFieldPlacementInfo(CorElementType corElemType, TypeHandle pNestedType)
     {
-        pManagedPlacementInfo->m_alignment = TARGET_POINTER_SIZE;
-        pManagedPlacementInfo->m_size = TARGET_POINTER_SIZE;
+        RawFieldPlacementInfo placementInfo;
+        // Initialize offset to a dummy value as we set it to the correct value later.
+        placementInfo.m_offset = (UINT32)-1;
+        placementInfo.m_size = TARGET_POINTER_SIZE;
+        placementInfo.m_alignment = TARGET_POINTER_SIZE;
         // This type may qualify for ManagedSequential. Collect managed size and alignment info.
         if (CorTypeInfo::IsPrimitiveType(corElemType))
         {
             // Safe cast - no primitive type is larger than 4gb!
-            pManagedPlacementInfo->m_size = ((UINT32)CorTypeInfo::Size(corElemType));
+            placementInfo.m_size = ((UINT32)CorTypeInfo::Size(corElemType));
 #if defined(TARGET_X86) && defined(UNIX_X86_ABI)
             switch (corElemType)
             {
@@ -251,51 +247,96 @@ namespace
             case ELEMENT_TYPE_U8:
             case ELEMENT_TYPE_R8:
             {
-                pManagedPlacementInfo->m_alignment = 4;
+                placementInfo.m_alignment = 4;
                 break;
             }
 
             default:
             {
-                pManagedPlacementInfo->m_alignment = pManagedPlacementInfo->m_size;
+                placementInfo.m_alignment = placementInfo.m_size;
                 break;
             }
             }
 #else // TARGET_X86 && UNIX_X86_ABI
-            pManagedPlacementInfo->m_alignment = pManagedPlacementInfo->m_size;
+            placementInfo.m_alignment = placementInfo.m_size;
 #endif
-
-            return FALSE;
         }
-        else if (corElemType == ELEMENT_TYPE_PTR)
+        else if (corElemType == ELEMENT_TYPE_PTR || corElemType == ELEMENT_TYPE_FNPTR)
         {
-            pManagedPlacementInfo->m_size = TARGET_POINTER_SIZE;
-            pManagedPlacementInfo->m_alignment = TARGET_POINTER_SIZE;
-
-            return FALSE;
+            placementInfo.m_size = TARGET_POINTER_SIZE;
+            placementInfo.m_alignment = TARGET_POINTER_SIZE;
         }
         else if (corElemType == ELEMENT_TYPE_VALUETYPE)
         {
-            TypeHandle pNestedType = fsig.GetLastTypeHandleThrowing(ClassLoader::LoadTypes,
-                CLASS_LOAD_APPROXPARENTS,
-                TRUE);
+            _ASSERTE(!pNestedType.IsNull());
 
-            pManagedPlacementInfo->m_size = (pNestedType.GetMethodTable()->GetNumInstanceFieldBytes());
+            placementInfo.m_size = (pNestedType.GetMethodTable()->GetNumInstanceFieldBytes());
 
-            if (pNestedType.GetMethodTable()->HasLayout())
+#if !defined(TARGET_64BIT) && (DATA_ALIGNMENT > 4)
+            if (placementInfo.m_size >= DATA_ALIGNMENT)
             {
-                pManagedPlacementInfo->m_alignment = pNestedType.GetMethodTable()->GetLayoutInfo()->m_ManagedLargestAlignmentRequirementOfAllMembers;
+                placementInfo.m_alignment = DATA_ALIGNMENT;
+            }
+            else
+#elif defined(FEATURE_64BIT_ALIGNMENT)
+            if (pNestedType.RequiresAlign8())
+            {
+                placementInfo.m_alignment = 8;
+            }
+            else
+#endif // FEATURE_64BIT_ALIGNMENT
+            if (pNestedType.GetMethodTable()->ContainsPointers())
+            {
+                // this field type has GC pointers in it, which need to be pointer-size aligned
+                placementInfo.m_alignment = TARGET_POINTER_SIZE;
             }
             else
             {
-                pManagedPlacementInfo->m_alignment = TARGET_POINTER_SIZE;
+                placementInfo.m_alignment = pNestedType.GetMethodTable()->GetFieldAlignmentRequirement();
             }
-
-            return !pNestedType.GetMethodTable()->IsManagedSequential();
         }
 
         // No other type permitted for ManagedSequential.
+        return placementInfo;
+    }
+
+    BOOL TypeHasGCPointers(CorElementType corElemType, TypeHandle pNestedType)
+    {
+        if (CorTypeInfo::IsPrimitiveType(corElemType) || corElemType == ELEMENT_TYPE_PTR || corElemType == ELEMENT_TYPE_FNPTR ||
+            corElemType == ELEMENT_TYPE_BYREF)
+        {
+            return FALSE;
+        }
+        if (corElemType == ELEMENT_TYPE_VALUETYPE)
+        {
+            _ASSERTE(!pNestedType.IsNull());
+            return pNestedType.GetMethodTable()->ContainsPointers() != FALSE;
+        }
         return TRUE;
+    }
+
+    BOOL TypeHasAutoLayoutField(CorElementType corElemType, TypeHandle pNestedType)
+    {
+        if (CorTypeInfo::IsPrimitiveType(corElemType) || corElemType == ELEMENT_TYPE_PTR || corElemType == ELEMENT_TYPE_FNPTR)
+        {
+            return FALSE;
+        }
+        if (corElemType == ELEMENT_TYPE_VALUETYPE)
+        {
+            _ASSERTE(!pNestedType.IsNull());
+            return pNestedType.IsEnum() || pNestedType.GetMethodTable()->IsAutoLayoutOrHasAutoLayoutField();
+        }
+        return FALSE;
+    }
+
+    BOOL TypeHasInt128Field(CorElementType corElemType, TypeHandle pNestedType)
+    {
+        if (corElemType == ELEMENT_TYPE_VALUETYPE)
+        {
+            _ASSERTE(!pNestedType.IsNull());
+            return pNestedType.GetMethodTable()->IsInt128OrHasInt128Fields();
+        }
+        return FALSE;
     }
 
 #ifdef UNIX_AMD64_ABI
@@ -420,9 +461,12 @@ namespace
         IMDInternalImport* pInternalImport,
         HENUMInternal* phEnumField,
         Module* pModule,
+        mdTypeDef cl,
         ParseNativeTypeFlags nativeTypeFlags,
         const SigTypeContext* pTypeContext,
         BOOL* fDisqualifyFromManagedSequential,
+        BOOL* fHasAutoLayoutField,
+        BOOL* fHasInt128Field,
         LayoutRawFieldInfo* pFieldInfoArrayOut,
         BOOL* pIsBlittableOut,
         ULONG* cInstanceFields
@@ -434,6 +478,8 @@ namespace
     #endif
     )
     {
+        STANDARD_VM_CONTRACT;
+
         HRESULT hr;
         mdFieldDef fd;
         ULONG maxRid = pInternalImport->GetCountWithTokenKind(mdtFieldDef);
@@ -490,10 +536,45 @@ namespace
                 }
     #endif
                 MetaSig fsig(pCOMSignature, cbCOMSignature, pModule, pTypeContext, MetaSig::sigField);
-                CorElementType corElemType = fsig.NextArgNormalized();
-                *fDisqualifyFromManagedSequential |= CheckIfDisqualifiedFromManagedSequential(corElemType, fsig, &pFieldInfoArrayOut->m_placement);
+                CorElementType corElemType = fsig.NextArg();
 
-                if (!IsFieldBlittable(pModule, fd, fsig.GetArgProps(), pTypeContext, nativeTypeFlags))
+                TypeHandle typeHandleMaybe;
+                if (corElemType == ELEMENT_TYPE_VALUETYPE) // Only look up the next element in the signature if it is a value type to avoid causing recursive type loads in valid scenarios.
+                {
+                    SigPointer::HandleRecursiveGenericsForFieldLayoutLoad recursiveControl;
+                    recursiveControl.pModuleWithTokenToAvoidIfPossible = pModule;
+                    recursiveControl.tkTypeDefToAvoidIfPossible = cl;
+                    typeHandleMaybe = fsig.GetArgProps().GetTypeHandleThrowing(pModule,
+                                                                             pTypeContext,
+                                                                             ClassLoader::LoadTypes,
+                                                                             CLASS_LOAD_APPROXPARENTS,
+                                                                             TRUE, NULL, NULL, NULL, 
+                                                                             &recursiveControl);
+
+                    if (typeHandleMaybe.IsNull())
+                    {
+                        // Everett C++ compiler can generate a TypeRef with RS=0
+                        // without respective TypeDef for unmanaged valuetypes,
+                        // referenced only by pointers to them.
+                        // In such case, GetTypeHandleThrowing returns null handle,
+                        // and we return E_T_VOID
+                        typeHandleMaybe = TypeHandle(CoreLibBinder::GetElementType(ELEMENT_TYPE_VOID));
+                    }
+                    corElemType = typeHandleMaybe.AsMethodTable()->GetInternalCorElementType();
+                    if (corElemType != ELEMENT_TYPE_VALUETYPE)
+                        typeHandleMaybe = TypeHandle();
+                }
+                else if (corElemType == ELEMENT_TYPE_TYPEDBYREF)
+                {
+                    typeHandleMaybe = TypeHandle(g_TypedReferenceMT);
+                }
+
+                pFieldInfoArrayOut->m_placement = GetFieldPlacementInfo(corElemType, typeHandleMaybe);
+                *fDisqualifyFromManagedSequential |= TypeHasGCPointers(corElemType, typeHandleMaybe);
+                *fHasAutoLayoutField |= TypeHasAutoLayoutField(corElemType, typeHandleMaybe);
+                *fHasInt128Field |= TypeHasInt128Field(corElemType, typeHandleMaybe);
+
+                if (!IsFieldBlittable(pModule, fd, corElemType, typeHandleMaybe, nativeTypeFlags))
                     *pIsBlittableOut = FALSE;
 
                 (*cInstanceFields)++;
@@ -581,14 +662,16 @@ VOID EEClassLayoutInfo::CollectLayoutFieldMetadataThrowing(
         CONSISTENCY_CHECK_MSGF(false, ("BreakOnStructMarshalSetup: '%s' ", szName));
 #endif
 
-    // Running tote - if anything in this type disqualifies it from being ManagedSequential, somebody will set this to TRUE by the the time
+    // Running tote - if anything in this type disqualifies it from being ManagedSequential, somebody will set this to TRUE by the time
     // function exits.
     BOOL fDisqualifyFromManagedSequential;
+    BOOL hasAutoLayoutField = FALSE;
+    BOOL hasInt128Field = FALSE;
 
     // Check if this type might be ManagedSequential. Only valuetypes marked Sequential can be
     // ManagedSequential. Other issues checked below might also disqualify the type.
     if ( (!fExplicitOffsets) &&    // Is it marked sequential?
-         (pParentMT && (pParentMT->IsValueTypeClass() || pParentMT->IsManagedSequential()))  // Is it a valuetype or derived from a qualifying valuetype?
+         (pParentMT && (pParentMT->IsObjectClass() || pParentMT->IsValueTypeClass() || pParentMT->IsManagedSequential()))  // Is it a valuetype or derived from a qualifying valuetype?
        )
     {
         fDisqualifyFromManagedSequential = FALSE;
@@ -596,6 +679,14 @@ VOID EEClassLayoutInfo::CollectLayoutFieldMetadataThrowing(
     else
     {
         fDisqualifyFromManagedSequential = TRUE;
+    }
+
+    if (pParentMT && !pParentMT->IsValueTypeClass())
+    {
+        if (pParentMT->IsAutoLayoutOrHasAutoLayoutField())
+            hasAutoLayoutField = TRUE;
+        if (pParentMT->IsInt128OrHasInt128Fields())
+            hasInt128Field = TRUE;
     }
 
 
@@ -642,9 +733,12 @@ VOID EEClassLayoutInfo::CollectLayoutFieldMetadataThrowing(
         pInternalImport,
         phEnumField,
         pModule,
+        cl,
         nativeTypeFlags,
         pTypeContext,
         &fDisqualifyFromManagedSequential,
+        &hasAutoLayoutField,
+        &hasInt128Field,
         pInfoArrayOut,
         &isBlittable,
         &cInstanceFields
@@ -656,6 +750,10 @@ VOID EEClassLayoutInfo::CollectLayoutFieldMetadataThrowing(
     // Type is blittable only if parent is also blittable
     isBlittable = isBlittable && (fHasNonTrivialParent ? pParentMT->IsBlittable() : TRUE);
     pEEClassLayoutInfoOut->SetIsBlittable(isBlittable);
+
+    pEEClassLayoutInfoOut->SetHasAutoLayoutField(hasAutoLayoutField);
+
+    pEEClassLayoutInfoOut->SetIsInt128OrHasInt128Fields(hasInt128Field);
 
     S_UINT32 cbSortArraySize = S_UINT32(cTotalFields) * S_UINT32(sizeof(LayoutRawFieldInfo*));
     if (cbSortArraySize.IsOverflow())
@@ -869,6 +967,31 @@ EEClassNativeLayoutInfo* EEClassNativeLayoutInfo::CollectNativeLayoutFieldMetada
 
         CONSISTENCY_CHECK(hr == S_OK);
     }
+    else if (pMT->GetClass()->IsInlineArray())
+    {
+        // If the type is an inline array, we need to calculate the size based on the number of elements.
+        const void* pVal;                  // The custom value.
+        ULONG       cbVal;                 // Size of the custom value.
+        HRESULT hr = pMT->GetCustomAttribute(
+            WellKnownAttribute::InlineArrayAttribute,
+            &pVal, &cbVal);
+
+        if (hr != S_FALSE)
+        {
+            // Validity of the InlineArray attribute is checked at type-load time,
+            // so we only assert here as we should have already checked this and failed
+            // type load if this condition is false.
+            _ASSERTE(cbVal >= (sizeof(INT32) + 2));
+            if (cbVal >= (sizeof(INT32) + 2))
+            {
+                INT32 repeat = GET_UNALIGNED_VAL32((byte*)pVal + 2);
+                if (repeat > 0)
+                {
+                    classSizeInMetadata = repeat * pInfoArray[0].m_nfd.NativeSize();
+                }
+            }
+        }
+    }
 
     BYTE parentAlignmentRequirement = 0;
     if (fParentHasLayout)
@@ -907,9 +1030,12 @@ EEClassNativeLayoutInfo* EEClassNativeLayoutInfo::CollectNativeLayoutFieldMetada
             pNativeLayoutInfo->m_alignmentRequirement = pEEClassLayoutInfo->m_ManagedLargestAlignmentRequirementOfAllMembers;
         }
         else
-        if (pMT->HasSameTypeDefAs(CoreLibBinder::GetClass(CLASS__VECTOR64T)) ||
+        if (pMT->HasSameTypeDefAs(CoreLibBinder::GetClass(CLASS__INT128)) ||
+            pMT->HasSameTypeDefAs(CoreLibBinder::GetClass(CLASS__UINT128)) ||
+            pMT->HasSameTypeDefAs(CoreLibBinder::GetClass(CLASS__VECTOR64T)) ||
             pMT->HasSameTypeDefAs(CoreLibBinder::GetClass(CLASS__VECTOR128T)) ||
-            pMT->HasSameTypeDefAs(CoreLibBinder::GetClass(CLASS__VECTOR256T)))
+            pMT->HasSameTypeDefAs(CoreLibBinder::GetClass(CLASS__VECTOR256T)) ||
+            pMT->HasSameTypeDefAs(CoreLibBinder::GetClass(CLASS__VECTOR512T)))
         {
             pNativeLayoutInfo->m_alignmentRequirement = pEEClassLayoutInfo->m_ManagedLargestAlignmentRequirementOfAllMembers;
         }
@@ -960,7 +1086,7 @@ EEClassNativeLayoutInfo* EEClassNativeLayoutInfo::CollectNativeLayoutFieldMetada
         {
             for (UINT i = 0; i < cInstanceFields; i++)
             {
-                _ASSERTE(pNativeFieldDescriptors[i].GetExternalOffset() == pNativeFieldDescriptors[i].GetFieldDesc()->GetOffset_NoLogging());
+                _ASSERTE(pNativeFieldDescriptors[i].GetExternalOffset() == pNativeFieldDescriptors[i].GetFieldDesc()->GetOffset());
                 _ASSERTE(pNativeFieldDescriptors[i].NativeSize() == pNativeFieldDescriptors[i].GetFieldDesc()->GetSize());
             }
             _ASSERTE(pNativeLayoutInfo->GetSize() == pEEClassLayoutInfo->GetManagedSize());

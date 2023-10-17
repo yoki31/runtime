@@ -3,7 +3,7 @@
 
 using System.Diagnostics;
 using System;
-
+//keep the same line number for class in the original file and the updates ones
 namespace ApplyUpdateReferencedAssembly
 {
     public class MethodBody1 {
@@ -38,4 +38,78 @@ namespace ApplyUpdateReferencedAssembly
         public static void StaticMethod4 () {
         }
     }
+// DO NOT CHANGE
+// DO NOT CHANGE
+// DO NOT CHANGE
+// DO NOT CHANGE
+// DO NOT CHANGE
+// DO NOT CHANGE
+    public class MethodBody5 {
+        public static void StaticMethod1 () {
+            Console.WriteLine("breakpoint in a line that will not be changed");
+            Console.WriteLine("original");
+        }
+    }
+
+    public class MethodBody6 {
+        public static void StaticMethod1 () {
+            Console.WriteLine("breakpoint in a line that will not be changed");
+            Console.WriteLine("original");
+        }
+    }
+// DO NOT CHANGE
+// DO NOT CHANGE
+// DO NOT CHANGE
+// DO NOT CHANGE
+// DO NOT CHANGE
+// DO NOT CHANGE
+// DO NOT CHANGE
+// DO NOT CHANGE
+// DO NOT CHANGE
+// DO NOT CHANGE
+// DO NOT CHANGE
+// DO NOT CHANGE
+// DO NOT CHANGE
+// DO NOT CHANGE
+// DO NOT CHANGE
+// DO NOT CHANGE
+// DO NOT CHANGE
+// DO NOT CHANGE
+// DO NOT CHANGE
+// DO NOT CHANGE
+// DO NOT CHANGE
+// DO NOT CHANGE
+// DO NOT CHANGE
+// DO NOT CHANGE
+// DO NOT CHANGE
+// DO NOT CHANGE
+// DO NOT CHANGE
+// DO NOT CHANGE
+// DO NOT CHANGE
+// DO NOT CHANGE
+// DO NOT CHANGE
+// DO NOT CHANGE
+// DO NOT CHANGE
+// DO NOT CHANGE
+// DO NOT CHANGE
+// DO NOT CHANGE
+// DO NOT CHANGE
+// DO NOT CHANGE
+// DO NOT CHANGE
+// DO NOT CHANGE
+// DO NOT CHANGE
+// DO NOT CHANGE
+// DO NOT CHANGE
+// DO NOT CHANGE
+// DO NOT CHANGE
+// DO NOT CHANGE
+    // public class MethodBody9 {
+    //     public static int M1(int a, int b) {
+    //         return a + b;
+    //     }
+        
+    //     public static int test() {
+    //         return M1(1, 2);
+    //     }
+    // }
 }

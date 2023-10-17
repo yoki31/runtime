@@ -4,18 +4,28 @@
 using System.Diagnostics;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Diagnostics.CodeAnalysis;
 using Microsoft.Win32.SafeHandles;
 
+#pragma warning disable IDE0060
+
 namespace System.Threading
 {
-    [UnsupportedOSPlatform("browser")]
+#if FEATURE_WASM_THREADS
+#error when compiled with FEATURE_WASM_THREADS, we use PortableThreadPool.WorkerThread.Browser.Threads.Mono.cs
+#endif
+    [System.Runtime.Versioning.UnsupportedOSPlatformAttribute("browser")]
     public sealed class RegisteredWaitHandle : MarshalByRefObject
     {
         internal RegisteredWaitHandle()
         {
         }
+
+#pragma warning disable CA1822 // Mark members as static
+        internal bool Repeating => false;
+#pragma warning restore CA1822
 
         public bool Unregister(WaitHandle? waitObject)
         {
@@ -25,12 +35,9 @@ namespace System.Threading
 
     public static partial class ThreadPool
     {
-        // Time-sensitive work items are those that may need to run ahead of normal work items at least periodically. For a
-        // runtime that does not support time-sensitive work items on the managed side, the thread pool yields the thread to the
-        // runtime periodically (by exiting the dispatch loop) so that the runtime may use that thread for processing
-        // any time-sensitive work. For a runtime that supports time-sensitive work items on the managed side, the thread pool
-        // does not yield the thread and instead processes time-sensitive work items queued by specific APIs periodically.
-        internal const bool SupportsTimeSensitiveWorkItems = false; // the timer currently doesn't queue time-sensitive work
+        // Indicates whether the thread pool should yield the thread from the dispatch loop to the runtime periodically so that
+        // the runtime may use the thread for processing other work
+        internal static bool YieldFromDispatchLoop => true;
 
         private const bool IsWorkerTrackingEnabledInConfig = false;
 
@@ -72,22 +79,16 @@ namespace System.Threading
 
         public static long CompletedWorkItemCount => 0;
 
-        internal static void RequestWorkerThread()
+        internal static unsafe void RequestWorkerThread()
         {
             if (_callbackQueued)
                 return;
             _callbackQueued = true;
-            QueueCallback();
+            MainThreadScheduleBackgroundJob((void*)(delegate* unmanaged[Cdecl]<void>)&BackgroundJobHandler);
         }
 
         internal static void NotifyWorkItemProgress()
         {
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static bool NotifyWorkItemComplete(object? threadLocalCompletionCountObject, int currentTimeMs)
-        {
-            return true;
         }
 
         internal static bool NotifyThreadBlocked() => false;
@@ -97,6 +98,11 @@ namespace System.Threading
         }
 
         internal static object? GetOrCreateThreadLocalCompletionCountObject() => null;
+
+        internal static bool NotifyWorkItemComplete(object? threadLocalCompletionCountObject, int currentTimeMs)
+        {
+            return true;
+        }
 
         private static RegisteredWaitHandle RegisterWaitForSingleObject(
              WaitHandle? waitObject,
@@ -109,14 +115,61 @@ namespace System.Threading
             throw new PlatformNotSupportedException();
         }
 
-        [DynamicDependency("Callback")]
         [MethodImplAttribute(MethodImplOptions.InternalCall)]
-        private static extern void QueueCallback();
+        internal static extern unsafe void MainThreadScheduleBackgroundJob(void* callback);
 
-        private static void Callback()
+#pragma warning disable CS3016 // Arrays as attribute arguments is not CLS-compliant
+        [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
+#pragma warning restore CS3016
+        // this callback will arrive on the bound thread, called from mono_background_exec
+        private static void BackgroundJobHandler ()
         {
-            _callbackQueued = false;
-            ThreadPoolWorkQueue.Dispatch();
+            try
+            {
+                _callbackQueued = false;
+                ThreadPoolWorkQueue.Dispatch();
+            }
+            catch (Exception e)
+            {
+                Environment.FailFast("ThreadPool.BackgroundJobHandler failed", e);
+            }
+        }
+
+        private static unsafe void NativeOverlappedCallback(nint overlappedPtr) =>
+            IOCompletionCallbackHelper.PerformSingleIOCompletionCallback(0, 0, (NativeOverlapped*)overlappedPtr);
+
+        [CLSCompliant(false)]
+        [SupportedOSPlatform("windows")]
+        public static unsafe bool UnsafeQueueNativeOverlapped(NativeOverlapped* overlapped)
+        {
+            if (overlapped == null)
+            {
+                ThrowHelper.ThrowArgumentNullException(ExceptionArgument.overlapped);
+            }
+
+            // OS doesn't signal handle, so do it here
+            overlapped->InternalLow = (IntPtr)0;
+            // Both types of callbacks are executed on the same thread pool
+            return UnsafeQueueUserWorkItem(NativeOverlappedCallback, (nint)overlapped, preferLocal: false);
+        }
+
+        [Obsolete("ThreadPool.BindHandle(IntPtr) has been deprecated. Use ThreadPool.BindHandle(SafeHandle) instead.")]
+        [SupportedOSPlatform("windows")]
+        public static bool BindHandle(IntPtr osHandle)
+        {
+            throw new PlatformNotSupportedException(SR.Arg_PlatformNotSupported); // Replaced by ThreadPoolBoundHandle.BindHandle
+        }
+
+        [SupportedOSPlatform("windows")]
+        public static bool BindHandle(SafeHandle osHandle)
+        {
+            throw new PlatformNotSupportedException(SR.Arg_PlatformNotSupported); // Replaced by ThreadPoolBoundHandle.BindHandle
+        }
+
+        [Conditional("unnecessary")]
+        internal static void ReportThreadStatus(bool isWorking)
+        {
+
         }
     }
 }

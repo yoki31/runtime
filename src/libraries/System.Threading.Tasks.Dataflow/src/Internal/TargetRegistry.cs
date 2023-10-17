@@ -20,7 +20,7 @@ namespace System.Threading.Tasks.Dataflow.Internal
     /// <summary>Stores targets registered with a source.</summary>
     /// <typeparam name="T">Specifies the type of data accepted by the targets.</typeparam>
     /// <remarks>This type is not thread-safe.</remarks>
-    [DebuggerDisplay("Count={Count}")]
+    [DebuggerDisplay("Count = {Count}")]
     [DebuggerTypeProxy(typeof(TargetRegistry<>.DebugView))]
     internal sealed class TargetRegistry<T>
     {
@@ -85,10 +85,8 @@ namespace System.Threading.Tasks.Dataflow.Internal
             Debug.Assert(target != null, "The target that is supposed to be linked must not be null.");
             Debug.Assert(linkOptions != null, "The link options must not be null.");
 
-            LinkedTargetInfo? targetInfo;
-
             // If the target already exists in the registry, replace it with a new NopLinkPropagator to maintain uniqueness
-            if (_targetInformation.TryGetValue(target, out targetInfo)) target = new NopLinkPropagator(_owningSource, target);
+            if (_targetInformation.TryGetValue(target, out _)) target = new NopLinkPropagator(_owningSource, target);
 
             // Add the target to both stores, the list and the dictionary, which are used for different purposes
             var node = new LinkedTargetInfo(target, linkOptions);
@@ -361,7 +359,7 @@ namespace System.Threading.Tasks.Dataflow.Internal
                 {
                     var displaySource = _owningSource as IDebuggerDisplay;
                     var displayTarget = _target as IDebuggerDisplay;
-                    return $"{Common.GetNameForDebugger(this)} Source=\"{(displaySource != null ? displaySource.Content : _owningSource)}\", Target=\"{(displayTarget != null ? displayTarget.Content : _target)}\"";
+                    return $"{Common.GetNameForDebugger(this)} Source = \"{(displaySource != null ? displaySource.Content : _owningSource)}\", Target = \"{(displayTarget != null ? displayTarget.Content : _target)}\"";
                 }
             }
             /// <summary>Gets the data to display in the debugger display attribute for this instance.</summary>

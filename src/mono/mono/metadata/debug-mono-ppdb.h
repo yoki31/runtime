@@ -50,7 +50,7 @@ mono_ppdb_lookup_location_enc (MonoPPDBFile *ppdb_file, int idx, uint32_t offset
 void
 mono_ppdb_get_seq_points (MonoDebugMethodInfo *minfo, char **source_file, GPtrArray **source_file_list, int **source_files, MonoSymSeqPoint **seq_points, int *n_seq_points);
 
-gboolean 
+gboolean
 mono_ppdb_get_seq_points_enc (MonoDebugMethodInfo *minfo, MonoPPDBFile *ppdb_file, int idx, char **source_file, GPtrArray **source_file_list, int **source_files, MonoSymSeqPoint **seq_points, int *n_seq_points);
 
 MonoDebugLocalsInfo*
@@ -68,10 +68,13 @@ mono_ppdb_get_image (MonoPPDBFile *ppdb);
 char *
 mono_ppdb_get_sourcelink (MonoDebugHandle *handle);
 
-gboolean 
+gboolean
 mono_ppdb_is_embedded (MonoPPDBFile *ppdb);
 
 MONO_COMPONENT_API MonoPPDBFile*
 mono_create_ppdb_file (MonoImage *ppdb_image, gboolean is_embedded_ppdb);
 
+MONO_COMPONENT_API gboolean
+mono_get_pe_debug_info_full (MonoImage *image, guint8 *out_guid, gint32 *out_age, gint32 *out_timestamp, guint8 **ppdb_data,
+				   int *ppdb_uncompressed_size, int *ppdb_compressed_size, char **pdb_path, GArray *pdb_checksum_hash_type, GArray *pdb_checksum);
 #endif

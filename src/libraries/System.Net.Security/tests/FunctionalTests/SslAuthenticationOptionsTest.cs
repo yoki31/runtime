@@ -26,6 +26,7 @@ namespace System.Net.Security.Tests
             {
                 // Values used to populate client options
                 bool clientAllowRenegotiation = false;
+                bool clientAllowTlsResume = false;
                 List<SslApplicationProtocol> clientAppProtocols = new List<SslApplicationProtocol> { SslApplicationProtocol.Http11 };
                 X509RevocationMode clientRevocation = X509RevocationMode.NoCheck;
                 X509CertificateCollection clientCertificates = new X509CertificateCollection() { clientCert };
@@ -37,13 +38,19 @@ namespace System.Net.Security.Tests
 
                 // Values used to populate server options
                 bool serverAllowRenegotiation = true;
+                bool serverAllowTlsResume = false;
                 List<SslApplicationProtocol> serverAppProtocols = new List<SslApplicationProtocol> { SslApplicationProtocol.Http11, SslApplicationProtocol.Http2 };
                 X509RevocationMode serverRevocation = X509RevocationMode.NoCheck;
                 bool serverCertRequired = false;
+#pragma warning disable SYSLIB0039 // TLS 1.0 and 1.1 are obsolete
                 SslProtocols serverSslProtocols = SslProtocols.Tls11 | SslProtocols.Tls12;
+#pragma warning restore SYSLIB0039
+#pragma warning disable SYSLIB0040 // NoEncryption and AllowNoEncryption are obsolete
                 EncryptionPolicy serverEncryption = EncryptionPolicy.AllowNoEncryption;
+#pragma warning restore SYSLIB0040
                 RemoteCertificateValidationCallback serverRemoteCallback = new RemoteCertificateValidationCallback(delegate { return true; });
                 SslStreamCertificateContext certificateContext = SslStreamCertificateContext.Create(serverCert, null, false);
+                X509ChainPolicy policy = new X509ChainPolicy();
 
                 (Stream stream1, Stream stream2) = TestHelper.GetConnectedStreams();
                 using (var client = new SslStream(stream1))
@@ -53,6 +60,7 @@ namespace System.Net.Security.Tests
                     var clientOptions = new SslClientAuthenticationOptions
                     {
                         AllowRenegotiation = clientAllowRenegotiation,
+                        AllowTlsResume = clientAllowTlsResume,
                         ApplicationProtocols = clientAppProtocols,
                         CertificateRevocationCheckMode = clientRevocation,
                         ClientCertificates = clientCertificates,
@@ -60,13 +68,15 @@ namespace System.Net.Security.Tests
                         EncryptionPolicy = clientEncryption,
                         LocalCertificateSelectionCallback = clientLocalCallback,
                         RemoteCertificateValidationCallback = clientRemoteCallback,
-                        TargetHost = clientHost
+                        TargetHost = clientHost,
+                        CertificateChainPolicy = policy,
                     };
 
                     // Create server options
                     var serverOptions = new SslServerAuthenticationOptions
                     {
                         AllowRenegotiation = serverAllowRenegotiation,
+                        AllowTlsResume = serverAllowTlsResume,
                         ApplicationProtocols = serverAppProtocols,
                         CertificateRevocationCheckMode = serverRevocation,
                         ClientCertificateRequired = serverCertRequired,
@@ -75,6 +85,7 @@ namespace System.Net.Security.Tests
                         RemoteCertificateValidationCallback = serverRemoteCallback,
                         ServerCertificate = serverCert,
                         ServerCertificateContext = certificateContext,
+                        CertificateChainPolicy = policy,
                     };
 
                     // Authenticate
@@ -84,6 +95,7 @@ namespace System.Net.Security.Tests
 
                     // Validate that client options are unchanged
                     Assert.Equal(clientAllowRenegotiation, clientOptions.AllowRenegotiation);
+                    Assert.Equal(clientAllowTlsResume, clientOptions.AllowTlsResume);
                     Assert.Same(clientAppProtocols, clientOptions.ApplicationProtocols);
                     Assert.Equal(1, clientOptions.ApplicationProtocols.Count);
                     Assert.Equal(clientRevocation, clientOptions.CertificateRevocationCheckMode);
@@ -94,9 +106,11 @@ namespace System.Net.Security.Tests
                     Assert.Same(clientLocalCallback, clientOptions.LocalCertificateSelectionCallback);
                     Assert.Same(clientRemoteCallback, clientOptions.RemoteCertificateValidationCallback);
                     Assert.Same(clientHost, clientOptions.TargetHost);
+                    Assert.Same(policy, clientOptions.CertificateChainPolicy);
 
                     // Validate that server options are unchanged
                     Assert.Equal(serverAllowRenegotiation, serverOptions.AllowRenegotiation);
+                    Assert.Equal(serverAllowTlsResume, serverOptions.AllowTlsResume);
                     Assert.Same(serverAppProtocols, serverOptions.ApplicationProtocols);
                     Assert.Equal(2, serverOptions.ApplicationProtocols.Count);
                     Assert.Equal(clientRevocation, serverOptions.CertificateRevocationCheckMode);
@@ -106,9 +120,57 @@ namespace System.Net.Security.Tests
                     Assert.Same(serverRemoteCallback, serverOptions.RemoteCertificateValidationCallback);
                     Assert.Same(serverCert, serverOptions.ServerCertificate);
                     Assert.Same(certificateContext, serverOptions.ServerCertificateContext);
+                    Assert.Same(policy, serverOptions.CertificateChainPolicy);
                 }
             }
         }
+
+        [Fact]
+        public async Task ClientOptions_TargetHostNull_OK()
+        {
+            (SslStream client, SslStream server) = TestHelper.GetConnectedSslStreams();
+            using (client)
+            using (server)
+            {
+                var serverOptions = new SslServerAuthenticationOptions() { ServerCertificate = Configuration.Certificates.GetServerCertificate() };
+                var clientOptions = new SslClientAuthenticationOptions() { RemoteCertificateValidationCallback = (sender, certificate, chain, sslPolicyErrors) => true };
+
+                Assert.Null(clientOptions.TargetHost);
+
+                await TestConfiguration.WhenAllOrAnyFailedWithTimeout(
+                        client.AuthenticateAsClientAsync(clientOptions),
+                        server.AuthenticateAsServerAsync(serverOptions));
+               Assert.Equal(string.Empty, client.TargetHostName);
+               Assert.Equal(string.Empty, server.TargetHostName);
+            }
+        }
+
+        [Fact]
+        public void ClientOptions_ShallowCopy_OK()
+        {
+            using X509Certificate2 clientCert = Configuration.Certificates.GetClientCertificate();
+
+            // needs to non-default values so we can verify it was copied correctly.
+            var clientOptions = new SslClientAuthenticationOptions
+            {
+                AllowRenegotiation = false,
+                AllowTlsResume = false,
+                ApplicationProtocols = new List<SslApplicationProtocol> { SslApplicationProtocol.Http11, SslApplicationProtocol.Http2 },
+                CertificateRevocationCheckMode = X509RevocationMode.Online,
+                ClientCertificates = new X509CertificateCollection() { clientCert },
+                EnabledSslProtocols = SslProtocols.Tls12,
+                EncryptionPolicy = EncryptionPolicy.RequireEncryption,
+                TargetHost = "foo",
+                CertificateChainPolicy = new X509ChainPolicy(),
+                RemoteCertificateValidationCallback = new RemoteCertificateValidationCallback(delegate { return true; }),
+                LocalCertificateSelectionCallback = new LocalCertificateSelectionCallback(delegate { return null; }),
+                ClientCertificateContext = SslStreamCertificateContext.Create(clientCert, null, false),
+            };
+
+            // There is consistency check inside of the ShallowClone
+            _ = clientOptions.ShallowClone();
+        }
+
     }
 
     public sealed class SslClientAuthenticationOptionsTestBase_Sync : SslClientAuthenticationOptionsTestBase

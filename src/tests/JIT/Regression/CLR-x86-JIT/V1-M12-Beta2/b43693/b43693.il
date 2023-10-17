@@ -7,12 +7,12 @@
   .ver 4:0:0:0
 }
 .assembly extern legacy library mscorlib {}
-.assembly 'ldobjfloat'
+.assembly 'b43693'
 {
   
 }
 .assembly extern xunit.core {}
-.class M
+.class public M
 {
   .method public static int32 Main()
   {

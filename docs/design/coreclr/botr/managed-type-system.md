@@ -27,7 +27,7 @@ Low overhead is achieved by lazy loading - instead of eagerly populating the typ
 
 Where necessary, partial classes, extension methods, and pluggable algorithms are used to achieve goal 3 instead of polymorphism and object hierarchies. The reusability of the type system is at the source level (source-including different sets of files to get different features). This allows extensibility without making sacrifices that would take us away from goal 1.
 
-The type system in its purest form (i.e. without any partial class extensions) tries to avoid introducing concepts that are not defined in the [ECMA-335 specification](http://www.ecma-international.org/publications/standards/Ecma-335.htm). The specification is a suggested prerequisite reading to this document and provides definitions to various terms used in this document.
+The type system in its purest form (i.e. without any partial class extensions) tries to avoid introducing concepts that are not defined in the [ECMA-335 specification](https://www.ecma-international.org/publications-and-standards/standards/ecma-335). The specification is a suggested prerequisite reading to this document and provides definitions to various terms used in this document.
 
 ## Relationship with metadata
 
@@ -101,7 +101,7 @@ Exception throwing within the type system is wrapped in a `ThrowHelper` class. T
 
 The type system provides a default implementation of the `ThrowHelper` class that throws exceptions deriving from a `TypeSystemException` exception base class. This default implementation is suitable for use in non-runtime scenarios.
 
-The exception messages are assigned string IDs and get consumed by the throw helper as well. We require this indirection to support the compiler scenarios: when a type loading exception occurs during an AOT compilation, the AOT compiler has two tasks - emit a warning to warn the user that this occured, and potentially generate a method body that will throw this exception at runtime when the problematic type is accessed. The localization of the compiler might not match the localization of the class library the compiler output is linking against. Indirecting the actual exception message through the string ID lets us wrap this. The consumer of the type system may reuse the throw helper in places outside the type system where this functionality is needed.
+The exception messages are assigned string IDs and get consumed by the throw helper as well. We require this indirection to support the compiler scenarios: when a type loading exception occurs during an AOT compilation, the AOT compiler has two tasks - emit a warning to warn the user that this occurred, and potentially generate a method body that will throw this exception at runtime when the problematic type is accessed. The localization of the compiler might not match the localization of the class library the compiler output is linking against. Indirecting the actual exception message through the string ID lets us wrap this. The consumer of the type system may reuse the throw helper in places outside the type system where this functionality is needed.
 
 ## Physical architecture
 
@@ -112,4 +112,4 @@ The type system implementation is found in:
 
 ## Notable differences from CoreCLR type system
 
-* `MethodDesc` has exact generic instantations where possible in managed type system. The code sharing policy in managed type system is one of the pluggable algorithms and it does not affect `MethodDesc` identity. The code sharing policy in the CoreCLR type system is coupled with `MethodDesc` identity. See https://github.com/dotnet/runtime/pull/45744 for an example how this difference manifests itself.
+* `MethodDesc` has exact generic instantiations where possible in managed type system. The code sharing policy in managed type system is one of the pluggable algorithms and it does not affect `MethodDesc` identity. The code sharing policy in the CoreCLR type system is coupled with `MethodDesc` identity. See https://github.com/dotnet/runtime/pull/45744 for an example how this difference manifests itself.

@@ -8,8 +8,8 @@
   .publickeytoken = (B0 3F 5F 7F 11 D5 0A 3A )
   .ver 4:0:0:0
 }
-.assembly legacy library arrlen {}
-.class private auto ansi beforefieldinit nullsdarr
+.assembly legacy library 'nullsdarr' {}
+.class public auto ansi beforefieldinit nullsdarr
        extends [mscorlib]System.Object
 {
   .method public static void f() cil managed

@@ -9,21 +9,17 @@ namespace System
     {
         private static unsafe bool TryConvertIanaIdToWindowsId(string ianaId, bool allocate, out string? windowsId)
         {
-            if (GlobalizationMode.Invariant || GlobalizationMode.UseNls || ianaId is null)
+#if TARGET_MACCATALYST || TARGET_IOS || TARGET_TVOS
+            windowsId = null;
+            return false;
+#else
+            if (GlobalizationMode.Invariant ||
+                GlobalizationMode.UseNls ||
+                ianaId is null ||
+                ianaId.AsSpan().ContainsAny('\\', '\n', '\r')) // ICU uses these characters as a separator
             {
                 windowsId = null;
                 return false;
-            }
-
-            foreach (char c in ianaId)
-            {
-                // ICU uses some characters as a separator and trim the id at that character.
-                // while we should fail if the Id contained one of these characters.
-                if (c == '\\' || c == '\n' || c == '\r')
-                {
-                    windowsId = null;
-                    return false;
-                }
             }
 
             char* buffer = stackalloc char[100];
@@ -36,10 +32,15 @@ namespace System
 
             windowsId = null;
             return false;
+#endif
         }
 
         private static unsafe bool TryConvertWindowsIdToIanaId(string windowsId, string? region, bool allocate,  out string? ianaId)
         {
+#if TARGET_MACCATALYST || TARGET_IOS || TARGET_TVOS
+            ianaId = null;
+            return false;
+#else
             // This functionality is not enabled in the browser for the sake of size reduction.
             if (GlobalizationMode.Invariant || GlobalizationMode.UseNls || windowsId is null)
             {
@@ -54,15 +55,10 @@ namespace System
                 return true;
             }
 
-            foreach (char c in windowsId)
+            if (windowsId.AsSpan().ContainsAny('\\', '\n', '\r')) // ICU uses these characters as a separator
             {
-                // ICU uses some characters as a separator and trim the id at that character.
-                // while we should fail if the Id contained one of these characters.
-                if (c == '\\' || c == '\n' || c == '\r')
-                {
-                    ianaId = null;
-                    return false;
-                }
+                ianaId = null;
+                return false;
             }
 
             // regionPtr will point at the region name encoded as ASCII.
@@ -78,7 +74,7 @@ namespace System
                 int i = 0;
                 for (; i < region.Length && region[i] <= '\u007F'; i++)
                 {
-                    regionInAscii[i] = (uint)(region[i] - 'a') <= ('z' - 'a') ? (byte)((region[i] - 'a') + 'A') : (byte)region[i];
+                    regionInAscii[i] = char.IsAsciiLetterLower(region[i]) ? (byte)((region[i] - 'a') + 'A') : (byte)region[i];
                 }
 
                 if (i >= region.Length)
@@ -87,7 +83,7 @@ namespace System
                     regionPtr = new IntPtr(regionInAscii);
                 }
 
-                // In case getting unexpected region names, we just fallback using the default region (pasing null region name to the ICU API).
+                // In case getting unexpected region names, we just fallback using the default region (passing null region name to the ICU API).
             }
 
             char* buffer = stackalloc char[100];
@@ -101,6 +97,7 @@ namespace System
 
             ianaId = null;
             return false;
+#endif
         }
 
     }

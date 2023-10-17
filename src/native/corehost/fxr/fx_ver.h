@@ -21,17 +21,11 @@ struct fx_ver_t
     int get_minor() const { return m_minor; }
     int get_patch() const { return m_patch; }
 
-    void set_major(int m) { m_major = m; }
-    void set_minor(int m) { m_minor = m; }
-    void set_patch(int p) { m_patch = p; }
-
     bool is_prerelease() const { return !m_pre.empty(); }
 
     bool is_empty() const { return m_major == -1; }
 
     pal::string_t as_str() const;
-    pal::string_t prerelease_glob() const;
-    pal::string_t patch_glob() const;
 
     bool operator ==(const fx_ver_t& b) const;
     bool operator !=(const fx_ver_t& b) const;

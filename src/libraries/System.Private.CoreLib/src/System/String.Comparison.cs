@@ -10,8 +10,6 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text.Unicode;
 
-using Internal.Runtime.CompilerServices;
-
 namespace System
 {
     public partial class String
@@ -217,7 +215,7 @@ namespace System
         // for meaning of different comparisonType.
         public static int Compare(string? strA, string? strB, StringComparison comparisonType)
         {
-            if (object.ReferenceEquals(strA, strB))
+            if (ReferenceEquals(strA, strB))
             {
                 CheckStringComparison(comparisonType);
                 return 0;
@@ -373,7 +371,7 @@ namespace System
 
             if (strA == null || strB == null)
             {
-                if (object.ReferenceEquals(strA, strB))
+                if (ReferenceEquals(strA, strB))
                 {
                     // They're both null
                     return 0;
@@ -382,24 +380,21 @@ namespace System
                 return strA == null ? -1 : 1;
             }
 
-            if (length < 0)
-            {
-                throw new ArgumentOutOfRangeException(nameof(length), SR.ArgumentOutOfRange_NegativeLength);
-            }
+            ArgumentOutOfRangeException.ThrowIfNegative(length);
 
             if (indexA < 0 || indexB < 0)
             {
                 string paramName = indexA < 0 ? nameof(indexA) : nameof(indexB);
-                throw new ArgumentOutOfRangeException(paramName, SR.ArgumentOutOfRange_Index);
+                throw new ArgumentOutOfRangeException(paramName, SR.ArgumentOutOfRange_IndexMustBeLessOrEqual);
             }
 
             if (strA.Length - indexA < 0 || strB.Length - indexB < 0)
             {
                 string paramName = strA.Length - indexA < 0 ? nameof(indexA) : nameof(indexB);
-                throw new ArgumentOutOfRangeException(paramName, SR.ArgumentOutOfRange_Index);
+                throw new ArgumentOutOfRangeException(paramName, SR.ArgumentOutOfRange_IndexMustBeLessOrEqual);
             }
 
-            if (length == 0 || (object.ReferenceEquals(strA, strB) && indexA == indexB))
+            if (length == 0 || (ReferenceEquals(strA, strB) && indexA == indexB))
             {
                 return 0;
             }
@@ -430,7 +425,7 @@ namespace System
         //
         public static int CompareOrdinal(string? strA, string? strB)
         {
-            if (object.ReferenceEquals(strA, strB))
+            if (ReferenceEquals(strA, strB))
             {
                 return 0;
             }
@@ -465,7 +460,7 @@ namespace System
         {
             if (strA == null || strB == null)
             {
-                if (object.ReferenceEquals(strA, strB))
+                if (ReferenceEquals(strA, strB))
                 {
                     // They're both null
                     return 0;
@@ -477,15 +472,12 @@ namespace System
             // COMPAT: Checking for nulls should become before the arguments are validated,
             // but other optimizations which allow us to return early should come after.
 
-            if (length < 0)
-            {
-                throw new ArgumentOutOfRangeException(nameof(length), SR.ArgumentOutOfRange_NegativeCount);
-            }
+            ArgumentOutOfRangeException.ThrowIfNegative(length);
 
             if (indexA < 0 || indexB < 0)
             {
                 string paramName = indexA < 0 ? nameof(indexA) : nameof(indexB);
-                throw new ArgumentOutOfRangeException(paramName, SR.ArgumentOutOfRange_Index);
+                throw new ArgumentOutOfRangeException(paramName, SR.ArgumentOutOfRange_IndexMustBeLessOrEqual);
             }
 
             int lengthA = Math.Min(length, strA.Length - indexA);
@@ -494,10 +486,10 @@ namespace System
             if (lengthA < 0 || lengthB < 0)
             {
                 string paramName = lengthA < 0 ? nameof(indexA) : nameof(indexB);
-                throw new ArgumentOutOfRangeException(paramName, SR.ArgumentOutOfRange_Index);
+                throw new ArgumentOutOfRangeException(paramName, SR.ArgumentOutOfRange_IndexMustBeLessOrEqual);
             }
 
-            if (length == 0 || (object.ReferenceEquals(strA, strB) && indexA == indexB))
+            if (length == 0 || (ReferenceEquals(strA, strB) && indexA == indexB))
             {
                 return 0;
             }
@@ -528,7 +520,7 @@ namespace System
         //
         public int CompareTo(string? strB)
         {
-            return string.Compare(this, strB, StringComparison.CurrentCulture);
+            return Compare(this, strB, StringComparison.CurrentCulture);
         }
 
         // Determines whether a specified string is a suffix of the current instance.
@@ -543,10 +535,7 @@ namespace System
 
         public bool EndsWith(string value, StringComparison comparisonType)
         {
-            if (value is null)
-            {
-                throw new ArgumentNullException(nameof(value));
-            }
+            ArgumentNullException.ThrowIfNull(value);
 
             if ((object)this == (object)value)
             {
@@ -575,9 +564,10 @@ namespace System
                     return (uint)offset <= (uint)this.Length && this.AsSpan(offset).SequenceEqual(value);
 
                 case StringComparison.OrdinalIgnoreCase:
-                    return this.Length < value.Length ?
-                            false :
-                            (Ordinal.CompareStringIgnoreCase(ref Unsafe.Add(ref this.GetRawStringData(), this.Length - value.Length), value.Length, ref value.GetRawStringData(), value.Length) == 0);
+                    return Length >= value.Length &&
+                        Ordinal.EqualsIgnoreCase(ref Unsafe.Add(ref GetRawStringData(), Length - value.Length),
+                                                 ref value.GetRawStringData(),
+                                                 value.Length);
 
                 default:
                     throw new ArgumentException(SR.NotSupported_StringComparison, nameof(comparisonType));
@@ -586,10 +576,7 @@ namespace System
 
         public bool EndsWith(string value, bool ignoreCase, CultureInfo? culture)
         {
-            if (null == value)
-            {
-                throw new ArgumentNullException(nameof(value));
-            }
+            ArgumentNullException.ThrowIfNull(value);
 
             if ((object)this == (object)value)
             {
@@ -602,6 +589,20 @@ namespace System
 
         public bool EndsWith(char value)
         {
+            // If the string is empty, *(&_firstChar + length - 1) will deref within
+            // the _stringLength field, which will be all-zero. We must forbid '\0'
+            // from going down the optimized code path because otherwise empty strings
+            // would appear to end with '\0', which is incorrect.
+            // n.b. This optimization relies on the layout of string and is not valid
+            // for other data types like char[] or Span<char>.
+            if (RuntimeHelpers.IsKnownConstant(value) && value != '\0')
+            {
+                // deref Length now to front-load the null check; also take this time to zero-extend
+                // n.b. (localLength - 1) could be negative!
+                nuint localLength = (uint)Length;
+                return Unsafe.Add(ref _firstChar, (nint)localLength - 1) == value;
+            }
+
             int lastPos = Length - 1;
             return ((uint)lastPos < (uint)Length) && this[lastPos] == value;
         }
@@ -609,7 +610,7 @@ namespace System
         // Determines whether two strings match.
         public override bool Equals([NotNullWhen(true)] object? obj)
         {
-            if (object.ReferenceEquals(this, obj))
+            if (ReferenceEquals(this, obj))
                 return true;
 
             if (!(obj is string str))
@@ -622,9 +623,10 @@ namespace System
         }
 
         // Determines whether two strings match.
+        [Intrinsic] // Unrolled and vectorized for half-constant input
         public bool Equals([NotNullWhen(true)] string? value)
         {
-            if (object.ReferenceEquals(this, value))
+            if (ReferenceEquals(this, value))
                 return true;
 
             // NOTE: No need to worry about casting to object here.
@@ -640,9 +642,10 @@ namespace System
             return EqualsHelper(this, value);
         }
 
+        [Intrinsic] // Unrolled and vectorized for half-constant input (Ordinal)
         public bool Equals([NotNullWhen(true)] string? value, StringComparison comparisonType)
         {
-            if (object.ReferenceEquals(this, value))
+            if (ReferenceEquals(this, value))
             {
                 CheckStringComparison(comparisonType);
                 return true;
@@ -681,9 +684,10 @@ namespace System
         }
 
         // Determines whether two Strings match.
+        [Intrinsic] // Unrolled and vectorized for half-constant input
         public static bool Equals(string? a, string? b)
         {
-            if (object.ReferenceEquals(a, b))
+            if (ReferenceEquals(a, b))
             {
                 return true;
             }
@@ -696,9 +700,10 @@ namespace System
             return EqualsHelper(a, b);
         }
 
+        [Intrinsic] // Unrolled and vectorized for half-constant input (Ordinal)
         public static bool Equals(string? a, string? b, StringComparison comparisonType)
         {
-            if (object.ReferenceEquals(a, b))
+            if (ReferenceEquals(a, b))
             {
                 CheckStringComparison(comparisonType);
                 return true;
@@ -736,9 +741,9 @@ namespace System
             }
         }
 
-        public static bool operator ==(string? a, string? b) => string.Equals(a, b);
+        public static bool operator ==(string? a, string? b) => Equals(a, b);
 
-        public static bool operator !=(string? a, string? b) => !string.Equals(a, b);
+        public static bool operator !=(string? a, string? b) => !Equals(a, b);
 
         // Gets a hash code for this string.  If strings A and B are such that A.Equals(B), then
         // they will return the same hash code.
@@ -899,7 +904,7 @@ namespace System
                 Span<char> scratch = (uint)length < 64 ?
                     stackalloc char[64] : (borrowedArr = ArrayPool<char>.Shared.Rent(length + 1));
 
-                int charsWritten = System.Globalization.Ordinal.ToUpperOrdinal(str, scratch);
+                int charsWritten = Ordinal.ToUpperOrdinal(str, scratch);
                 Debug.Assert(charsWritten == length);
                 scratch[length] = '\0';
 
@@ -937,19 +942,15 @@ namespace System
         //
         public bool StartsWith(string value)
         {
-            if (value is null)
-            {
-                throw new ArgumentNullException(nameof(value));
-            }
+            ArgumentNullException.ThrowIfNull(value);
+
             return StartsWith(value, StringComparison.CurrentCulture);
         }
 
+        [Intrinsic] // Unrolled and vectorized for half-constant input (Ordinal)
         public bool StartsWith(string value, StringComparison comparisonType)
         {
-            if (value is null)
-            {
-                throw new ArgumentNullException(nameof(value));
-            }
+            ArgumentNullException.ThrowIfNull(value);
 
             if ((object)this == (object)value)
             {
@@ -999,10 +1000,7 @@ namespace System
 
         public bool StartsWith(string value, bool ignoreCase, CultureInfo? culture)
         {
-            if (null == value)
-            {
-                throw new ArgumentNullException(nameof(value));
-            }
+            ArgumentNullException.ThrowIfNull(value);
 
             if ((object)this == (object)value)
             {
@@ -1013,7 +1011,20 @@ namespace System
             return referenceCulture.CompareInfo.IsPrefix(this, value, ignoreCase ? CompareOptions.IgnoreCase : CompareOptions.None);
         }
 
-        public bool StartsWith(char value) => Length != 0 && _firstChar == value;
+        public bool StartsWith(char value)
+        {
+            // If the string is empty, _firstChar will contain the null terminator.
+            // We forbid '\0' from going down the optimized code path because otherwise
+            // empty strings would appear to begin with '\0', which is incorrect.
+            // n.b. This optimization relies on the layout of string and is not valid
+            // for other data types like char[] or Span<char>.
+            if (RuntimeHelpers.IsKnownConstant(value) && value != '\0')
+            {
+                return _firstChar == value;
+            }
+
+            return Length != 0 && _firstChar == value;
+        }
 
         internal static void CheckStringComparison(StringComparison comparisonType)
         {

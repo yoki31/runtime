@@ -17,11 +17,4 @@ typedef enum {
 	INTRINS_NUM
 } IntrinsicId;
 
-enum {
-	XBINOP_FORCEINT_and,
-	XBINOP_FORCEINT_or,
-	XBINOP_FORCEINT_ornot,
-	XBINOP_FORCEINT_xor,
-};
-
 #endif /* __MONO_MINI_LLVM_INTRINSICS_TYPES_H__ */

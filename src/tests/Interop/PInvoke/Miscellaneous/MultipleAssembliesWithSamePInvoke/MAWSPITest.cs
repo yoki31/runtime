@@ -5,12 +5,13 @@ using System;
 using System.Runtime.InteropServices;
 using Xunit;
 
-class MultipleAssembliesWithSamePInvokeTest
+public class MultipleAssembliesWithSamePInvokeTest
 {
     [DllImport(@"MAWSPINative", CallingConvention = CallingConvention.StdCall)]
     private static extern int GetInt();
 
-    public static int Main(string[] args)
+    [Fact]
+    public static int TestEntryPoint()
     {
         try{
             Assert.Equal(24, GetInt());

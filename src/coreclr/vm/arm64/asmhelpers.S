@@ -147,25 +147,6 @@ NESTED_ENTRY NDirectImportThunk, _TEXT, NoHandler
 NESTED_END NDirectImportThunk, _TEXT
 
 // ------------------------------------------------------------------
-// The call in fixup precode initally points to this function.
-// The pupose of this function is to load the MethodDesc and forward the call to prestub.
-NESTED_ENTRY PrecodeFixupThunk, _TEXT, NoHandler
-    // x12 = FixupPrecode *
-    // On Exit
-    // x12 = MethodDesc*
-    // x13, x14 Trashed
-    // Inline computation done by FixupPrecode::GetMethodDesc()
-    ldrb    w13, [x12, #Offset_PrecodeChunkIndex]    //m_PrecodeChunkIndex
-    ldrb    w14, [x12, #Offset_MethodDescChunkIndex] // m_MethodDescChunkIndex
-
-    add     x12, x12, w13, uxtw #FixupPrecode_ALIGNMENT_SHIFT_1
-    add     x13, x12, w13, uxtw #FixupPrecode_ALIGNMENT_SHIFT_2
-    ldr     x13, [x13, #SIZEOF__FixupPrecode]
-    add     x12, x13, w14, uxtw #MethodDesc_ALIGNMENT_SHIFT
-
-    b       C_FUNC(ThePreStub)
-NESTED_END PrecodeFixupThunk, _TEXT
-// ------------------------------------------------------------------
 
 NESTED_ENTRY ThePreStub, _TEXT, NoHandler
 
@@ -193,26 +174,6 @@ C_FUNC(ThePreStubPatchLabel):
     ret lr
 LEAF_END ThePreStubPatch, _TEXT
 
-
-//-----------------------------------------------------------------------------
-// The following Macros help in WRITE_BARRIER Implemetations
-// WRITE_BARRIER_ENTRY
-//
-// Declare the start of a write barrier function. Use similarly to NESTED_ENTRY. This is the only legal way
-// to declare a write barrier function.
-//
-.macro WRITE_BARRIER_ENTRY name
-    LEAF_ENTRY \name, _TEXT
-.endm
-
-// WRITE_BARRIER_END
-//
-// The partner to WRITE_BARRIER_ENTRY, used like NESTED_END.
-//
-.macro WRITE_BARRIER_END name
-    LEAF_END_MARKED \name, _TEXT
-.endm
-
 // void JIT_UpdateWriteBarrierState(bool skipEphemeralCheck, size_t writeableOffset)
 //
 // Update shadow copies of the various state info required for barrier
@@ -224,15 +185,15 @@ LEAF_END ThePreStubPatch, _TEXT
 // Align and group state info together so it fits in a single cache line
 // and each entry can be written atomically
 //
-WRITE_BARRIER_ENTRY JIT_UpdateWriteBarrierState
+LEAF_ENTRY JIT_UpdateWriteBarrierState, _TEXT
     PROLOG_SAVE_REG_PAIR_INDEXED   fp, lr, -16
 
-    // x0-x7 will contain intended new state
+    // x0-x7, x10 will contain intended new state
     // x8 will preserve skipEphemeralCheck
     // x12 will be used for pointers
 
     mov x8, x0
-    mov x9, x1 
+    mov x9, x1
 
     PREPARE_EXTERNAL_VAR g_card_table, x12
     ldr  x0, [x12]
@@ -242,32 +203,35 @@ WRITE_BARRIER_ENTRY JIT_UpdateWriteBarrierState
     ldr  x1, [x12]
 #endif
 
-#ifdef WRITE_BARRIER_CHECK
-    PREPARE_EXTERNAL_VAR g_GCShadow, x12
+#ifdef FEATURE_USE_SOFTWARE_WRITE_WATCH_FOR_GC_HEAP
+    PREPARE_EXTERNAL_VAR g_sw_ww_table, x12
     ldr  x2, [x12]
 #endif
 
-#ifdef FEATURE_USE_SOFTWARE_WRITE_WATCH_FOR_GC_HEAP
-    PREPARE_EXTERNAL_VAR g_sw_ww_table, x12
-    ldr  x3, [x12]
-#endif
-
     PREPARE_EXTERNAL_VAR g_ephemeral_low, x12
-    ldr  x4, [x12]
+    ldr  x3, [x12]
 
     PREPARE_EXTERNAL_VAR g_ephemeral_high, x12
-    ldr  x5, [x12]
+    ldr  x4, [x12]
 
     cbz  x8, LOCAL_LABEL(EphemeralCheckEnabled)
-    movz x4, #0
-    movn x5, #0
+    movz x3, #0
+    movn x4, #0
 LOCAL_LABEL(EphemeralCheckEnabled):
 
     PREPARE_EXTERNAL_VAR g_lowest_address, x12
-    ldr  x6, [x12]
+    ldr  x5, [x12]
 
     PREPARE_EXTERNAL_VAR g_highest_address, x12
+    ldr  x6, [x12]
+
+#ifdef WRITE_BARRIER_CHECK
+    PREPARE_EXTERNAL_VAR g_GCShadow, x12
     ldr  x7, [x12]
+
+    PREPARE_EXTERNAL_VAR g_GCShadowEnd, x12
+    ldr  x10, [x12]
+#endif
 
     // Update wbs state
     PREPARE_EXTERNAL_VAR JIT_WriteBarrier_Table_Loc, x12
@@ -277,11 +241,15 @@ LOCAL_LABEL(EphemeralCheckEnabled):
     stp  x0, x1, [x12], 16
     stp  x2, x3, [x12], 16
     stp  x4, x5, [x12], 16
-    stp  x6, x7, [x12], 16
+    str  x6, [x12], 8
+#ifdef WRITE_BARRIER_CHECK
+    stp  x7, x10, [x12], 16
+#endif
+
 
     EPILOG_RESTORE_REG_PAIR_INDEXED fp, lr, 16
     EPILOG_RETURN
-WRITE_BARRIER_END JIT_UpdateWriteBarrierState
+LEAF_END JIT_UpdateWriteBarrierState
 
 // ------------------------// ------------------------------------------------------------------
 // __declspec(naked) void F_CALL_CONV JIT_WriteBarrier_Callable(Object **dst, Object* val)
@@ -296,244 +264,6 @@ LEAF_ENTRY  JIT_WriteBarrier_Callable, _TEXT
     ldr     x17, [x17]
     br      x17
 LEAF_END JIT_WriteBarrier_Callable, _TEXT
-
-.balign 64  // Align to power of two at least as big as patchable literal pool so that it fits optimally in cache line
-//------------------------------------------
-// Start of the writeable code region
-LEAF_ENTRY JIT_PatchedCodeStart, _TEXT
-    ret  lr
-LEAF_END JIT_PatchedCodeStart, _TEXT
-
-// void JIT_ByRefWriteBarrier
-// On entry:
-//   x13  : the source address (points to object reference to write)
-//   x14  : the destination address (object reference written here)
-//
-// On exit:
-//   x12  : trashed
-//   x13  : incremented by 8
-//   x14  : incremented by 8
-//   x15  : trashed
-//   x17  : trashed (ip1) if FEATURE_USE_SOFTWARE_WRITE_WATCH_FOR_GC_HEAP
-//
-WRITE_BARRIER_ENTRY JIT_ByRefWriteBarrier
-
-    ldr  x15, [x13], 8
-    b C_FUNC(JIT_CheckedWriteBarrier)
-
-WRITE_BARRIER_END JIT_ByRefWriteBarrier
-
-//-----------------------------------------------------------------------------
-// Simple WriteBarriers
-// void JIT_CheckedWriteBarrier(Object** dst, Object* src)
-// On entry:
-//   x14  : the destination address (LHS of the assignment)
-//   x15  : the object reference (RHS of the assignment)
-//
-// On exit:
-//   x12  : trashed
-//   x14  : trashed (incremented by 8 to implement JIT_ByRefWriteBarrier contract)
-//   x15  : trashed
-//   x17  : trashed (ip1) if FEATURE_USE_SOFTWARE_WRITE_WATCH_FOR_GC_HEAP
-//
-WRITE_BARRIER_ENTRY JIT_CheckedWriteBarrier
-    ldr  x12,  LOCAL_LABEL(wbs_lowest_address)
-    cmp  x14,  x12
-
-    ldr  x12, LOCAL_LABEL(wbs_highest_address)
-
-    // Compare against the upper bound if the previous comparison indicated
-    // that the destination address is greater than or equal to the lower
-    // bound. Otherwise, set the C flag (specified by the 0x2) so that the
-    // branch below is not taken.
-    ccmp x14, x12, #0x2, hs
-
-    blo  C_FUNC(JIT_WriteBarrier)
-
-LOCAL_LABEL(NotInHeap):
-    str  x15, [x14], 8
-    ret  lr
-WRITE_BARRIER_END JIT_CheckedWriteBarrier
-
-// void JIT_WriteBarrier(Object** dst, Object* src)
-// On entry:
-//   x14  : the destination address (LHS of the assignment)
-//   x15  : the object reference (RHS of the assignment)
-//
-// On exit:
-//   x12  : trashed
-//   x14  : trashed (incremented by 8 to implement JIT_ByRefWriteBarrier contract)
-//   x15  : trashed
-//   x17  : trashed (ip1) if FEATURE_USE_SOFTWARE_WRITE_WATCH_FOR_GC_HEAP
-//
-WRITE_BARRIER_ENTRY JIT_WriteBarrier
-    stlr  x15, [x14]
-
-#ifdef WRITE_BARRIER_CHECK
-    // Update GC Shadow Heap
-
-    // Do not perform the work if g_GCShadow is 0
-    ldr  x12, LOCAL_LABEL(wbs_GCShadow)
-    cbz  x12, LOCAL_LABEL(ShadowUpdateDisabled)
-
-    // need temporary register. Save before using.
-    str  x13, [sp, #-16]!
-
-    // Compute address of shadow heap location:
-    //   pShadow = g_GCShadow + (x14 - g_lowest_address)
-    ldr  x13, LOCAL_LABEL(wbs_lowest_address)
-    sub  x13, x14, x13
-    add  x12, x13, x12
-
-    // if (pShadow >= g_GCShadowEnd) goto end
-    PREPARE_EXTERNAL_VAR g_GCShadowEnd, x13
-    ldr  x13, [x13]
-    cmp  x12, x13
-    bhs  LOCAL_LABEL(ShadowUpdateEnd)
-
-    // *pShadow = x15
-    str  x15, [x12]
-
-    // Ensure that the write to the shadow heap occurs before the read from the GC heap so that race
-    // conditions are caught by INVALIDGCVALUE.
-    dmb  ish
-
-    // if ([x14] == x15) goto end
-    ldr  x13, [x14]
-    cmp  x13, x15
-    beq LOCAL_LABEL(ShadowUpdateEnd)
-
-    // *pShadow = INVALIDGCVALUE (0xcccccccd)
-    movz x13, #0xcccd
-    movk x13, #0xcccc, LSL #16
-    str  x13, [x12]
-
-LOCAL_LABEL(ShadowUpdateEnd):
-    ldr  x13, [sp], #16
-LOCAL_LABEL(ShadowUpdateDisabled):
-#endif
-
-#ifdef FEATURE_USE_SOFTWARE_WRITE_WATCH_FOR_GC_HEAP
-    // Update the write watch table if necessary
-    ldr  x12, LOCAL_LABEL(wbs_sw_ww_table)
-    cbz  x12, LOCAL_LABEL(CheckCardTable)
-    add  x12, x12, x14, lsr #0xc  // SoftwareWriteWatch::AddressToTableByteIndexShift
-    ldrb w17, [x12]
-    cbnz x17, LOCAL_LABEL(CheckCardTable)
-    mov  w17, #0xFF
-    strb w17, [x12]
-#endif
-
-LOCAL_LABEL(CheckCardTable):
-    // Branch to Exit if the reference is not in the Gen0 heap
-    //
-    ldr  x12, LOCAL_LABEL(wbs_ephemeral_low)
-    cbz  x12, LOCAL_LABEL(SkipEphemeralCheck)
-    cmp  x15,  x12
-
-    ldr  x12, LOCAL_LABEL(wbs_ephemeral_high)
-
-    // Compare against the upper bound if the previous comparison indicated
-    // that the destination address is greater than or equal to the lower
-    // bound. Otherwise, set the C flag (specified by the 0x2) so that the
-    // branch to exit is taken.
-    ccmp x15, x12, #0x2, hs
-
-    bhi  LOCAL_LABEL(Exit)
-
-LOCAL_LABEL(SkipEphemeralCheck):
-    // Check if we need to update the card table
-    ldr  x12, LOCAL_LABEL(wbs_card_table)
-    add  x15, x12, x14, lsr #11
-    ldrb w12, [x15]
-    cmp  x12, 0xFF
-    beq  LOCAL_LABEL(Exit)
-
-LOCAL_LABEL(UpdateCardTable):
-    mov  x12, 0xFF
-    strb w12, [x15]
-
-#ifdef FEATURE_MANUALLY_MANAGED_CARD_BUNDLES
-    // Check if we need to update the card bundle table
-    ldr  x12, LOCAL_LABEL(wbs_card_bundle_table)
-    add  x15, x12, x14, lsr #21
-    ldrb w12, [x15]
-    cmp  x12, 0xFF
-    beq  LOCAL_LABEL(Exit)
-
-LOCAL_LABEL(UpdateCardBundle):
-    mov  x12, 0xFF
-    strb w12, [x15]
-#endif
-
-LOCAL_LABEL(Exit):
-    add  x14, x14, 8
-    ret  lr
-WRITE_BARRIER_END JIT_WriteBarrier
-
-    // Begin patchable literal pool
-    .balign 64  // Align to power of two at least as big as patchable literal pool so that it fits optimally in cache line
-WRITE_BARRIER_ENTRY JIT_WriteBarrier_Table
-LOCAL_LABEL(wbs_begin):
-LOCAL_LABEL(wbs_card_table):
-    .quad 0
-LOCAL_LABEL(wbs_card_bundle_table):
-    .quad 0
-LOCAL_LABEL(wbs_GCShadow):
-    .quad 0
-LOCAL_LABEL(wbs_sw_ww_table):
-    .quad 0
-LOCAL_LABEL(wbs_ephemeral_low):
-    .quad 0
-LOCAL_LABEL(wbs_ephemeral_high):
-    .quad 0
-LOCAL_LABEL(wbs_lowest_address):
-    .quad 0
-LOCAL_LABEL(wbs_highest_address):
-    .quad 0
-WRITE_BARRIER_END JIT_WriteBarrier_Table
-
-
-// ------------------------------------------------------------------
-// End of the writeable code region
-LEAF_ENTRY JIT_PatchedCodeLast, _TEXT
-    ret  lr
-LEAF_END JIT_PatchedCodeLast, _TEXT
-
-//------------------------------------------------
-// ExternalMethodFixupStub
-//
-// In NGEN images, calls to cross-module external methods initially
-// point to a jump thunk that calls into the following function that will
-// call into a VM helper. The VM helper is responsible for patching up the
-// thunk, upon executing the precode, so that all subsequent calls go directly
-// to the actual method body.
-//
-// This is done lazily for performance reasons.
-//
-// On entry:
-//
-// x12 = Address of thunk
-
-NESTED_ENTRY ExternalMethodFixupStub, _TEXT, NoHandler
-
-    PROLOG_WITH_TRANSITION_BLOCK
-
-    add x0, sp, #__PWTB_TransitionBlock // pTransitionBlock
-    mov x1, x12 // pThunk
-    mov x2, #0  // sectionIndex
-    mov x3, #0  // pModule
-
-    bl C_FUNC(ExternalMethodFixupWorker)
-
-    // mov the address we patched to in x12 so that we can tail call to it
-    mov x12, x0
-
-    EPILOG_WITH_TRANSITION_BLOCK_TAILCALL
-    PATCH_LABEL ExternalMethodFixupPatchLabel
-    EPILOG_BRANCH_REG   x12
-
-NESTED_END ExternalMethodFixupStub, _TEXT
 
 // void SinglecastDelegateInvokeStub(Delegate *pThis)
 LEAF_ENTRY SinglecastDelegateInvokeStub, _TEXT
@@ -551,152 +281,6 @@ LOCAL_LABEL(LNullThis):
 
 LEAF_END SinglecastDelegateInvokeStub, _TEXT
 
-#ifdef FEATURE_COMINTEROP
-
-#define ComCallPreStub_FrameSize (SIZEOF__GSCookie + SIZEOF__ComMethodFrame)
-#define ComCallPreStub_FirstStackAdjust  (8 + SIZEOF__ArgumentRegisters + 2 * 8) // x8, reg args , fp & lr already pushed
-#define ComCallPreStub_StackAlloc0        (ComCallPreStub_FrameSize - ComCallPreStub_FirstStackAdjust)
-#define ComCallPreStub_StackAlloc1        (ComCallPreStub_StackAlloc0 + SIZEOF__FloatArgumentRegisters + 8)// 8 for ErrorReturn
-#define ComCallPreStub_StackAlloc    (ComCallPreStub_StackAlloc1 + (ComCallPreStub_StackAlloc1 & 8))
-
-#define ComCallPreStub_FrameOffset   (ComCallPreStub_StackAlloc - (SIZEOF__ComMethodFrame - ComCallPreStub_FirstStackAdjust))
-#define ComCallPreStub_ErrorReturnOffset0 SIZEOF__FloatArgumentRegisters
-
-#define ComCallPreStub_FirstStackAdjust (ComCallPreStub_ErrorReturnOffset0 + (ComCallPreStub_ErrorReturnOffset0 & 8))
-
-// ------------------------------------------------------------------
-// COM to CLR stub called the first time a particular method is invoked.//
-//
-// On entry:
-//   x12         : ComCallMethodDesc* provided by prepad thunk
-//   plus user arguments in registers and on the stack
-//
-// On exit:
-//   tail calls to real method
-//
-NESTED_ENTRY ComCallPreStub, _TEXT, NoHandler
-
-    // Save arguments and return address
-    PROLOG_SAVE_REG_PAIR           fp, lr, -ComCallPreStub_FirstStackAdjust!
-    PROLOG_STACK_ALLOC  ComCallPreStub_StackAlloc
-
-    SAVE_ARGUMENT_REGISTERS        sp, (16+ComCallPreStub_StackAlloc)
-
-    SAVE_FLOAT_ARGUMENT_REGISTERS  sp, 0
-
-    str x12, [sp, #(ComCallPreStub_FrameOffset + UnmanagedToManagedFrame__m_pvDatum)]
-    add x0, sp, #(ComCallPreStub_FrameOffset)
-    add x1, sp, #(ComCallPreStub_ErrorReturnOffset)
-    bl C_FUNC(ComPreStubWorker)
-
-    cbz x0, LOCAL_LABEL(ComCallPreStub_ErrorExit)
-
-    mov x12, x0
-
-    // pop the stack and restore original register state
-    RESTORE_FLOAT_ARGUMENT_REGISTERS  sp, 0
-    RESTORE_ARGUMENT_REGISTERS        sp, (16+ComCallPreStub_StackAlloc)
-
-    EPILOG_STACK_FREE ComCallPreStub_StackAlloc
-    EPILOG_RESTORE_REG_PAIR           fp, lr, ComCallPreStub_FirstStackAdjust!
-
-    // and tailcall to the actual method
-    EPILOG_BRANCH_REG x12
-
-ComCallPreStub_ErrorExit
-    ldr x0, [sp, #(ComCallPreStub_ErrorReturnOffset)] // ErrorReturn
-
-    // pop the stack
-    EPILOG_STACK_FREE ComCallPreStub_StackAlloc
-    EPILOG_RESTORE_REG_PAIR           fp, lr, ComCallPreStub_FirstStackAdjust!
-
-    EPILOG_RETURN
-
-NESTED_END ComCallPreStub, _TEXT
-
-// ------------------------------------------------------------------
-// COM to CLR stub which sets up a ComMethodFrame and calls COMToCLRWorker.
-//
-// On entry:
-//   x12         : ComCallMethodDesc*  provided by prepad thunk
-//   plus user arguments in registers and on the stack
-//
-// On exit:
-//   Result in x0/d0 as per the real method being called
-//
-    NESTED_ENTRY GenericComCallStub, _TEXT, NoHandler
-
-    // Save arguments and return address
-    PROLOG_SAVE_REG_PAIR           fp, lr, -GenericComCallStub_FirstStackAdjust!
-    PROLOG_STACK_ALLOC  GenericComCallStub_StackAlloc
-
-    SAVE_ARGUMENT_REGISTERS        sp, (16+GenericComCallStub_StackAlloc)
-    SAVE_FLOAT_ARGUMENT_REGISTERS  sp, 0
-
-    str x12, [sp, #(GenericComCallStub_FrameOffset + UnmanagedToManagedFrame__m_pvDatum)]
-    add x1, sp, #GenericComCallStub_FrameOffset
-    bl C_FUNC(COMToCLRWorker)
-
-    // pop the stack
-    EPILOG_STACK_FREE GenericComCallStub_StackAlloc
-    EPILOG_RESTORE_REG_PAIR           fp, lr, GenericComCallStub_FirstStackAdjust!
-
-    EPILOG_RETURN
-
-    NESTED_END GenericComCallStub, _TEXT
-
-// ------------------------------------------------------------------
-// COM to CLR stub called from COMToCLRWorker that actually dispatches to the real managed method.
-//
-// On entry:
-//   x0          : dwStackSlots, count of argument stack slots to copy
-//   x1          : pFrame, ComMethodFrame pushed by GenericComCallStub above
-//   x2          : pTarget, address of code to call
-//   x3          : pSecretArg, hidden argument passed to target above in x12
-//   x4          : pDangerousThis, managed 'this' reference
-//
-// On exit:
-//   Result in x0/d0 as per the real method being called
-//
-    NESTED_ENTRY COMToCLRDispatchHelper, _TEXT,CallDescrWorkerUnwindFrameChainHandler
-
-    PROLOG_SAVE_REG_PAIR           fp, lr, -16!
-
-    cbz x0, LOCAL_LABEL(COMToCLRDispatchHelper_RegSetup)
-
-    add x9, x1, #SIZEOF__ComMethodFrame
-    add x9, x9, x0, LSL #3
-COMToCLRDispatchHelper_StackLoop
-    ldr x8, [x9, #-8]!
-    str x8, [sp, #-8]!
-    sub x0, x0, #1
-    cbnz x0, LOCAL_LABEL(COMToCLRDispatchHelper_StackLoop)
-
-COMToCLRDispatchHelper_RegSetup
-
-    RESTORE_FLOAT_ARGUMENT_REGISTERS x1, -1 * GenericComCallStub_FrameOffset
-
-    mov lr, x2
-    mov x12, x3
-
-    mov x0, x4
-
-    ldp x2, x3, [x1, #(SIZEOF__ComMethodFrame - SIZEOF__ArgumentRegisters + 16)]
-    ldp x4, x5, [x1, #(SIZEOF__ComMethodFrame - SIZEOF__ArgumentRegisters + 32)]
-    ldp x6, x7, [x1, #(SIZEOF__ComMethodFrame - SIZEOF__ArgumentRegisters + 48)]
-    ldr x8, [x1, #(SIZEOF__ComMethodFrame - SIZEOF__ArgumentRegisters - 8)]
-
-    ldr x1, [x1, #(SIZEOF__ComMethodFrame - SIZEOF__ArgumentRegisters + 8)]
-
-    blr lr
-
-    EPILOG_STACK_RESTORE
-    EPILOG_RESTORE_REG_PAIR           fp, lr, 16!
-    EPILOG_RETURN
-
-    NESTED_END COMToCLRDispatchHelper, _TEXT
-
-#endif // FEATURE_COMINTEROP
 //
 // x12 = UMEntryThunk*
 //
@@ -897,6 +481,30 @@ NESTED_END CallEHFilterFunclet, _TEXT
 
 .endm
 
+// ------------------------------------------------------------------
+//
+// Helpers for ThreadAbort exceptions
+//
+
+        NESTED_ENTRY RedirectForThreadAbort2, _TEXT, NoHandler
+        PROLOG_SAVE_REG_PAIR_INDEXED fp,lr, -16
+
+        // stack must be 16 byte aligned
+        CHECK_STACK_ALIGNMENT
+
+        // On entry:
+        //
+        // x0 = address of FaultingExceptionFrame
+        //
+        // Invoke the helper to setup the FaultingExceptionFrame and raise the exception
+        bl              C_FUNC(ThrowControlForThread)
+
+        // ThrowControlForThread doesn't return.
+        EMIT_BREAKPOINT
+
+        NESTED_END RedirectForThreadAbort2, _TEXT
+
+GenerateRedirectedStubWithFrame RedirectForThreadAbort, RedirectForThreadAbort2
 
 // ------------------------------------------------------------------
 // ResolveWorkerChainLookupAsmStub
@@ -954,10 +562,10 @@ LOCAL_LABEL(Success):
     blt     LOCAL_LABEL(Promote)
 
     ldr     x16, [x9, #ResolveCacheElem__target]    // get the ImplTarget
-    br      x16               // branch to interface implemenation target
+    br      x16               // branch to interface implementation target
 
 LOCAL_LABEL(Promote):
-                              // Move this entry to head postion of the chain
+                              // Move this entry to head position of the chain
     mov     x16, #256
     str     x16, [x13]         // be quick to reset the counter so we don't get a bunch of contending threads
     orr     x11, x11, #PROMOTE_CHAIN_FLAG   // set PROMOTE_CHAIN_FLAG
@@ -1004,8 +612,8 @@ C_FUNC(DelayLoad_MethodCall):
     mov x12, x0
 
     EPILOG_WITH_TRANSITION_BLOCK_TAILCALL
-    // Share patch label
-    b C_FUNC(ExternalMethodFixupPatchLabel)
+    PATCH_LABEL ExternalMethodFixupPatchLabel
+    EPILOG_BRANCH_REG   x12
 
 NESTED_END DelayLoad_MethodCall_FakeProlog, _TEXT
 
@@ -1037,39 +645,6 @@ NESTED_END DelayLoad_Helper\suffix\()_FakeProlog, _TEXT
 DynamicHelper DynamicHelperFrameFlags_Default
 DynamicHelper DynamicHelperFrameFlags_ObjectArg, _Obj
 DynamicHelper DynamicHelperFrameFlags_ObjectArg | DynamicHelperFrameFlags_ObjectArg2, _ObjObj
-#endif
-
-#ifdef FEATURE_COMINTEROP
-
-// Function used by COM interop to get floating point return value (since it's not in the same
-// register(s) as non-floating point values).
-//
-// On entry//
-//   x0          : size of the FP result (4 or 8 bytes)
-//   x1          : pointer to 64-bit buffer to receive result
-//
-// On exit:
-//   buffer pointed to by x1 on entry contains the float or double argument as appropriate
-//
-LEAF_ENTRY getFPReturn, _TEXT
-    str d0, [x1]
-LEAF_END getFPReturn, _TEXT
-
-// ------------------------------------------------------------------
-// Function used by COM interop to set floating point return value (since it's not in the same
-// register(s) as non-floating point values).
-//
-// On entry:
-//   x0          : size of the FP result (4 or 8 bytes)
-//   x1          : 32-bit or 64-bit FP result
-//
-// On exit:
-//   s0          : float result if x0 == 4
-//   d0          : double result if x0 == 8
-//
-LEAF_ENTRY setFPReturn, _TEXT
-    fmov d0, x1
-LEAF_END setFPReturn, _TEXT
 #endif
 
 //
@@ -1138,12 +713,6 @@ LEAF_ENTRY JIT_ProfilerEnterLeaveTailcallStub, _TEXT
 LEAF_END JIT_ProfilerEnterLeaveTailcallStub, _TEXT
 
 // ------------------------------------------------------------------
-#define PROFILE_ENTER    1
-#define PROFILE_LEAVE    2
-#define PROFILE_TAILCALL 4
-#define SIZEOF__PROFILE_PLATFORM_SPECIFIC_DATA 320
-
-// ------------------------------------------------------------------
 .macro GenerateProfileHelper helper, flags
 NESTED_ENTRY \helper\()Naked, _TEXT, NoHandler
     // On entry:
@@ -1156,21 +725,21 @@ NESTED_ENTRY \helper\()Naked, _TEXT, NoHandler
     //   Values of other volatile registers are not preserved.
 
     PROLOG_SAVE_REG_PAIR_INDEXED fp, lr, -SIZEOF__PROFILE_PLATFORM_SPECIFIC_DATA // Allocate space and save Fp, Pc.
-    SAVE_ARGUMENT_REGISTERS sp, 16          // Save x8 and argument registers (x0-x7).
-    str     xzr, [sp, 88]                   // Clear functionId.
-    SAVE_FLOAT_ARGUMENT_REGISTERS sp, 96    // Save floating-point/SIMD registers (q0-q7).
-    add     x12, fp, SIZEOF__PROFILE_PLATFORM_SPECIFIC_DATA // Compute probeSp - initial value of Sp on entry to the helper.
-    stp     x12, x11, [sp, 224]             // Save probeSp, profiledSp.
-    str     xzr, [sp, 240]                  // Clear hiddenArg.
+    SAVE_ARGUMENT_REGISTERS sp, PROFILE_PLATFORM_SPECIFIC_DATA__x8  // Save x8 and argument registers (x0-x7).
+    str     xzr, [sp, PROFILE_PLATFORM_SPECIFIC_DATA__functionId]  // Clear functionId.
+    SAVE_FLOAT_ARGUMENT_REGISTERS sp, PROFILE_PLATFORM_SPECIFIC_DATA__floatArgumentRegisters
+    add     x12, fp, SIZEOF__PROFILE_PLATFORM_SPECIFIC_DATA  // Compute probeSp - initial value of Sp on entry to the helper.
+    stp     x12, x11, [sp, PROFILE_PLATFORM_SPECIFIC_DATA__probeSp]  // Save probeSp, profiledSp.
+    str     xzr, [sp, PROFILE_PLATFORM_SPECIFIC_DATA__hiddenArg]  // Clear hiddenArg.
     mov     w12, \flags
-    stp     w12, wzr, [sp, 248]             // Save flags and clear unused field.
+    stp     w12, wzr, [sp, PROFILE_PLATFORM_SPECIFIC_DATA__flags]  // Save flags and clear unused field.
 
     mov     x0, x10
     mov     x1, sp
     bl      C_FUNC(\helper)
 
-    RESTORE_ARGUMENT_REGISTERS sp, 16       // Restore x8 and argument registers.
-    RESTORE_FLOAT_ARGUMENT_REGISTERS sp, 96 // Restore floating-point/SIMD registers.
+    RESTORE_ARGUMENT_REGISTERS sp, PROFILE_PLATFORM_SPECIFIC_DATA__x8  // Restore x8 and argument registers.
+    RESTORE_FLOAT_ARGUMENT_REGISTERS sp, PROFILE_PLATFORM_SPECIFIC_DATA__floatArgumentRegisters  // Restore floating-point/SIMD registers.
 
     EPILOG_RESTORE_REG_PAIR_INDEXED fp, lr, SIZEOF__PROFILE_PLATFORM_SPECIFIC_DATA
     EPILOG_RETURN
@@ -1190,7 +759,7 @@ NESTED_ENTRY OnCallCountThresholdReachedStub, _TEXT, NoHandler
     PROLOG_WITH_TRANSITION_BLOCK
 
     add     x0, sp, #__PWTB_TransitionBlock // TransitionBlock *
-    mov     x1, x10 // stub-identifying token
+    mov     x1, x9 // stub-identifying token
     bl      C_FUNC(OnCallCountThresholdReached)
     mov     x9, x0
 
@@ -1199,3 +768,47 @@ NESTED_ENTRY OnCallCountThresholdReachedStub, _TEXT, NoHandler
 NESTED_END OnCallCountThresholdReachedStub, _TEXT
 
 #endif // FEATURE_TIERED_COMPILATION
+
+LEAF_ENTRY JIT_ValidateIndirectCall, _TEXT
+    ret lr
+LEAF_END JIT_ValidateIndirectCall, _TEXT
+
+LEAF_ENTRY JIT_DispatchIndirectCall, _TEXT
+    br x9
+LEAF_END JIT_DispatchIndirectCall, _TEXT
+
+#ifdef TARGET_OSX
+// ------------------------------------------------------------------
+// void* GetThreadVarsAddress()
+
+// Helper to calculate the address of relevant __thread_vars section that holds the address of symbol tlv_get_address for thread
+// local `t_ThreadStatics`. The address is updated by the linker, which we retrieve here. In JIT code, this address is called
+// to retrieve the address of the thread local.
+
+LEAF_ENTRY GetThreadVarsAddress, _TEXT
+        adrp    x0,     _t_ThreadStatics@TLVPPAGE
+        ldr     x0,     [x0, _t_ThreadStatics@TLVPPAGEOFF]
+        ret
+LEAF_END GetThreadVarsAddress, _TEXT
+// ------------------------------------------------------------------
+#endif // TARGET_OSX
+
+#ifndef TARGET_OSX
+// ------------------------------------------------------------------
+// size_t GetThreadStaticsVariableOffset()
+
+// Helper to calculate the offset of native thread local variable `t_ThreadStatics` in TCB. The offset has to be found at runtime
+// once linker does its relocation and fixup of thread locals. The offset, after calculation is returned in `x0` register.
+
+LEAF_ENTRY GetThreadStaticsVariableOffset, _TEXT
+        PROLOG_SAVE_REG_PAIR_INDEXED   fp, lr, -32
+        adrp    x0,     :tlsdesc:t_ThreadStatics
+        ldr     x1,     [x0, #:tlsdesc_lo12:t_ThreadStatics]
+        add     x0,     x0, :tlsdesc_lo12:t_ThreadStatics
+        .tlsdesccall    t_ThreadStatics
+        blr     x1
+        EPILOG_RESTORE_REG_PAIR_INDEXED fp, lr, 32
+        EPILOG_RETURN
+LEAF_END GetThreadStaticsVariableOffset, _TEXT
+// ------------------------------------------------------------------
+#endif // !TARGET_OSX

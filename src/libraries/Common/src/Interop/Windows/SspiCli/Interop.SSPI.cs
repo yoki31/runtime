@@ -38,10 +38,7 @@ internal static partial class Interop
                 dwUpper = IntPtr.Zero;
             }
 
-            public override string ToString()
-            {
-                { return dwLower.ToString("x") + ":" + dwUpper.ToString("x"); }
-            }
+            public override string ToString() => $"{dwLower:x}:{dwUpper:x}";
         }
 
         internal enum ContextAttribute
@@ -67,8 +64,10 @@ internal static partial class Interop
             SECPKG_ATTR_ISSUER_LIST_EX = 0x59,         // returns SecPkgContext_IssuerListInfoEx
             SECPKG_ATTR_CLIENT_CERT_POLICY = 0x60,     // sets    SecPkgCred_ClientCertCtlPolicy
             SECPKG_ATTR_CONNECTION_INFO = 0x5A,        // returns SecPkgContext_ConnectionInfo
+            SECPKG_ATTR_SESSION_INFO = 0x5D,           // sets    SecPkgContext_SessionInfo
             SECPKG_ATTR_CIPHER_INFO = 0x64,            // returns SecPkgContext_CipherInfo
-            SECPKG_ATTR_UI_INFO = 0x68, // sets SEcPkgContext_UiInfo
+            SECPKG_ATTR_REMOTE_CERT_CHAIN = 0x67,      // returns PCCERT_CONTEXT
+            SECPKG_ATTR_UI_INFO = 0x68,                // sets    SEcPkgContext_UiInfo
         }
 
         // These values are defined within sspi.h as ISC_REQ_*, ISC_RET_*, ASC_REQ_* and ASC_RET_*.
@@ -202,6 +201,10 @@ internal static partial class Interop
                 SCH_CRED_MANUAL_CRED_VALIDATION = 0x08,
                 SCH_CRED_NO_DEFAULT_CREDS = 0x10,
                 SCH_CRED_AUTO_CRED_VALIDATION = 0x20,
+                SCH_CRED_DISABLE_RECONNECTS = 0x80,
+                SCH_CRED_REVOCATION_CHECK_END_CERT = 0x100,
+                SCH_CRED_IGNORE_NO_REVOCATION_CHECK = 0x800,
+                SCH_CRED_IGNORE_REVOCATION_OFFLINE = 0x1000,
                 SCH_SEND_AUX_RECORD = 0x00200000,
                 SCH_USE_STRONG_CRYPTO = 0x00400000,
             }
@@ -237,7 +240,7 @@ internal static partial class Interop
                 SCH_CRED_NO_DEFAULT_CREDS = 0x10,
                 SCH_CRED_AUTO_CRED_VALIDATION = 0x20,
                 SCH_CRED_USE_DEFAULT_CREDS = 0x40,
-                SCH_DISABLE_RECONNECTS = 0x80,
+                SCH_CRED_DISABLE_RECONNECTS = 0x80,
                 SCH_CRED_REVOCATION_CHECK_END_CERT = 0x100,
                 SCH_CRED_REVOCATION_CHECK_CHAIN = 0x200,
                 SCH_CRED_REVOCATION_CHECK_CHAIN_EXCLUDE_ROOT = 0x400,
@@ -330,41 +333,67 @@ internal static partial class Interop
             public char* pwszSslCtlIdentifier;
         }
 
-        [GeneratedDllImport(Interop.Libraries.SspiCli, ExactSpelling = true, SetLastError = true)]
+        [StructLayout(LayoutKind.Sequential)]
+        internal unsafe struct SecPkgContext_SessionInfo
+        {
+            public uint dwFlags;
+            public uint cbSessionId;
+            public fixed byte rgbSessionId[32];
+
+            [Flags]
+            public enum Flags
+            {
+                Zero = 0,
+                SSL_SESSION_RECONNECT = 0x01,
+            };
+        }
+
+        [LibraryImport(Interop.Libraries.SspiCli, SetLastError = true)]
         internal static partial int EncryptMessage(
             ref CredHandle contextHandle,
             uint qualityOfProtection,
             ref SecBufferDesc inputOutput,
             uint sequenceNumber);
 
-        [GeneratedDllImport(Interop.Libraries.SspiCli, ExactSpelling = true, SetLastError = true)]
+        [LibraryImport(Interop.Libraries.SspiCli, SetLastError = true)]
         internal static unsafe partial int DecryptMessage(
             ref CredHandle contextHandle,
             ref SecBufferDesc inputOutput,
             uint sequenceNumber,
             uint* qualityOfProtection);
 
-#pragma warning disable DLLIMPORTGENANALYZER015 // Use 'GeneratedDllImportAttribute' instead of 'DllImportAttribute' to generate P/Invoke marshalling code at compile time
-        [DllImport(Interop.Libraries.SspiCli, ExactSpelling = true, SetLastError = true)]
-        // TODO: [DllImportGenerator] Switch to use GeneratedDllImport once we support non-blittable structs.
-        internal static extern int QuerySecurityContextToken(
+        [LibraryImport(Interop.Libraries.SspiCli, SetLastError = true)]
+        internal static partial int MakeSignature(
+            ref CredHandle contextHandle,
+            uint qualityOfProtection,
+            ref SecBufferDesc inputOutput,
+            uint sequenceNumber);
+
+        [LibraryImport(Interop.Libraries.SspiCli, SetLastError = true)]
+        internal static unsafe partial int VerifySignature(
+            ref CredHandle contextHandle,
+            in SecBufferDesc input,
+            uint sequenceNumber,
+            uint *qualityOfProtection);
+
+        [LibraryImport(Interop.Libraries.SspiCli, SetLastError = true)]
+        internal static partial int QuerySecurityContextToken(
             ref CredHandle phContext,
             out SecurityContextTokenHandle handle);
-#pragma warning restore DLLIMPORTGENANALYZER015 // Use 'GeneratedDllImportAttribute' instead of 'DllImportAttribute' to generate P/Invoke marshalling code at compile time
 
-        [GeneratedDllImport(Interop.Libraries.SspiCli, ExactSpelling = true, SetLastError = true)]
+        [LibraryImport(Interop.Libraries.SspiCli, SetLastError = true)]
         internal static partial int FreeContextBuffer(
             IntPtr contextBuffer);
 
-        [GeneratedDllImport(Interop.Libraries.SspiCli, ExactSpelling = true, SetLastError = true)]
+        [LibraryImport(Interop.Libraries.SspiCli, SetLastError = true)]
         internal static partial int FreeCredentialsHandle(
             ref CredHandle handlePtr);
 
-        [GeneratedDllImport(Interop.Libraries.SspiCli, ExactSpelling = true, SetLastError = true)]
+        [LibraryImport(Interop.Libraries.SspiCli, SetLastError = true)]
         internal static partial int DeleteSecurityContext(
             ref CredHandle handlePtr);
 
-        [GeneratedDllImport(Interop.Libraries.SspiCli, ExactSpelling = true, SetLastError = true)]
+        [LibraryImport(Interop.Libraries.SspiCli, SetLastError = true)]
         internal static unsafe partial int AcceptSecurityContext(
             ref CredHandle credentialHandle,
             void* inContextPtr,
@@ -376,25 +405,25 @@ internal static partial class Interop
             ref ContextFlags attributes,
             out long timeStamp);
 
-        [GeneratedDllImport(Interop.Libraries.SspiCli, ExactSpelling = true, SetLastError = true)]
+        [LibraryImport(Interop.Libraries.SspiCli, SetLastError = true)]
         internal static unsafe partial int QueryContextAttributesW(
             ref CredHandle contextHandle,
             ContextAttribute attribute,
             void* buffer);
 
-        [GeneratedDllImport(Interop.Libraries.SspiCli, ExactSpelling = true, SetLastError = true)]
+        [LibraryImport(Interop.Libraries.SspiCli, SetLastError = true)]
         internal static partial int SetContextAttributesW(
             ref CredHandle contextHandle,
             ContextAttribute attribute,
             byte[] buffer,
             int bufferSize);
 
-        [GeneratedDllImport(Interop.Libraries.SspiCli, ExactSpelling = true, SetLastError = true)]
+        [LibraryImport(Interop.Libraries.SspiCli, SetLastError = true)]
         internal static partial int EnumerateSecurityPackagesW(
             out int pkgnum,
             out SafeFreeContextBuffer_SECURITY handle);
 
-        [GeneratedDllImport(Interop.Libraries.SspiCli, CharSet = CharSet.Unicode, ExactSpelling = true, SetLastError = true)]
+        [LibraryImport(Interop.Libraries.SspiCli, SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
         internal static unsafe partial int AcquireCredentialsHandleW(
             string? principal,
             string moduleName,
@@ -406,7 +435,7 @@ internal static partial class Interop
             ref CredHandle handlePtr,
             out long timeStamp);
 
-        [GeneratedDllImport(Interop.Libraries.SspiCli, CharSet = CharSet.Unicode, ExactSpelling = true, SetLastError = true)]
+        [LibraryImport(Interop.Libraries.SspiCli, SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
         internal static unsafe partial int AcquireCredentialsHandleW(
             string? principal,
             string moduleName,
@@ -418,7 +447,7 @@ internal static partial class Interop
             ref CredHandle handlePtr,
             out long timeStamp);
 
-        [GeneratedDllImport(Interop.Libraries.SspiCli, CharSet = CharSet.Unicode, ExactSpelling = true, SetLastError = true)]
+        [LibraryImport(Interop.Libraries.SspiCli, SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
         internal static unsafe partial int AcquireCredentialsHandleW(
             string? principal,
             string moduleName,
@@ -430,7 +459,7 @@ internal static partial class Interop
             ref CredHandle handlePtr,
             out long timeStamp);
 
-        [GeneratedDllImport(Interop.Libraries.SspiCli, CharSet = CharSet.Unicode, ExactSpelling = true, SetLastError = true)]
+        [LibraryImport(Interop.Libraries.SspiCli, SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
         internal static unsafe partial int AcquireCredentialsHandleW(
             string? principal,
             string moduleName,
@@ -442,7 +471,7 @@ internal static partial class Interop
             ref CredHandle handlePtr,
             out long timeStamp);
 
-        [GeneratedDllImport(Interop.Libraries.SspiCli, ExactSpelling = true, SetLastError = true)]
+        [LibraryImport(Interop.Libraries.SspiCli, SetLastError = true)]
         internal static unsafe partial int InitializeSecurityContextW(
             ref CredHandle credentialHandle,
             void* inContextPtr,
@@ -457,35 +486,32 @@ internal static partial class Interop
             ref ContextFlags attributes,
             out long timeStamp);
 
-        [GeneratedDllImport(Interop.Libraries.SspiCli, ExactSpelling = true, SetLastError = true)]
+        [LibraryImport(Interop.Libraries.SspiCli, SetLastError = true)]
         internal static unsafe partial int CompleteAuthToken(
             void* inContextPtr,
             ref SecBufferDesc inputBuffers);
 
-        [GeneratedDllImport(Interop.Libraries.SspiCli, ExactSpelling = true, SetLastError = true)]
+        [LibraryImport(Interop.Libraries.SspiCli, SetLastError = true)]
         internal static unsafe partial int ApplyControlToken(
             void* inContextPtr,
             ref SecBufferDesc inputBuffers);
 
-        [GeneratedDllImport(Interop.Libraries.SspiCli, ExactSpelling = true, SetLastError = true)]
+        [LibraryImport(Interop.Libraries.SspiCli, SetLastError = true)]
         internal static partial SECURITY_STATUS SspiFreeAuthIdentity(
             IntPtr authData);
 
-        [GeneratedDllImport(Interop.Libraries.SspiCli, CharSet = CharSet.Unicode, ExactSpelling = true, SetLastError = true)]
+        [LibraryImport(Interop.Libraries.SspiCli, SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
         internal static partial SECURITY_STATUS SspiEncodeStringsAsAuthIdentity(
             string userName,
             string domainName,
             string password,
             out SafeSspiAuthDataHandle authData);
 
-#pragma warning disable DLLIMPORTGENANALYZER015 // Use 'GeneratedDllImportAttribute' instead of 'DllImportAttribute' to generate P/Invoke marshalling code at compile time
-        [DllImport(Interop.Libraries.SspiCli, CharSet = CharSet.Unicode, ExactSpelling = true, SetLastError = true)]
-        // TODO: [DllImportGenerator] Switch to use GeneratedDllImport once we support non-blittable structs.
-        internal static extern SECURITY_STATUS SetCredentialsAttributesW(
+        [LibraryImport(Interop.Libraries.SspiCli, SetLastError = true)]
+        internal static partial SECURITY_STATUS SetCredentialsAttributesW(
             in CredHandle handlePtr,
             long ulAttribute,
             in SecPkgCred_ClientCertPolicy pBuffer,
             long cbBuffer);
-#pragma warning restore DLLIMPORTGENANALYZER015 // Use 'GeneratedDllImportAttribute' instead of 'DllImportAttribute' to generate P/Invoke marshalling code at compile time
     }
 }

@@ -129,5 +129,30 @@ namespace System.Reflection.PortableExecutable
         /// ARM64
         /// </summary>
         Arm64 = 0xAA64,
+
+        /// <summary>
+        /// LOONGARCH32
+        /// </summary>
+        LoongArch32 = 0x6232,
+
+        /// <summary>
+        /// LOONGARCH64
+        /// </summary>
+        LoongArch64 = 0x6264,
+
+        /// <summary>
+        /// RISCV32
+        /// </summary>
+        RiscV32 = 0x5032,
+
+        /// <summary>
+        /// RISCV64
+        /// </summary>
+        RiscV64 = 0x5064,
+
+        /// <summary>
+        /// RISCV128
+        /// </summary>
+        RiscV128 = 0x5128,
     }
 }

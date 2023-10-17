@@ -111,12 +111,17 @@ mini_llvmonly_get_delegate_arg (MonoMethod *method, gpointer method_ptr)
  * This is used for:
  * - generic sharing (ARG is the rgctx)
  * - gsharedvt signature wrappers (ARG is a function descriptor)
- * 
+ *
  */
 MonoFtnDesc*
 mini_llvmonly_create_ftndesc (MonoMethod *m, gpointer addr, gpointer arg)
 {
-	MonoFtnDesc *ftndesc = (MonoFtnDesc*)m_method_alloc0 (m, sizeof (MonoFtnDesc));
+	MonoFtnDesc *ftndesc;
+
+	if (m->dynamic)
+		ftndesc = mono_dyn_method_alloc0 (m, sizeof (MonoFtnDesc));
+	else
+		ftndesc = (MonoFtnDesc*)m_method_alloc0 (m, sizeof (MonoFtnDesc));
 	ftndesc->addr = addr;
 	ftndesc->arg = arg;
 	ftndesc->method = m;
@@ -160,7 +165,7 @@ mini_llvmonly_add_method_wrappers (MonoMethod *m, gpointer compiled_method, gboo
 	addr = compiled_method;
 
 	if (add_unbox_tramp) {
-		/* 
+		/*
 		 * The unbox trampolines call the method directly, so need to add
 		 * an rgctx tramp before them.
 		 */
@@ -203,7 +208,7 @@ mini_llvmonly_add_method_wrappers (MonoMethod *m, gpointer compiled_method, gboo
 
 	if (caller_gsharedvt && !callee_gsharedvt) {
 		/*
-		 * The callee uses the gsharedvt calling convention, have to add an out wrapper.
+		 * The caller uses the gsharedvt calling convention, have to add an out wrapper.
 		 */
 		gpointer out_wrapper = mini_get_gsharedvt_wrapper (FALSE, NULL, mono_method_signature_internal (m), NULL, -1, FALSE);
 		MonoFtnDesc *out_wrapper_arg = mini_llvmonly_create_ftndesc (m, addr, *out_arg);
@@ -215,6 +220,29 @@ mini_llvmonly_add_method_wrappers (MonoMethod *m, gpointer compiled_method, gboo
 	return addr;
 }
 
+static inline MonoVTableEEData*
+get_vtable_ee_data (MonoVTable *vtable)
+{
+	MonoVTableEEData *ee_data = (MonoVTableEEData*)vtable->ee_data;
+
+	if (G_UNLIKELY (!ee_data)) {
+		ee_data = m_class_alloc0 (vtable->klass, sizeof (MonoVTableEEData));
+		mono_memory_barrier ();
+		vtable->ee_data = ee_data;
+	}
+	return ee_data;
+}
+
+static void
+alloc_gsharedvt_vtable (MonoVTable *vtable)
+{
+	MonoVTableEEData *ee_data = get_vtable_ee_data (vtable);
+
+	if (!ee_data->gsharedvt_vtable) {
+		gpointer *vt = (gpointer*)m_class_alloc0 (vtable->klass, (m_class_get_vtable_size (vtable->klass) + MONO_IMT_SIZE) * sizeof (gpointer));
+		ee_data->gsharedvt_vtable = (MonoFtnDesc**)(vt + MONO_IMT_SIZE);
+	}
+}
 
 typedef struct {
 	MonoVTable *vtable;
@@ -294,6 +322,26 @@ llvmonly_imt_tramp_3 (gpointer *arg, MonoMethod *imt_method)
 		return arg [3];
 	else
 		return arg [5];
+}
+
+static gpointer
+llvmonly_fallback_imt_tramp_1 (gpointer *arg, MonoMethod *imt_method)
+{
+	if (G_LIKELY (arg [0] == imt_method))
+		return arg [1];
+	else
+		return NULL;
+}
+
+static gpointer
+llvmonly_fallback_imt_tramp_2 (gpointer *arg, MonoMethod *imt_method)
+{
+	if (arg [0] == imt_method)
+		return arg [1];
+	else if (arg [2] == imt_method)
+		return arg [3];
+	else
+		return NULL;
 }
 
 /*
@@ -392,8 +440,19 @@ mini_llvmonly_get_imt_trampoline (MonoVTable *vtable, MonoIMTCheckItem **imt_ent
 		res [0] = (gpointer)llvmonly_imt_tramp;
 		break;
 	}
-	if (virtual_generic || fail_tramp)
-		res [0] = (gpointer)llvmonly_fallback_imt_tramp;
+	if (virtual_generic || fail_tramp) {
+		switch (real_count) {
+		case 1:
+			res [0] = (gpointer)llvmonly_fallback_imt_tramp_1;
+			break;
+		case 2:
+			res [0] = (gpointer)llvmonly_fallback_imt_tramp_2;
+			break;
+		default:
+			res [0] = (gpointer)llvmonly_fallback_imt_tramp;
+			break;
+		}
+	}
 	res [1] = buf;
 
 	return res;
@@ -405,8 +464,8 @@ mini_llvmonly_get_vtable_trampoline (MonoVTable *vt, int slot_index, int index)
 	if (slot_index < 0) {
 		/* Initialize the IMT trampoline to a 'trampoline' so the generated code doesn't have to initialize it */
 		// FIXME: Memory management
-		gpointer *ftndesc = g_malloc (2 * sizeof (gpointer));
-		IMTTrampInfo *info = g_new0 (IMTTrampInfo, 1);
+		gpointer *ftndesc = m_class_alloc0 (vt->klass, 2 * sizeof (gpointer));
+		IMTTrampInfo *info = m_class_alloc0 (vt->klass, sizeof (IMTTrampInfo));
 		info->vtable = vt;
 		info->slot = index;
 		ftndesc [0] = (gpointer)mini_llvmonly_initial_imt_tramp;
@@ -518,9 +577,56 @@ mini_llvmonly_resolve_vcall_gsharedvt (MonoObject *this_obj, int slot, MonoMetho
 	gpointer result = resolve_vcall (this_obj->vtable, slot, imt_method, out_arg, TRUE, error);
 	if (!is_ok (error)) {
 		MonoException *ex = mono_error_convert_to_exception (error);
-		mono_llvm_throw_exception ((MonoObject*)ex);
+		mini_llvmonly_throw_exception ((MonoObject*)ex);
 	}
 	return result;
+}
+
+MonoFtnDesc*
+mini_llvmonly_resolve_vcall_gsharedvt_fast (MonoObject *this_obj, int slot)
+{
+	g_assert (this_obj);
+
+	/*
+	 * Virtual calls with gsharedvt signatures are complicated to handle:
+	 * - gsharedvt methods cannot be stored in vtable slots since most callers used the normal
+	 *   calling convention and we don't want to do a runtime check on every virtual call.
+	 * - adding a gsharedvt in wrapper around them and storing that to the vtable wouldn't work either,
+	 *   because the wrapper might not exist if all the possible callers are also gsharedvt, since in that
+	 *   case, the concrete signature might not exist in the program.
+	 * To solve this, allocate a separate vtable which contains entries with gsharedvt calling convs.
+	 * either gsharedvt methods, or normal methods with gsharedvt out wrappers.
+	 */
+
+	/* Fastpath */
+	MonoVTable *vtable = this_obj->vtable;
+	MonoVTableEEData *ee_data = get_vtable_ee_data (vtable);
+	MonoFtnDesc *ftndesc;
+
+	if (G_LIKELY (ee_data->gsharedvt_vtable)) {
+		ftndesc = ee_data->gsharedvt_vtable [slot];
+		if (G_LIKELY (ftndesc))
+			return ftndesc;
+	}
+
+	/* Slowpath */
+	alloc_gsharedvt_vtable (vtable);
+
+	ERROR_DECL (error);
+	gpointer arg;
+	gpointer addr = resolve_vcall (vtable, slot, NULL, &arg, TRUE, error);
+	if (!is_ok (error)) {
+		MonoException *ex = mono_error_convert_to_exception (error);
+		mini_llvmonly_throw_exception ((MonoObject*)ex);
+	}
+
+	ftndesc = m_class_alloc0 (vtable->klass, sizeof (MonoFtnDesc));
+	ftndesc->addr = addr;
+	ftndesc->arg = arg;
+	mono_memory_barrier ();
+	ee_data->gsharedvt_vtable [slot] = ftndesc;
+
+	return ftndesc;
 }
 
 /*
@@ -596,7 +702,7 @@ mini_llvmonly_resolve_generic_virtual_iface_call (MonoVTable *vt, int imt_slot, 
 	mini_resolve_imt_method (vt, imt + imt_slot, generic_virtual, &m, &aot_addr, &need_rgctx_tramp, &variant_iface, error);
 	if (!is_ok (error)) {
 		MonoException *ex = mono_error_convert_to_exception (error);
-		mono_llvm_throw_exception ((MonoObject*)ex);
+		mini_llvmonly_throw_exception ((MonoObject*)ex);
 	}
 
 	if (m_class_is_valuetype (vt->klass))
@@ -656,6 +762,12 @@ mini_llvmonly_init_delegate (MonoDelegate *del, MonoDelegateTrampInfo *info)
 	ERROR_DECL (error);
 	MonoFtnDesc *ftndesc;
 
+	if (info && info->is_virtual) {
+		del->method = mono_object_get_virtual_method_internal (del->target, info->method);
+		/* Create a new one below for the new class+method pair */
+		info = NULL;
+	}
+
 	if (!info && !del->method) {
 		// Multicast delegate init
 		// Have to set the invoke_impl field
@@ -670,8 +782,10 @@ mini_llvmonly_init_delegate (MonoDelegate *del, MonoDelegateTrampInfo *info)
 
 	if (G_UNLIKELY (!info)) {
 		g_assert (del->method);
-		info = mono_create_delegate_trampoline_info (del->object.vtable->klass, del->method);
+		info = mono_create_delegate_trampoline_info (del->object.vtable->klass, del->method, FALSE);
 	}
+
+	del->method = info->method;
 
 	/* Cache the target method address in MonoDelegateTrampInfo */
 	ftndesc = (MonoFtnDesc*)info->method_ptr;
@@ -700,12 +814,14 @@ mini_llvmonly_init_delegate (MonoDelegate *del, MonoDelegateTrampInfo *info)
 
 	WrapperSubtype subtype = mono_marshal_get_delegate_invoke_subtype (info->invoke, del);
 
+	if (subtype == WRAPPER_SUBTYPE_DELEGATE_INVOKE_BOUND)
+		del->bound = TRUE;
+
 	ftndesc = info->invoke_impl;
 	if (G_UNLIKELY (!ftndesc) || subtype != WRAPPER_SUBTYPE_NONE) {
-		ERROR_DECL (error);
 		MonoMethod *invoke_impl = mono_marshal_get_delegate_invoke (info->invoke, del);
 		gpointer arg = NULL;
-		gpointer addr = mini_llvmonly_load_method_delegate (invoke_impl, FALSE, FALSE, &arg, error);
+		gpointer addr = mini_llvmonly_load_method (invoke_impl, FALSE, FALSE, &arg, error);
 		mono_error_assert_ok (error);
 		ftndesc = mini_llvmonly_create_ftndesc (invoke_impl, addr, arg);
 		if (subtype == WRAPPER_SUBTYPE_NONE) {
@@ -716,16 +832,6 @@ mini_llvmonly_init_delegate (MonoDelegate *del, MonoDelegateTrampInfo *info)
 		}
 	}
 	del->invoke_impl = ftndesc;
-}
-
-void
-mini_llvmonly_init_delegate_virtual (MonoDelegate *del, MonoObject *target, MonoMethod *method)
-{
-	g_assert (target);
-
-	del->method = mono_object_get_virtual_method_internal (target, method);
-
-	mini_llvmonly_init_delegate (del, NULL);
 }
 
 /*
@@ -786,12 +892,46 @@ mini_llvmonly_resolve_iface_call_gsharedvt (MonoObject *this_obj, int imt_slot, 
 {
 	ERROR_DECL (error);
 
-	gpointer res = resolve_iface_call (this_obj, imt_slot, imt_method, out_arg, TRUE, error);
+	// Fastpath
+	MonoVTable *vtable = this_obj->vtable;
+	MonoVTableEEData* ee_data = get_vtable_ee_data (vtable);
+	gpointer *gsharedvt_imt = NULL;
+	MonoFtnDesc *ftndesc;
+
+	if (G_LIKELY (ee_data && ee_data->gsharedvt_vtable)) {
+		gsharedvt_imt = ((gpointer*)ee_data->gsharedvt_vtable) - MONO_IMT_SIZE;
+
+		// Use a 1 element imt entry for now, i.e. cache one method per IMT slot
+		gpointer *entries = gsharedvt_imt [imt_slot];
+		if (G_LIKELY (entries && entries [0] == imt_method)) {
+			ftndesc = entries [1];
+			*out_arg = ftndesc->arg;
+			return ftndesc->addr;
+		}
+	}
+
+	alloc_gsharedvt_vtable (vtable);
+	gsharedvt_imt = ((gpointer*)ee_data->gsharedvt_vtable) - MONO_IMT_SIZE;
+
+	gpointer addr = resolve_iface_call (this_obj, imt_slot, imt_method, out_arg, TRUE, error);
 	if (!is_ok (error)) {
 		MonoException *ex = mono_error_convert_to_exception (error);
-		mono_llvm_throw_exception ((MonoObject*)ex);
+		mini_llvmonly_throw_exception ((MonoObject*)ex);
 	}
-	return res;
+
+	if (!gsharedvt_imt [imt_slot]) {
+		ftndesc = m_class_alloc0 (vtable->klass, sizeof (MonoFtnDesc));
+		ftndesc->addr = addr;
+		ftndesc->arg = *out_arg;
+
+		gpointer *arr = m_class_alloc0 (vtable->klass, sizeof (gpointer) * 2);
+		arr [0] = imt_method;
+		arr [1] = ftndesc;
+		mono_memory_barrier ();
+		gsharedvt_imt [imt_slot] = arr;
+	}
+
+	return addr;
 }
 
 /* Called from LLVM code to initialize a method */
@@ -809,7 +949,7 @@ mini_llvm_init_method (MonoAotFileInfo *info, gpointer aot_module, gpointer meth
 		if (ex) {
 			/* Its okay to raise in llvmonly mode */
 			if (mono_llvm_only) {
-				mono_llvm_throw_exception ((MonoObject*)ex);
+				mini_llvmonly_throw_exception ((MonoObject*)ex);
 			} else {
 				mono_set_pending_exception (ex);
 			}
@@ -818,6 +958,8 @@ mini_llvm_init_method (MonoAotFileInfo *info, gpointer aot_module, gpointer meth
 }
 
 static GENERATE_GET_CLASS_WITH_CACHE (nullref, "System", "NullReferenceException")
+static GENERATE_GET_CLASS_WITH_CACHE (index_out_of_range, "System", "IndexOutOfRangeException")
+static GENERATE_GET_CLASS_WITH_CACHE (invalid_cast, "System", "InvalidCastException")
 
 void
 mini_llvmonly_throw_nullref_exception (void)
@@ -826,7 +968,7 @@ mini_llvmonly_throw_nullref_exception (void)
 
 	guint32 ex_token_index = m_class_get_type_token (klass) - MONO_TOKEN_TYPE_DEF;
 
-	mono_llvm_throw_corlib_exception (ex_token_index);
+	mini_llvmonly_throw_corlib_exception (ex_token_index);
 }
 
 void
@@ -835,27 +977,31 @@ mini_llvmonly_throw_aot_failed_exception (const char *name)
 	char *msg = g_strdup_printf ("AOT Compilation failed for method '%s'.", name);
 	MonoException *ex = mono_get_exception_execution_engine (msg);
 	g_free (msg);
-	mono_llvm_throw_exception ((MonoObject*)ex);
+	mini_llvmonly_throw_exception ((MonoObject*)ex);
 }
 
-/*
- * mini_llvmonly_pop_lmf:
- *
- *   Pop LMF off the LMF stack.
- */
 void
-mini_llvmonly_pop_lmf (MonoLMF *lmf)
+mini_llvmonly_throw_index_out_of_range_exception (void)
 {
-	if (lmf->previous_lmf)
-		mono_set_lmf ((MonoLMF*)lmf->previous_lmf);
+	MonoClass *klass = mono_class_get_index_out_of_range_class ();
+
+	guint32 ex_token_index = m_class_get_type_token (klass) - MONO_TOKEN_TYPE_DEF;
+
+	mini_llvmonly_throw_corlib_exception (ex_token_index);
 }
 
-gpointer
-mini_llvmonly_get_interp_entry (MonoMethod *method)
+void
+mini_llvmonly_throw_invalid_cast_exception (void)
 {
-	ERROR_DECL (error);
+	MonoClass *klass = mono_class_get_invalid_cast_class ();
 
-	MonoFtnDesc *desc = mini_get_interp_callbacks ()->create_method_pointer_llvmonly (method, FALSE, error);
-	mono_error_assert_ok (error);
-	return desc;
+	guint32 ex_token_index = m_class_get_type_token (klass) - MONO_TOKEN_TYPE_DEF;
+
+	mini_llvmonly_throw_corlib_exception (ex_token_index);
+}
+
+void
+mini_llvmonly_interp_entry_gsharedvt (gpointer imethod, gpointer res, gpointer *args)
+{
+	mini_get_interp_callbacks ()->entry_llvmonly (res, args, imethod);
 }

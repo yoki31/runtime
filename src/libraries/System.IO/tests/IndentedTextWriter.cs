@@ -1,14 +1,15 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
-using System.Text;
 using System.CodeDom.Compiler;
-using Xunit;
+using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
-using System.Globalization;
-using System.Collections.Generic;
+using Xunit;
 
 namespace System.CodeDom.Tests
 {
@@ -243,6 +244,14 @@ namespace System.CodeDom.Tests
                 return result;
             }
 
+            public override Task FlushAsync(CancellationToken cancellationToken)
+            {
+                Task result = base.FlushAsync();
+                LastCalledMethod = nameof(FlushAsync) + "Cancelable";
+
+                return result;
+            }
+
             public override Task WriteAsync(char value)
             {
                 Task result = base.WriteAsync(value);
@@ -312,7 +321,7 @@ namespace System.CodeDom.Tests
             Assert.Same(sw, itw.InnerWriter);
             Assert.Equal(sw.NewLine, itw.NewLine);
 
-            Assert.Equal(new string(' ', 4), IndentedTextWriter.DefaultTabString);
+            Assert.Equal("    ", IndentedTextWriter.DefaultTabString);
         }
 
         [Fact]
@@ -346,7 +355,7 @@ namespace System.CodeDom.Tests
 
             string expectedTab = string.Concat(Enumerable.Repeat(TabString, itw.Indent));
             Assert.Equal(
-                "first" + Environment.NewLine +
+                expectedTab + "first" + Environment.NewLine +
                 expectedTab + "second" + Environment.NewLine +
                 expectedTab + "third" + Environment.NewLine,
                 sb.ToString());
@@ -373,7 +382,7 @@ namespace System.CodeDom.Tests
                 itw.WriteLine("Should be indented");
                 itw.Flush();
 
-                Assert.Equal(itw.NewLine + tabString + "Should be indented" + itw.NewLine, sb.ToString());
+                Assert.Equal(tabString + itw.NewLine + tabString + "Should be indented" + itw.NewLine, sb.ToString());
                 itw.Close();
             }
         }
@@ -440,7 +449,7 @@ namespace System.CodeDom.Tests
             itw.WriteLineNoTabs("notabs");
 
             Assert.Equal(
-                "" + newline +
+                "t" + newline +
                 "tTrueabcde45.66.789101112131415 1615 16 1715 16 17 18True" + newline +
                 "ta" + newline +
                 "tbc" + newline +
@@ -559,7 +568,6 @@ namespace System.CodeDom.Tests
         private const string TabString = "   ";
         private const string NewLine = "\n";
 
-        [SkipOnTargetFramework(TargetFrameworkMonikers.NetFramework)]
         [Theory]
         [MemberData(nameof(WriteAsync_MemberData))]
         public async Task WriteAsync_WithoutIndents_CallsInnerWriteAsync(Func<IndentedTextWriter, Task> callWriteAsync, string expected)
@@ -574,7 +582,6 @@ namespace System.CodeDom.Tests
             Assert.Equal(expected, indicator.GetStringBuilder().ToString());
         }
 
-        [SkipOnTargetFramework(TargetFrameworkMonikers.NetFramework)]
         [Theory]
         [MemberData(nameof(WriteAsync_MemberData))]
         public async Task WriteAsync_WithIndents_WritesTabsAfterWriteLineAsync(Func<IndentedTextWriter, Task> callWriteAsync, string expected)
@@ -589,7 +596,7 @@ namespace System.CodeDom.Tests
             await callWriteAsync(itw);
 
             Assert.Equal(nameof(IndentedTextWriter.WriteAsync), indicator.LastCalledMethod);
-            Assert.Equal($"{prefix}{NewLine}{TabString}{expected}", indicator.GetStringBuilder().ToString());
+            Assert.Equal($"{TabString}{prefix}{NewLine}{TabString}{expected}", indicator.GetStringBuilder().ToString());
         }
 
         [Theory]
@@ -606,7 +613,7 @@ namespace System.CodeDom.Tests
             await callWriteAsync(itw);
 
             Assert.Equal(nameof(IndentedTextWriter.WriteAsync), indicator.LastCalledMethod);
-            Assert.Equal($"{prefix}{expected}", indicator.GetStringBuilder().ToString());
+            Assert.Equal($"{TabString}{prefix}{expected}", indicator.GetStringBuilder().ToString());
         }
 
         [Theory]
@@ -624,7 +631,7 @@ namespace System.CodeDom.Tests
 
         [Theory]
         [MemberData(nameof(WriteLineAsync_MemberData))]
-        public async Task WriteLineAsync_WithIndents_FirstLine_IsNotIndented(Func<IndentedTextWriter, Task> callWriteLineAsync, string expected)
+        public async Task WriteLineAsync_WithIndents(Func<IndentedTextWriter, Task> callWriteLineAsync, string expected)
         {
             var indicator = new IndicatingTextWriter();
             var itw = new IndentedTextWriter(indicator, TabString);
@@ -633,7 +640,7 @@ namespace System.CodeDom.Tests
             await callWriteLineAsync(itw);
 
             Assert.Equal(nameof(IndentedTextWriter.WriteLineAsync), indicator.LastCalledMethod);
-            Assert.Equal(expected, indicator.GetStringBuilder().ToString());
+            Assert.Equal($"{TabString}{expected}", indicator.GetStringBuilder().ToString());
         }
 
         [Theory]
@@ -650,7 +657,7 @@ namespace System.CodeDom.Tests
             await callWriteLineAsync(itw);
 
             Assert.Equal(nameof(IndentedTextWriter.WriteLineAsync), indicator.LastCalledMethod);
-            Assert.Equal($"{prefix}{NewLine}{TabString}{expected}", indicator.GetStringBuilder().ToString());
+            Assert.Equal($"{TabString}{prefix}{NewLine}{TabString}{expected}", indicator.GetStringBuilder().ToString());
         }
 
         [Fact]
@@ -687,7 +694,7 @@ namespace System.CodeDom.Tests
 
         [Theory]
         [MemberData(nameof(Write_MemberData))]
-        public void Write_WithIndents_FirstLine_IsNotIndented(Action<IndentedTextWriter> callWrite, string expected)
+        public void Write_WithIndents_FirstLine_IsIndented(Action<IndentedTextWriter> callWrite, string expected)
         {
             var indicator = new IndicatingTextWriter();
             var itw = new IndentedTextWriter(indicator, TabString);
@@ -697,12 +704,12 @@ namespace System.CodeDom.Tests
             callWrite(itw);
 
             Assert.Equal(nameof(IndentedTextWriter.Write), indicator.LastCalledMethod);
-            Assert.Equal(expected, indicator.GetStringBuilder().ToString());
+            Assert.Equal($"{TabString}{expected}", indicator.GetStringBuilder().ToString());
         }
 
         [Theory]
         [MemberData(nameof(Write_MemberData))]
-        public void Write_IsIndented_AfterWriteLine(Action<IndentedTextWriter> callWrite, string expected)
+        public void Write_IsIndented(Action<IndentedTextWriter> callWrite, string expected)
         {
             var indicator = new IndicatingTextWriter();
             var itw = new IndentedTextWriter(indicator, TabString);
@@ -714,7 +721,7 @@ namespace System.CodeDom.Tests
             callWrite(itw);
 
             Assert.Equal(nameof(IndentedTextWriter.Write), indicator.LastCalledMethod);
-            Assert.Equal($"{prefix}{NewLine}{TabString}{expected}", indicator.GetStringBuilder().ToString());
+            Assert.Equal($"{TabString}{prefix}{NewLine}{TabString}{expected}", indicator.GetStringBuilder().ToString());
         }
 
         [Theory]
@@ -743,12 +750,12 @@ namespace System.CodeDom.Tests
             callWriteLine(itw);
 
             Assert.Equal(nameof(IndentedTextWriter.WriteLine), indicator.LastCalledMethod);
-            Assert.Equal(expected, indicator.GetStringBuilder().ToString());
+            Assert.Equal($"{TabString}{expected}", indicator.GetStringBuilder().ToString());
         }
 
         [Theory]
         [MemberData(nameof(WriteLine_MemberData))]
-        public void WriteLine_IsIndented_AfterWriteLine(Action<IndentedTextWriter> callWriteLine, string expected)
+        public void WriteLine_IsIndented(Action<IndentedTextWriter> callWriteLine, string expected)
         {
             var indicator = new IndicatingTextWriter();
             var itw = new IndentedTextWriter(indicator, TabString);
@@ -760,10 +767,9 @@ namespace System.CodeDom.Tests
             callWriteLine(itw);
 
             Assert.Equal(nameof(IndentedTextWriter.WriteLine), indicator.LastCalledMethod);
-            Assert.Equal($"{prefix}{NewLine}{TabString}{expected}", indicator.GetStringBuilder().ToString());
+            Assert.Equal($"{TabString}{prefix}{NewLine}{TabString}{expected}", indicator.GetStringBuilder().ToString());
         }
 
-        [SkipOnTargetFramework(TargetFrameworkMonikers.NetFramework)]
         [Fact]
         public async Task FlushAsync_CallsUnderlyingFlushAsync()
         {
@@ -773,6 +779,43 @@ namespace System.CodeDom.Tests
             await itw.FlushAsync();
 
             Assert.Equal(nameof(IndentedTextWriter.FlushAsync), indicator.LastCalledMethod);
+        }
+
+        [Fact]
+        public async Task FlushAsync_Cancellation_CallsUnderlyingFlushAsync()
+        {
+            var indicator = new IndicatingTextWriter();
+            var itw = new IndentedTextWriter(indicator);
+
+            await itw.FlushAsync(new CancellationTokenSource().Token);
+            Assert.Equal(nameof(IndentedTextWriter.FlushAsync) + "Cancelable", indicator.LastCalledMethod);
+
+            var cts = new CancellationTokenSource();
+            cts.Cancel();
+            Task t = itw.FlushAsync(cts.Token);
+            Assert.Equal(TaskStatus.Canceled, t.Status);
+            Assert.Equal(cts.Token, (await Assert.ThrowsAnyAsync<OperationCanceledException>(() => t)).CancellationToken);
+        }
+
+        [Fact]
+        public async Task FlushAsync_DerivedIndentedTextWriter_NonCancelableFlushAsyncInvoked()
+        {
+            var itw = new DerivedIndentedTextWriter(TextWriter.Null);
+            await itw.FlushAsync(new CancellationTokenSource().Token);
+            Assert.True(itw.NonCancelableFlushAsyncInvoked);
+        }
+
+        private sealed class DerivedIndentedTextWriter : IndentedTextWriter
+        {
+            public bool NonCancelableFlushAsyncInvoked;
+
+            public DerivedIndentedTextWriter(TextWriter writer) : base(writer) { }
+
+            public override Task FlushAsync()
+            {
+                NonCancelableFlushAsyncInvoked = true;
+                return Task.CompletedTask;
+            }
         }
 
         [Fact]

@@ -40,7 +40,7 @@ namespace
         pal::dll_t _dll;
     };
 
-    HRESULT activate_class(comhost_exports &comhost, REFCLSID clsid)
+    HRESULT activate_class(const comhost_exports &comhost, REFCLSID clsid)
     {
         IClassFactory *classFactory;
         HRESULT hr = comhost.get_class_obj_fn(clsid, __uuidof(IClassFactory), (void**)&classFactory);
@@ -61,7 +61,7 @@ namespace
     {
         if (FAILED(::CLSIDFromString(clsid_str.c_str(), clsid)))
         {
-            std::cout << "Invalid CLSID: " << clsid_str.c_str() << std::endl;
+            std::wcout << _X("Invalid CLSID: ") << clsid_str.c_str() << std::endl;
             return false;
         }
 

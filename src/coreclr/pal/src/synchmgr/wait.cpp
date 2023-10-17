@@ -56,7 +56,7 @@ static PalObjectTypeId sg_rgSignalableObjectIds[] =
     otiNamedMutex,
     otiSemaphore
 };
-static CAllowedObjectTypes sg_aotSignalableObject(sg_rgSignalableObjectIds, _countof(sg_rgSignalableObjectIds));
+static CAllowedObjectTypes sg_aotSignalableObject(sg_rgSignalableObjectIds, ARRAY_SIZE(sg_rgSignalableObjectIds));
 
 /*++
 Function:
@@ -439,7 +439,7 @@ DWORD CorUnix::InternalWaitForMultipleObjectsEx(
         try
         {
             MutexTryAcquireLockResult tryAcquireLockResult =
-                static_cast<NamedMutexProcessData *>(processDataHeader->GetData())->TryAcquireLock(dwMilliseconds);
+                static_cast<NamedMutexProcessData *>(processDataHeader->GetData())->TryAcquireLock(nullptr, dwMilliseconds);
             switch (tryAcquireLockResult)
             {
                 case MutexTryAcquireLockResult::AcquiredLock:
@@ -655,7 +655,7 @@ WFMOExIntReleaseControllers:
         case WaitSucceeded:
             dwRet = WAIT_OBJECT_0; // offset added later
             break;
-        case MutexAbondoned:
+        case MutexAbandoned:
             dwRet =  WAIT_ABANDONED_0; // offset added later
             break;
         case WaitTimeout:
@@ -874,8 +874,8 @@ DWORD CorUnix::InternalSleepEx (
             _ASSERT_MSG(NO_ERROR == palErr, "Awakened for APC, but no APC is pending\n");
 
             break;
-        case MutexAbondoned:
-            ASSERT("Thread %p awakened with reason=MutexAbondoned from a SleepEx\n", pThread);
+        case MutexAbandoned:
+            ASSERT("Thread %p awakened with reason=MutexAbandoned from a SleepEx\n", pThread);
             break;
         case WaitFailed:
         default:

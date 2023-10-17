@@ -201,12 +201,15 @@ namespace Server.Contract
 
         [PreserveSig]
         HResult Return_As_HResult_Struct(int hresultToReturn);
+
+        void Throw_HResult_HelpLink(int hresultToReturn, [MarshalAs(UnmanagedType.LPWStr)] string helpLink, uint helpContext);
     }
 
     public enum IDispatchTesting_Exception
     {
         Disp,
         HResult,
+        Int,
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -216,6 +219,12 @@ namespace Server.Contract
         public float y;
         public float z;
         public float w;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct HRESULT
+    {
+        public int Value;
     }
 
     [ComVisible(true)]
@@ -253,6 +262,32 @@ namespace Server.Contract
 
         [DispId(/*DISPID_NEWENUM*/-4)]
         System.Collections.IEnumerator GetEnumerator();
+    }
+
+    [ComVisible(true)]
+    [Guid("a5e04c1c-474e-46d2-bbc0-769d04e12b54")]
+    [InterfaceType(ComInterfaceType.InterfaceIsIDispatch)]
+    public interface IDispatchTestingPreserveSig1
+    {
+        void Reserved1();
+        void Reserved2();
+        void Reserved3();
+
+        [PreserveSig]
+        int TriggerException(IDispatchTesting_Exception excep, int errorCode);
+    }
+
+    [ComVisible(true)]
+    [Guid("a5e04c1c-474e-46d2-bbc0-769d04e12b54")]
+    [InterfaceType(ComInterfaceType.InterfaceIsIDispatch)]
+    public interface IDispatchTestingPreserveSig2
+    {
+        void Reserved1();
+        void Reserved2();
+        void Reserved3();
+
+        [PreserveSig]
+        HRESULT TriggerException(IDispatchTesting_Exception excep, int errorCode);
     }
 
     [ComVisible(true)]

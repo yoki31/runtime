@@ -38,6 +38,27 @@ namespace Microsoft.DotNet.CoreSetup.Test
             public const string CommandLineArgument = "--fx-version";
         }
 
+        public static class AdditionalDeps
+        {
+            public const string CommandLineArgument = "--additional-deps";
+        }
+
+        public static class AdditionalProbingPath
+        {
+            public const string CommandLineArgument = "--additionalprobingpath";
+            public const string RuntimeConfigPropertyName = "additionalProbingPaths";
+        }
+
+        public static class BundleExtractBase
+        {
+            public const string EnvironmentVariable = "DOTNET_BUNDLE_EXTRACT_BASE_DIR";
+        }
+
+        public static class DepsFile
+        {
+            public const string CommandLineArgument = "--depsfile";
+        }
+
         public static class RollForwardToPreRelease
         {
             public const string EnvironmentVariable = "DOTNET_ROLL_FORWARD_TO_PRERELEASE";
@@ -70,6 +91,7 @@ namespace Microsoft.DotNet.CoreSetup.Test
         {
             public const string TraceLevelEnvironmentVariable = "COREHOST_TRACE";
             public const string TraceFileEnvironmentVariable = "COREHOST_TRACEFILE";
+            public const string VerbosityEnvironmentVariable = "COREHOST_TRACE_VERBOSITY";
         }
 
         public static class DotnetRoot

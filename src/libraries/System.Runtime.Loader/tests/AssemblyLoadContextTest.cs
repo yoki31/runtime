@@ -15,7 +15,6 @@ namespace System.Runtime.Loader.Tests
     {
         private const string TestAssembly = "System.Runtime.Loader.Test.Assembly";
         private const string TestAssembly2 = "System.Runtime.Loader.Test.Assembly2";
-        private const string TestAssemblyNotSupported = "System.Runtime.Loader.Test.AssemblyNotSupported";
 
         [Fact]
         public static void GetAssemblyNameTest_ValidAssembly()
@@ -115,7 +114,6 @@ namespace System.Runtime.Loader.Tests
         public static void LoadFromAssemblyName_ValidTrustedPlatformAssembly()
         {
             var asmName = typeof(System.Linq.Enumerable).Assembly.GetName();
-            asmName.CodeBase = null;
             var loadContext = new CustomTPALoadContext();
 
             // We should be able to override (and thus, load) assemblies that were
@@ -131,7 +129,6 @@ namespace System.Runtime.Loader.Tests
         public static void LoadFromAssemblyName_FallbackToDefaultContext()
         {
             var asmName = typeof(System.Linq.Enumerable).Assembly.GetName();
-            asmName.CodeBase = null;
             var loadContext = new AssemblyLoadContext("FallbackToDefaultContextTest");
 
             // This should not have any special handlers, so it should just find the version in the default context

@@ -65,6 +65,45 @@ namespace System
             }
         }
 
+        internal static int GetInt32Config(string configName, string envVariable, int defaultValue, bool allowNegative = true)
+        {
+            string? str = Environment.GetEnvironmentVariable(envVariable);
+            if (str != null)
+            {
+                try
+                {
+                    int result;
+                    if (str.StartsWith('0'))
+                    {
+                        if (str.Length >= 2 && str[1] == 'x')
+                        {
+                            result = Convert.ToInt32(str, 16);
+                        }
+                        else
+                        {
+                            result = Convert.ToInt32(str, 8);
+                        }
+                    }
+                    else
+                    {
+                        result = int.Parse(str, NumberStyles.AllowLeadingSign, NumberFormatInfo.InvariantInfo);
+                    }
+
+                    if (allowNegative || result >= 0)
+                    {
+                        return result;
+                    }
+                }
+                catch (FormatException)
+                {
+                }
+                catch (OverflowException)
+                {
+                }
+            }
+
+            return GetInt32Config(configName, defaultValue, allowNegative);
+        }
 
         internal static short GetInt16Config(string configName, short defaultValue, bool allowNegative = true)
         {
@@ -88,7 +127,7 @@ namespace System
                         {
                             result = Convert.ToInt16(str, 16);
                         }
-                        else if (str.StartsWith("0"))
+                        else if (str.StartsWith('0'))
                         {
                             result = Convert.ToInt16(str, 8);
                         }
@@ -111,6 +150,46 @@ namespace System
             {
                 return defaultValue;
             }
+        }
+
+        internal static short GetInt16Config(string configName, string envVariable, short defaultValue, bool allowNegative = true)
+        {
+            string? str = Environment.GetEnvironmentVariable(envVariable);
+            if (str != null)
+            {
+                try
+                {
+                    short result;
+                    if (str.StartsWith('0'))
+                    {
+                        if (str.Length >= 2 && str[1] == 'x')
+                        {
+                            result = Convert.ToInt16(str, 16);
+                        }
+                        else
+                        {
+                            result = Convert.ToInt16(str, 8);
+                        }
+                    }
+                    else
+                    {
+                        result = short.Parse(str, NumberStyles.AllowLeadingSign, NumberFormatInfo.InvariantInfo);
+                    }
+
+                    if (allowNegative || result >= 0)
+                    {
+                        return result;
+                    }
+                }
+                catch (FormatException)
+                {
+                }
+                catch (OverflowException)
+                {
+                }
+            }
+
+            return GetInt16Config(configName, defaultValue, allowNegative);
         }
     }
 }

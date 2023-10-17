@@ -470,55 +470,45 @@ namespace System.Threading.Tasks.Tests
 
             // Cached
 
-            foreach (bool result in new[] { false, true })
-            {
-                Assert.Same(Task.FromResult(result), Task.FromResult(result));
-                Assert.Equal(result, Task.FromResult(result).Result);
-            }
+            AssertCached(false);
+            AssertCached(true);
 
             for (int i = -1; i <= 8; i++)
             {
-                Assert.Same(Task.FromResult(i), Task.FromResult(i));
-                Assert.Equal(i, Task.FromResult(i).Result);
+                AssertCached(i);
             }
 
-            Assert.Same(Task.FromResult('\0'), Task.FromResult('\0'));
-            Assert.Equal('\0', Task.FromResult('\0').Result);
+            AssertCached<byte>();
+            AssertCached<sbyte>();
+            AssertCached<char>();
+            AssertCached<ushort>();
+            AssertCached<short>();
+            AssertCached<uint>();
+            AssertCached<int>();
+            AssertCached<ulong>();
+            AssertCached<long>();
+            AssertCached<nuint>();
+            AssertCached<nint>();
+            AssertCached<Half>();
+            AssertCached<float>();
+            AssertCached<double>();
+            AssertCached<decimal>();
+            AssertCached<TimeSpan>();
+            AssertCached<DateTime>();
+            AssertCached<Guid>();
+            AssertCached<Int128>();
+            AssertCached<UInt128>();
+            AssertCached<DayOfWeek>();
+            AssertCached<string>();
+            AssertCached<object>();
 
-            Assert.Same(Task.FromResult((byte)0), Task.FromResult((byte)0));
-            Assert.Equal(0, Task.FromResult((byte)0).Result);
+            static void AssertCached<T>(T value = default)
+            {
+                Assert.Same(Task.FromResult(value), Task.FromResult(value));
+                Assert.Equal(value, Task.FromResult(value).Result);
+            }
 
-            Assert.Same(Task.FromResult((ushort)0), Task.FromResult((ushort)0));
-            Assert.Equal(0, Task.FromResult((ushort)0).Result);
-
-            Assert.Same(Task.FromResult((uint)0), Task.FromResult((uint)0));
-            Assert.Equal(0u, Task.FromResult((uint)0).Result);
-
-            Assert.Same(Task.FromResult((ulong)0), Task.FromResult((ulong)0));
-            Assert.Equal(0ul, Task.FromResult((ulong)0).Result);
-
-            Assert.Same(Task.FromResult((sbyte)0), Task.FromResult((sbyte)0));
-            Assert.Equal(0, Task.FromResult((sbyte)0).Result);
-
-            Assert.Same(Task.FromResult((short)0), Task.FromResult((short)0));
-            Assert.Equal(0, Task.FromResult((short)0).Result);
-
-            Assert.Same(Task.FromResult((long)0), Task.FromResult((long)0));
-            Assert.Equal(0, Task.FromResult((long)0).Result);
-
-            Assert.Same(Task.FromResult(IntPtr.Zero), Task.FromResult(IntPtr.Zero));
-            Assert.Equal(IntPtr.Zero, Task.FromResult(IntPtr.Zero).Result);
-
-            Assert.Same(Task.FromResult(UIntPtr.Zero), Task.FromResult(UIntPtr.Zero));
-            Assert.Equal(UIntPtr.Zero, Task.FromResult(UIntPtr.Zero).Result);
-
-            Assert.Same(Task.FromResult((object)null), Task.FromResult((object)null));
-            Assert.Null(Task.FromResult((object)null).Result);
-
-            Assert.Same(Task.FromResult((string)null), Task.FromResult((string)null));
-            Assert.Null(Task.FromResult((string)null).Result);
-
-            // Not cached
+            // Not currently cached
 
             foreach (int i in new[] { -2, 9, int.MinValue, int.MaxValue })
             {
@@ -526,10 +516,11 @@ namespace System.Threading.Tasks.Tests
                 Assert.Equal(i, Task.FromResult(i).Result);
             }
 
-            Assert.NotSame(Task.FromResult((double)0), Task.FromResult((double)0));
-            Assert.NotSame(Task.FromResult((float)0), Task.FromResult((float)0));
-            Assert.NotSame(Task.FromResult((decimal)0), Task.FromResult((decimal)0));
-            Assert.NotSame(Task.FromResult((Half)0), Task.FromResult((Half)0));
+            // Should never return the same task
+
+            Assert.NotSame(Task.FromResult((double)(+0.0)), Task.FromResult((double)(-0.0)));
+            Assert.NotSame(Task.FromResult((float)(+0.0)), Task.FromResult((float)(-0.0)));
+            Assert.NotSame(Task.FromResult((Half)(+0.0)), Task.FromResult((Half)(-0.0)));
         }
 
         [Fact]
@@ -547,13 +538,13 @@ namespace System.Threading.Tasks.Tests
                 var contingentProperties = contingentPropertiesField.GetValue(faultedTask);
                 if (contingentProperties != null)
                 {
-                    var exceptionsHolderField = contingentProperties.GetType().GetField("m_exceptionsHolder", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                    var exceptionsHolderField = typeof(Task).GetNestedType("ContingentProperties", BindingFlags.NonPublic).GetField("m_exceptionsHolder", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
                     if (exceptionsHolderField != null)
                     {
                         holderObject = exceptionsHolderField.GetValue(contingentProperties);
                         if (holderObject != null)
                         {
-                            isHandledField = holderObject.GetType().GetField("m_isHandled", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                            isHandledField = Type.GetType("System.Threading.Tasks.TaskExceptionHolder").GetField("m_isHandled", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
                         }
                     }
                 }
@@ -689,6 +680,24 @@ namespace System.Threading.Tasks.Tests
                    ae.InnerException is OperationCanceledException && ((OperationCanceledException)ae.InnerException).CancellationToken == cts2.Token,
                    "RunDelayTests:    > FAILED.  Expected resulting OCE to contain canceled token.");
             }
+        }
+
+        [ConditionalFact(typeof(PlatformDetection), nameof(PlatformDetection.IsThreadingSupported))]
+        public static void TaskDelay_Cancellation_ContinuationsInvokedAsynchronously()
+        {
+            var cts = new CancellationTokenSource();
+
+            var tl = new ThreadLocal<int>();
+            Task c = Task.Delay(-1, cts.Token).ContinueWith(_ =>
+            {
+                Assert.Equal(0, tl.Value);
+            }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+
+            tl.Value = 42;
+            cts.Cancel();
+            tl.Value = 0;
+
+            c.GetAwaiter().GetResult();
         }
 
         // Test that exceptions are properly wrapped when thrown in various scenarios.

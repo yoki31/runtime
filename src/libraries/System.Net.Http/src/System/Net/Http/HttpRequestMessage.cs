@@ -1,10 +1,12 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Threading;
-using System.Collections.Generic;
 
 namespace System.Net.Http
 {
@@ -16,6 +18,7 @@ namespace System.Net.Http
         private const int MessageNotYetSent = 0;
         private const int MessageAlreadySent = 1;
         private const int MessageIsRedirect = 2;
+        private const int MessageDisposed = 4;
 
         // Track whether the message has been sent.
         // The message shouldn't be sent again if this field is equal to MessageAlreadySent.
@@ -27,18 +30,14 @@ namespace System.Net.Http
         private Version _version;
         private HttpVersionPolicy _versionPolicy;
         private HttpContent? _content;
-        private bool _disposed;
-        private HttpRequestOptions? _options;
+        internal HttpRequestOptions? _options;
 
         public Version Version
         {
             get { return _version; }
             set
             {
-                if (value == null)
-                {
-                    throw new ArgumentNullException(nameof(value));
-                }
+                ArgumentNullException.ThrowIfNull(value);
                 CheckDisposed();
 
                 _version = value;
@@ -88,10 +87,7 @@ namespace System.Net.Http
             get { return _method; }
             set
             {
-                if (value == null)
-                {
-                    throw new ArgumentNullException(nameof(value));
-                }
+                ArgumentNullException.ThrowIfNull(value);
                 CheckDisposed();
 
                 _method = value;
@@ -127,16 +123,18 @@ namespace System.Net.Http
 
         public HttpRequestMessage(HttpMethod method, Uri? requestUri)
         {
+            ArgumentNullException.ThrowIfNull(method);
+
             // It's OK to have a 'null' request Uri. If HttpClient is used, the 'BaseAddress' will be added.
             // If there is no 'BaseAddress', sending this request message will throw.
             // Note that we also allow the string to be empty: null and empty are considered equivalent.
-            _method = method ?? throw new ArgumentNullException(nameof(method));
+            _method = method;
             _requestUri = requestUri;
             _version = DefaultRequestVersion;
             _versionPolicy = DefaultVersionPolicy;
         }
 
-        public HttpRequestMessage(HttpMethod method, string? requestUri)
+        public HttpRequestMessage(HttpMethod method, [StringSyntax(StringSyntaxAttribute.Uri)] string? requestUri)
             : this(method, string.IsNullOrEmpty(requestUri) ? null : new Uri(requestUri, UriKind.RelativeOrAbsolute))
         {
         }
@@ -149,7 +147,14 @@ namespace System.Net.Http
             sb.Append(_method);
 
             sb.Append(", RequestUri: '");
-            sb.Append(_requestUri == null ? "<null>" : _requestUri.ToString());
+            if (_requestUri is null)
+            {
+                sb.Append("<null>");
+            }
+            else
+            {
+                sb.Append($"{_requestUri}");
+            }
 
             sb.Append("', Version: ");
             sb.Append(_version);
@@ -171,19 +176,28 @@ namespace System.Net.Http
 
         internal bool WasRedirected() => (_sendStatus & MessageIsRedirect) != 0;
 
+        private bool Disposed
+        {
+            get => (_sendStatus & MessageDisposed) != 0;
+            set
+            {
+                Debug.Assert(value);
+                _sendStatus |= MessageDisposed;
+            }
+        }
+
+        internal bool IsExtendedConnectRequest => Method == HttpMethod.Connect && _headers?.Protocol != null;
+
         #region IDisposable Members
 
         protected virtual void Dispose(bool disposing)
         {
             // The reason for this type to implement IDisposable is that it contains instances of types that implement
             // IDisposable (content).
-            if (disposing && !_disposed)
+            if (disposing && !Disposed)
             {
-                _disposed = true;
-                if (_content != null)
-                {
-                    _content.Dispose();
-                }
+                Disposed = true;
+                _content?.Dispose();
             }
         }
 
@@ -197,10 +211,7 @@ namespace System.Net.Http
 
         private void CheckDisposed()
         {
-            if (_disposed)
-            {
-                throw new ObjectDisposedException(this.GetType().ToString());
-            }
+            ObjectDisposedException.ThrowIf(Disposed, this);
         }
     }
 }

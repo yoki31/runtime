@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <OutputType>Exe</OutputType>
+    <!-- Needed for CLRTestTargetUnsupported, CMakeProjectReference -->
+    <RequiresProcessIsolation>true</RequiresProcessIsolation>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <DefineConstants >WINDOWS</DefineConstants>
     <!-- There is a Windows and a non-Windows version of this test to allow it to be compiled for all targets -->
@@ -11,6 +12,7 @@
     <Compile Include="../NativeLibraryToLoad/NativeLibraryToLoad.cs" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="../NativeLibraryToLoad/CMakeLists.txt" />
+    <CMakeProjectReference Include="../NativeLibraryToLoad/CMakeLists.txt" />
+    <ProjectReference Include="$(TestLibraryProjectPath)" />
   </ItemGroup>
 </Project>

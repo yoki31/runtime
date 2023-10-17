@@ -33,6 +33,7 @@
 #define S_FALSE         _HRESULT_TYPEDEF_(0x00000001L)
 #define E_OUTOFMEMORY   _HRESULT_TYPEDEF_(0x8007000EL)
 #define E_NOTIMPL       _HRESULT_TYPEDEF_(0x80004001L)
+#define E_UNEXPECTED    _HRESULT_TYPEDEF_(0x8000FFFFL)
 
 // Declaring a handle dummy struct for HSTRING the same way DECLARE_HANDLE does.
 typedef struct HSTRING__{
@@ -155,6 +156,16 @@ typedef struct tagDEC {
 #define FALSE 0
 #endif
 
+typedef USHORT VARIANT_BOOL;
+
+#ifndef VARIANT_TRUE
+#define VARIANT_TRUE -1
+#endif
+
+#ifndef VARIANT_FALSE
+#define VARIANT_FALSE 0
+#endif
+
 #ifndef __IUnknown_INTERFACE_DEFINED__
 #define __IUnknown_INTERFACE_DEFINED__
 
@@ -175,12 +186,12 @@ IUnknown
 
 #endif // __IUnknown_INTERFACE_DEFINED__
 
-typedef /* [v1_enum] */ 
+typedef /* [v1_enum] */
 enum TrustLevel
 {
     BaseTrust	= 0,
     PartialTrust	= ( BaseTrust + 1 ) ,
-    FullTrust	= ( PartialTrust + 1 ) 
+    FullTrust	= ( PartialTrust + 1 )
 } 	TrustLevel;
 
 // AF86E2E0-B12D-4c6a-9C5A-D7AA65101E90

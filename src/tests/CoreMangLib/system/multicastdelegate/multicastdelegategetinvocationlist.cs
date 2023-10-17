@@ -2,6 +2,7 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 using System;
 using System.Security;
+using Xunit;
 
 public class MulticastDelegateGetInvocationList
 {
@@ -110,7 +111,7 @@ public class MulticastDelegateGetInvocationList
     {
         bool retVal = true;
 
-        TestLibrary.TestFramework.BeginScenario("NagTest1: Insert multiple functions with null embeded in the function list");
+        TestLibrary.TestFramework.BeginScenario("NagTest1: Insert multiple functions with null embedded in the function list");
 
         try
         {
@@ -142,7 +143,8 @@ public class MulticastDelegateGetInvocationList
     #endregion
     #endregion
 
-    public static int Main()
+    [Fact]
+    public static int TestEntryPoint()
     {
         MulticastDelegateGetInvocationList mdgil = new MulticastDelegateGetInvocationList();
 

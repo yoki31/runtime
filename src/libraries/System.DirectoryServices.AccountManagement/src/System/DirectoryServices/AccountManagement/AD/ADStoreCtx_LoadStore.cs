@@ -94,7 +94,7 @@ namespace System.DirectoryServices.AccountManagement
                                 }
                             }
 
-                            // If the base objects RDN prefix is not the same as the dervied class then we need to set both
+                            // If the base objects RDN prefix is not the same as the derived class then we need to set both
                             if (defaultRdn != rdnPrefix)
                             {
                                 baseObjectRdnPrefix = defaultRdn;
@@ -465,8 +465,8 @@ namespace System.DirectoryServices.AccountManagement
                                     "ADStoreCtx",
                                     "FindPrincipalByIdentRefHelper: type={0}, scheme={1}, value={2}, useSidHistory={3}",
                                     principalType.ToString(),
-                                    (urnScheme != null ? urnScheme : "NULL"),
-                                    (urnValue != null ? urnValue : "NULL"),
+                                    urnScheme ?? "NULL",
+                                    urnValue ?? "NULL",
                                     useSidHistory);
 
             //
@@ -528,7 +528,7 @@ namespace System.DirectoryServices.AccountManagement
                         {
                             pSid = Utils.ConvertByteArrayToIntPtr(sidb);
 
-                            if (UnsafeNativeMethods.IsValidSid(pSid) && (Utils.ClassifySID(pSid) == SidType.FakeObject))
+                            if (Interop.Advapi32.IsValidSid(pSid) && (Utils.ClassifySID(pSid) == SidType.FakeObject))
                             {
                                 GlobalDebug.WriteLineIf(GlobalDebug.Info,
                                                         "ADStoreCtx",
@@ -583,7 +583,7 @@ namespace System.DirectoryServices.AccountManagement
                             {
                                 pSid = Utils.ConvertByteArrayToIntPtr(sidb);
 
-                                if (UnsafeNativeMethods.IsValidSid(pSid) && (Utils.ClassifySID(pSid) == SidType.FakeObject))
+                                if (Interop.Advapi32.IsValidSid(pSid) && (Utils.ClassifySID(pSid) == SidType.FakeObject))
                                 {
                                     GlobalDebug.WriteLineIf(GlobalDebug.Info,
                                                             "ADStoreCtx",
@@ -669,10 +669,7 @@ namespace System.DirectoryServices.AccountManagement
             finally
             {
                 ds.Dispose();
-                if (src != null)
-                {
-                    src.Dispose();
-                }
+                src?.Dispose();
             }
         }
 
@@ -907,7 +904,7 @@ namespace System.DirectoryServices.AccountManagement
                 Debug.Assert(values[0] is string);
 
                 string commaSeparatedValues = (string)values[0];
-                string[] individualValues = commaSeparatedValues.Split(new char[] { ',' });
+                string[] individualValues = commaSeparatedValues.Split(s_comma);
 
                 // ValueCollection<string> is Load'ed from a List<string>
                 List<string> list = new List<string>(individualValues.Length);
@@ -1081,7 +1078,7 @@ namespace System.DirectoryServices.AccountManagement
             // first time, it'll keep returning null even if we refresh the cache.
 
             if (!de.Properties.Contains("nTSecurityDescriptor"))
-                de.RefreshCache(new string[] { "nTSecurityDescriptor" });
+                de.RefreshCache(s_nTSecurityDescriptor);
 
             ActiveDirectorySecurity adsSecurity = de.ObjectSecurity;
 
@@ -1357,6 +1354,12 @@ namespace System.DirectoryServices.AccountManagement
                             valueCollection = (ICollection)kvp.Value.Value;
                         }
 
+                        // We make a local copy of all elements to set, instead of adding them to the real property
+                        // directly. This allows us to override all existing elements without using Clear() and then Add(),
+                        // as that order sends a Clear operation and then a number of Append operations, which will fail.
+                        // Instead, setting the new list all at once will send a Clear operation and then an Update operation.
+                        var propertyValueList = new List<object>();
+
                         foreach (object oVal in valueCollection)
                         {
                             if (null != oVal)
@@ -1373,8 +1376,11 @@ namespace System.DirectoryServices.AccountManagement
                             if (p.unpersisted && null == oVal)
                                 continue;
 
-                            de.Properties[kvp.Key].Add(oVal);
+                            propertyValueList.Add(oVal);
                         }
+
+                        de.Properties[kvp.Key].Value = propertyValueList.ToArray();
+
                         GlobalDebug.WriteLineIf(GlobalDebug.Info, "ADStoreCtx", "ExtensionCacheToLdapConverter - Collection complete");
                     }
                     else
@@ -1501,8 +1507,7 @@ namespace System.DirectoryServices.AccountManagement
                     }
                     finally
                     {
-                        if (copyOfDe != null)
-                            copyOfDe.Dispose();
+                        copyOfDe?.Dispose();
                     }
                 }
 
@@ -1628,10 +1633,11 @@ namespace System.DirectoryServices.AccountManagement
             }
             finally
             {
-                if (null != groupDe)
-                    groupDe.Dispose();
+                groupDe?.Dispose();
             }
         }
+
+        private static readonly string[] s_objectSid = new string[] { "objectSid" };
 
         // Builds a SID dn for the principal <SID=...>
         protected static string GetSidPathFromPrincipal(Principal p)
@@ -1657,7 +1663,7 @@ namespace System.DirectoryServices.AccountManagement
 
                 // Force it to load if it hasn't been already loaded
                 if (!de.Properties.Contains("objectSid"))
-                    de.RefreshCache(new string[] { "objectSid" });
+                    de.RefreshCache(s_objectSid);
 
                 byte[] sid = (byte[])de.Properties["objectSid"].Value;
 

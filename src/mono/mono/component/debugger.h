@@ -95,6 +95,7 @@ typedef struct {
 	MonoMethod *start_method;
 	MonoMethod *last_method;
 	int last_line;
+	int last_column;
 	/* Whenever single stepping is performed using start/stop_single_stepping () */
 	gboolean global;
 	/* The list of breakpoints used to implement step-over */
@@ -113,7 +114,7 @@ typedef struct {
 typedef struct {
 	MonoContext *(*tls_get_restore_state) (void *tls);
 	gboolean (*try_process_suspend) (void *tls, MonoContext *ctx, gboolean from_breakpoint);
-	gboolean (*begin_breakpoint_processing) (void *tls, MonoContext *ctx, MonoJitInfo *ji, gboolean from_signal);
+	bool (*begin_breakpoint_processing) (void *tls, MonoContext *ctx, MonoJitInfo *ji, gboolean from_signal);
 	void (*begin_single_step_processing) (MonoContext *ctx, gboolean from_signal);
 
 	void (*ss_discard_frame_context) (void *tls);
@@ -172,7 +173,7 @@ typedef struct _DebuggerTlsData DebuggerTlsData;
 
 typedef struct MonoComponentDebugger {
 	MonoComponent component;
-	void (*init) (MonoDefaults *mono_defaults);
+	void (*init) (void);
 	void (*user_break) (void);
 	void (*parse_options) (char *options);
 	void (*breakpoint_hit) (void *sigctx);
@@ -196,10 +197,11 @@ typedef struct MonoComponentDebugger {
 	//HotReload
 	void (*send_enc_delta) (MonoImage *image, gconstpointer dmeta_bytes, int32_t dmeta_len, gconstpointer dpdb_bytes, int32_t dpdb_len);
 
+	//wasi
+	void (*receive_and_process_command_from_debugger_agent) (void);
+	gboolean (*debugger_enabled) (void);
 } MonoComponentDebugger;
 
-
-extern MonoDefaults *mdbg_mono_defaults;
 
 #define DE_ERR_NONE 0
 // WARNING WARNING WARNING

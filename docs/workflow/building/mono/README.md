@@ -33,25 +33,46 @@ build.cmd mono
 ```
 When the build completes, product binaries will be dropped in the `artifacts\bin\mono\<OS>.<arch>.<flavor>` folder.
 
+If you need to run library tests or run HelloWorld sample with your change to mono, you want to build mono with this command instead:
+
+```bash
+./build.sh mono+libs.pretest
+```
+or on Windows,
+```cmd
+build.cmd mono+libs.pretest
+```
+
+If you want to skip restoring nuget packages, when only making change to mono, you want to use this command:
+```bash
+./build.sh mono --build
+```
+or on Windows,
+```cmd
+build.cmd mono --build
+```
+
 ### Useful Build Arguments
 Here are a list of build arguments that may be of use:
 
-`/p:MonoEnableLlvm=true` - Builds mono w/ LLVM
+`/p:MonoEnableLLVM=true` - Builds mono w/ LLVM
 
-`/p:MonoEnableLlvm=true /p:MonoLLVMDir=path/to/llvm` - Builds mono w/ LLVM from a custom path
+`/p:MonoEnableLLVM=true /p:MonoLLVMDir=path/to/llvm` - Builds mono w/ LLVM from a custom path
 
-`/p:MonoEnableLlvm=true /p:MonoLLVMDir=path/to/llvm /p:MonoLLVMUseCxx11Abi=true` - Builds mono w/ LLVM
+`/p:MonoEnableLLVM=true /p:MonoLLVMDir=path/to/llvm /p:MonoLLVMUseCxx11Abi=true` - Builds mono w/ LLVM
 from a custom path (and that LLVM was built with C++11 ABI)
 
 For `build.sh`
 
 `/p:DisableCrossgen=true` - Skips building the installer if you don't need it (builds faster)
 
+`/p:KeepNativeSymbols=true` - Keep the symbols in the binary instead of stripping them out to a separate file. This helps with debugging Mono with lldb.
+
 The build has a number of options that you can learn about using build -?.
 
 ### WebAssembly
 
-See the instructions for [Building WebAssembly](../../building/libraries/webassembly-instructions.md).
+See the instructions for [Building WebAssembly](../../../../src/mono/wasm/README.md).
 
 ### Android
 

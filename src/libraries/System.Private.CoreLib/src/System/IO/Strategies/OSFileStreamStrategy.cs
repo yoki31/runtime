@@ -4,7 +4,6 @@
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Threading.Tasks.Sources;
 using Microsoft.Win32.SafeHandles;
 
 namespace System.IO.Strategies
@@ -16,9 +15,7 @@ namespace System.IO.Strategies
         private readonly FileAccess _access; // What file was opened for.
 
         protected long _filePosition;
-        private long _length = -1; // negative means that hasn't been fetched.
-        private long _appendStart; // When appending, prevent overwriting file.
-        private bool _lengthCanBeCached; // SafeFileHandle hasn't been exposed, file has been opened for reading and not shared for writing.
+        private readonly long _appendStart; // When appending, prevent overwriting file.
 
         internal OSFileStreamStrategy(SafeFileHandle handle, FileAccess access)
         {
@@ -40,14 +37,13 @@ namespace System.IO.Strategies
             _fileHandle = handle;
         }
 
-        internal OSFileStreamStrategy(string path, FileMode mode, FileAccess access, FileShare share, FileOptions options, long preallocationSize)
+        internal OSFileStreamStrategy(string path, FileMode mode, FileAccess access, FileShare share, FileOptions options, long preallocationSize, UnixFileMode? unixCreateMode)
         {
             string fullPath = Path.GetFullPath(path);
 
             _access = access;
-            _lengthCanBeCached = (share & FileShare.Write) == 0 && (access & FileAccess.Write) == 0;
 
-            _fileHandle = SafeFileHandle.Open(fullPath, mode, access, share, options, preallocationSize);
+            _fileHandle = SafeFileHandle.Open(fullPath, mode, access, share, options, preallocationSize, unixCreateMode);
 
             try
             {
@@ -78,39 +74,18 @@ namespace System.IO.Strategies
 
         public sealed override bool CanWrite => !_fileHandle.IsClosed && (_access & FileAccess.Write) != 0;
 
-        public unsafe sealed override long Length
-        {
-            get
-            {
-                if (!LengthCachingSupported)
-                {
-                    return RandomAccess.GetFileLength(_fileHandle);
-                }
-
-                // On Windows, when the file is locked for writes we can cache file length
-                // in memory and avoid subsequent native calls which are expensive.
-
-                if (_length < 0)
-                {
-                    _length = RandomAccess.GetFileLength(_fileHandle);
-                }
-
-                return _length;
-            }
-        }
+        public sealed override unsafe long Length => _fileHandle.GetFileLength();
 
         // in case of concurrent incomplete reads, there can be multiple threads trying to update the position
         // at the same time. That is why we are using Interlocked here.
         internal void OnIncompleteOperation(int expectedBytesTransferred, int actualBytesTransferred)
             => Interlocked.Add(ref _filePosition, actualBytesTransferred - expectedBytesTransferred);
 
-        private bool LengthCachingSupported => OperatingSystem.IsWindows() && _lengthCanBeCached;
-
         /// <summary>Gets or sets the position within the current stream</summary>
         public sealed override long Position
         {
             get => _filePosition;
-            set => _filePosition = value;
+            set => Seek(value, SeekOrigin.Begin);
         }
 
         internal sealed override string Name => _fileHandle.Path ?? SR.IO_UnknownFileName;
@@ -129,9 +104,6 @@ namespace System.IO.Strategies
                     FileStreamHelpers.Seek(_fileHandle, _filePosition, SeekOrigin.Begin);
                 }
 
-                _lengthCanBeCached = false;
-                _length = -1; // invalidate cached length
-
                 return _fileHandle;
             }
         }
@@ -147,8 +119,6 @@ namespace System.IO.Strategies
 
             return ValueTask.CompletedTask;
         }
-
-        internal sealed override void DisposeInternal(bool disposing) => Dispose(disposing);
 
         // this method just disposes everything (no buffer, no need to flush)
         protected sealed override void Dispose(bool disposing)
@@ -174,11 +144,6 @@ namespace System.IO.Strategies
 
         public sealed override long Seek(long offset, SeekOrigin origin)
         {
-            if (origin < SeekOrigin.Begin || origin > SeekOrigin.End)
-                throw new ArgumentException(SR.Argument_InvalidSeekOrigin, nameof(origin));
-            if (_fileHandle.IsClosed) ThrowHelper.ThrowObjectDisposedException_FileClosed();
-            if (!CanSeek) ThrowHelper.ThrowNotSupportedException_UnseekableStream();
-
             long oldPos = _filePosition;
             long pos = origin switch
             {
@@ -223,11 +188,8 @@ namespace System.IO.Strategies
         {
             Debug.Assert(value >= 0, "value >= 0");
 
-            FileStreamHelpers.SetFileLength(_fileHandle, value);
-            if (LengthCachingSupported)
-            {
-                _length = value;
-            }
+            RandomAccess.SetFileLength(_fileHandle, value);
+            Debug.Assert(!_fileHandle.TryGetCachedLength(out _), "If length can be cached (file opened for reading, not shared for writing), it should be impossible to modify file length");
 
             if (_filePosition > value)
             {
@@ -235,10 +197,10 @@ namespace System.IO.Strategies
             }
         }
 
-        public sealed override unsafe int ReadByte()
+        public sealed override int ReadByte()
         {
-            byte b;
-            return Read(new Span<byte>(&b, 1)) != 0 ? b : -1;
+            byte b = 0;
+            return Read(new Span<byte>(ref b)) != 0 ? b : -1;
         }
 
         public sealed override int Read(byte[] buffer, int offset, int count) =>
@@ -262,8 +224,8 @@ namespace System.IO.Strategies
             return r;
         }
 
-        public sealed override unsafe void WriteByte(byte value) =>
-            Write(new ReadOnlySpan<byte>(&value, 1));
+        public sealed override void WriteByte(byte value) =>
+            Write(new ReadOnlySpan<byte>(in value));
 
         public override void Write(byte[] buffer, int offset, int count) =>
             Write(new ReadOnlySpan<byte>(buffer, offset, count));
@@ -284,10 +246,10 @@ namespace System.IO.Strategies
         }
 
         public sealed override IAsyncResult BeginWrite(byte[] buffer, int offset, int count, AsyncCallback? callback, object? state) =>
-            TaskToApm.Begin(WriteAsync(buffer, offset, count), callback, state);
+            TaskToAsyncResult.Begin(WriteAsync(buffer, offset, count), callback, state);
 
         public sealed override void EndWrite(IAsyncResult asyncResult) =>
-            TaskToApm.End(asyncResult);
+            TaskToAsyncResult.End(asyncResult);
 
         public sealed override Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) =>
             WriteAsync(new ReadOnlyMemory<byte>(buffer, offset, count), cancellationToken).AsTask();
@@ -299,10 +261,10 @@ namespace System.IO.Strategies
         }
 
         public sealed override IAsyncResult BeginRead(byte[] buffer, int offset, int count, AsyncCallback? callback, object? state) =>
-            TaskToApm.Begin(ReadAsync(buffer, offset, count), callback, state);
+            TaskToAsyncResult.Begin(ReadAsync(buffer, offset, count), callback, state);
 
         public sealed override int EndRead(IAsyncResult asyncResult) =>
-            TaskToApm.End<int>(asyncResult);
+            TaskToAsyncResult.End<int>(asyncResult);
 
         public sealed override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) =>
             ReadAsync(new Memory<byte>(buffer, offset, count), cancellationToken).AsTask();
@@ -314,7 +276,7 @@ namespace System.IO.Strategies
                 return RandomAccess.ReadAtOffsetAsync(_fileHandle, destination, fileOffset: -1, cancellationToken);
             }
 
-            if (LengthCachingSupported && _length >= 0 && Volatile.Read(ref _filePosition) >= _length)
+            if (_fileHandle.TryGetCachedLength(out long cachedLength) && Volatile.Read(ref _filePosition) >= cachedLength)
             {
                 // We know for sure that the file length can be safely cached and it has already been obtained.
                 // If we have reached EOF we just return here and avoid a sys-call.

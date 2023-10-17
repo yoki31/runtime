@@ -2,6 +2,7 @@
 <Project ToolsVersion="12.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <PropertyGroup>
     <LibrariesConfiguration>Release</LibrariesConfiguration>
+    <InstallV8ForTests>false</InstallV8ForTests>
   </PropertyGroup>
 
   <Import Project="$(MSBuildThisFileDirectory)\Common\dir.sdkbuild.props" Condition="'$(UsingMicrosoftNETSdk)' == 'true'"  />
@@ -19,6 +20,7 @@
 
   <PropertyGroup>
     <AltJitArch>$(__AltJitArch)</AltJitArch>
+    <EnableNativeSanitizers Condition="'$(__EnableNativeSanitizers)' != ''">$(__EnableNativeSanitizers)</EnableNativeSanitizers>
   </PropertyGroup>
 
   <!-- Output paths -->
@@ -71,27 +73,27 @@
 
     <TestBuildMode Condition="'$(__TestBuildMode)' != ''">$(__TestBuildMode)</TestBuildMode>
     <RuntimeFlavor Condition="'$(__RuntimeFlavor)' != ''">$(__RuntimeFlavor)</RuntimeFlavor>
+    <RuntimeFlavor Condition="'$(RuntimeFlavor)' == ''">coreclr</RuntimeFlavor>
 
     <RestoreDefaultOptimizationDataPackage Condition="'$(RestoreDefaultOptimizationDataPackage)' == ''">false</RestoreDefaultOptimizationDataPackage>
-    <PortableBuild Condition="'$(PortableBuild)' == ''">true</PortableBuild>
 
     <UsePartialNGENOptimization Condition="'$(UsePartialNGENOptimization)' == ''">false</UsePartialNGENOptimization>
 
     <RunWithAndroid>false</RunWithAndroid>
-    <RunWithAndroid Condition="'$(TargetOS)' == 'Android'">true</RunWithAndroid>
+    <RunWithAndroid Condition="'$(TargetOS)' == 'android'">true</RunWithAndroid>
+
+    <RunWithiOS>false</RunWithiOS>
+    <RunWithiOS Condition="'$(TargetOS)' == 'ios' or '$(TargetOS)' == 'iossimulator' or '$(TargetOS)' == 'tvos' or '$(TargetOS)' == 'tvossimulator' or '$(TargetOS)' == 'maccatalyst'">true</RunWithiOS>
 
     <MonoAot>false</MonoAot>
     <MonoAot Condition="'$(__MonoAot)' == '1'">true</MonoAot>
+    <RuntimeVariant Condition="'$(__MonoAot)' == '1'">llvmaot</RuntimeVariant>
 
     <MonoFullAot>false</MonoFullAot>
     <MonoFullAot Condition="'$(__MonoFullAot)' == '1'">true</MonoFullAot>
+    <RuntimeVariant Condition="'$(__MonoFullAot)' == '1'">llvmfullaot</RuntimeVariant>
 
     <MonoBinDir>$(__MonoBinDir)</MonoBinDir>
-  </PropertyGroup>
-
-  <!-- Language settings -->
-  <PropertyGroup>
-    <RunAnalyzers>false</RunAnalyzers>
   </PropertyGroup>
 
   <!-- Setup Default symbol and optimization for Configuration -->
@@ -122,8 +124,10 @@
     <AddAdditionalExplicitAssemblyReferences>false</AddAdditionalExplicitAssemblyReferences>
     <GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute>
     <!-- Disable some C# warnings for the tests. -->
-    <NoWarn>78,162,164,168,169,219,251,252,414,429,618,642,649,652,659,675,1691,1717,1718,3001,3002,3003,3005,3008</NoWarn>
+    <NoWarn>78,162,164,168,169,219,251,252,414,429,618,642,649,652,659,675,1691,1717,1718,3001,3002,3003,3005,3008,8981</NoWarn>
     <RunAnalyzers>false</RunAnalyzers>
+    <EnableTrimAnalyzer>false</EnableTrimAnalyzer>
+    <EnableAotAnalyzer>false</EnableAotAnalyzer>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
     <SkipSigning Condition="'$(CrossGen)' == 'true'">true</SkipSigning>
     <AssemblyKey>Test</AssemblyKey>
@@ -138,10 +142,12 @@
     <TargetBits>32</TargetBits>
     <TargetBits Condition="'$(TargetArchitecture)'=='x64'">64</TargetBits>
     <TargetBits Condition="'$(TargetArchitecture)'=='arm64'">64</TargetBits>
+    <TargetBits Condition="'$(TargetArchitecture)'=='loongarch64'">64</TargetBits>
+    <TargetBits Condition="'$(TargetArchitecture)'=='riscv64'">64</TargetBits>
   </PropertyGroup>
 
   <PropertyGroup>
-    <TargetsUnknownUnix Condition="'$(TargetsUnix)' == 'true' AND '$(TargetOS)' != 'FreeBSD' AND '$(TargetOS)' != 'Linux' AND '$(TargetOS)' != 'NetBSD' AND '$(TargetOS)' != 'OSX' AND '$(TargetOS)' != 'illumos' AND '$(TargetOS)' != 'Solaris'">true</TargetsUnknownUnix>
+    <TargetsUnknownUnix Condition="'$(TargetsUnix)' == 'true' AND '$(TargetOS)' != 'freebsd' AND '$(TargetOS)' != 'linux' AND '$(TargetOS)' != 'netbsd' AND '$(TargetOS)' != 'osx' AND '$(TargetOS)' != 'maccatalyst' AND '$(TargetOS)' != 'illumos' AND '$(TargetOS)' != 'solaris'">true</TargetsUnknownUnix>
     <Language Condition="'$(Language)' == '' and  '$(MSBuildProjectExtension)' == '.csproj'">C#</Language>
     <Language Condition="'$(Language)' == '' and  '$(MSBuildProjectExtension)' == '.fsproj'">F#</Language>
     <Language Condition="'$(Language)' == '' and  '$(MSBuildProjectExtension)' == '.ilproj'">IL</Language>
@@ -157,6 +163,12 @@
     <ZapRequire Condition="'$(ZapRequire)' == ''">2</ZapRequire>
   </PropertyGroup>
 
+  <!-- Don't append the RID to the output path for our test tree. Our test builds are already separated by RID
+       and including the RID breaks some of our glob expressions in issues.targets -->
+  <PropertyGroup>
+    <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
+  </PropertyGroup>
+
   <PropertyGroup>
     <!-- Specify the target framework of the common test dependency project.json. -->
     <NuGetTargetMoniker>$(NetCoreAppCurrentToolTargetFrameworkMoniker)</NuGetTargetMoniker>
@@ -166,7 +178,9 @@
   <!-- Set Test Wrapper running host OS -->
   <PropertyGroup>
     <TestWrapperTargetsWindows>false</TestWrapperTargetsWindows>
-    <TestWrapperTargetsWindows Condition=" ('$(TargetsWindows)' != '' And '$(TargetsWindows)' ) OR ('$(TargetOS)' == 'Android' And '$(TargetArchitecture)' == 'arm64' )">true</TestWrapperTargetsWindows>
+    <TestWrapperTargetsWindows Condition=" ('$(TargetsWindows)' != '' And '$(TargetsWindows)' ) OR ('$(TargetOS)' == 'android' And '$(TargetArchitecture)' == 'arm64' )">true</TestWrapperTargetsWindows>
+    <TestScriptExtension Condition="'$(TestWrapperTargetsWindows)' != 'true' ">sh</TestScriptExtension>
+    <TestScriptExtension Condition="'$(TestWrapperTargetsWindows)' == 'true' ">cmd</TestScriptExtension>
   </PropertyGroup>
 
   <PropertyGroup>
@@ -176,12 +190,36 @@
     <BaselineMicrosoftNetCoreAppPackageVersion>2.1.0-preview3-26416-01</BaselineMicrosoftNetCoreAppPackageVersion>
   </PropertyGroup>
 
-  <PropertyGroup Condition="'$(TargetOS)' == 'Browser'">
-    <CLRTestMSBuildArgs>/p:MSBuildEnableWorkloadResolver=false</CLRTestMSBuildArgs>
+  <PropertyGroup Condition="'$(TargetOS)' == 'browser'">
+    <CLRTestMSBuildArgs>/p:MSBuildEnableWorkloadResolver=false /p:Configuration=$(Configuration)</CLRTestMSBuildArgs>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(IsTestsCommonProject)' != 'true'">
     <BuildAsStandalone Condition="'$(BuildAsStandalone)' == ''">true</BuildAsStandalone>
-    <OutputType>Exe</OutputType>
+    <OutputType Condition="$(BuildAsStandalone)">Exe</OutputType>
+    <TestFramework>GeneratedRunner</TestFramework>
+
+    <!-- Prevent project-specific NuGet props/targets from clashing with the ones we manually import below. -->
+    <ImportProjectExtensionProps>false</ImportProjectExtensionProps>
+    <ImportProjectExtensionTargets>false</ImportProjectExtensionTargets>
   </PropertyGroup>
+
+  <PropertyGroup Condition="'$(TargetOS)' == 'ios' or '$(TargetOS)' == 'tvos'">
+    <EnableAggressiveTrimming Condition="'$(OutputType)' == 'Exe'">true</EnableAggressiveTrimming>
+    <PublishTrimmed Condition="'$(OutputType)' == 'Exe'">true</PublishTrimmed>
+    <SkipTestUtilitiesReference>true</SkipTestUtilitiesReference>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(RuntimeFlavor)' == 'coreclr' and '$(TargetsAppleMobile)' == 'true'">
+    <_targetOS>$(TargetOS)</_targetOS>
+    <UseNativeAOTRuntime>true</UseNativeAOTRuntime>
+    <NativeLib>static</NativeLib>
+    <CustomNativeMain>true</CustomNativeMain>
+    <_IsApplePlatform Condition="'$(TargetsAppleMobile)' == 'true'">true</_IsApplePlatform>
+    <_IsiOSLikePlatform Condition="'$(TargetsAppleMobile)' == 'true'">true</_IsiOSLikePlatform>
+    <_SymbolPrefix Condition="'$(_IsApplePlatform)' == 'true'">_</_SymbolPrefix>
+  </PropertyGroup>
+
+  <Import Project="$(RepositoryEngineeringDir)testing\tests.props"  Condition="'$(IsTestsCommonProject)' != 'true'" />
+  <Import Project="$(BaseOutputPath)\packages\Common\test_dependencies\test_dependencies\test_dependencies.*.props" Condition="'$(IsTestsCommonProject)' != 'true'" />
 </Project>

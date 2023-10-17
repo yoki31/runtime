@@ -6,6 +6,19 @@
 #include "jitpch.h"
 #include "rangecheck.h"
 
+//------------------------------------------------------------------------
+// rangeCheckPhase: optimize bounds checks via range analysis
+//
+// Returns:
+//    Suitable phase status
+//
+PhaseStatus Compiler::rangeCheckPhase()
+{
+    RangeCheck rc(this);
+    const bool madeChanges = rc.OptimizeRangeChecks();
+    return madeChanges ? PhaseStatus::MODIFIED_EVERYTHING : PhaseStatus::MODIFIED_NOTHING;
+}
+
 // Max stack depth (path length) in walking the UD chain.
 static const int MAX_SEARCH_DEPTH = 100;
 
@@ -24,6 +37,7 @@ RangeCheck::RangeCheck(Compiler* pCompiler)
     , m_pCompiler(pCompiler)
     , m_alloc(pCompiler->getAllocator(CMK_RangeCheck))
     , m_nVisitBudget(MAX_VISIT_BUDGET)
+    , m_updateStmt(false)
 {
 }
 
@@ -56,7 +70,8 @@ RangeCheck::OverflowMap* RangeCheck::GetOverflowMap()
 int RangeCheck::GetArrLength(ValueNum vn)
 {
     ValueNum arrRefVN = m_pCompiler->vnStore->GetArrForLenVn(vn);
-    return m_pCompiler->vnStore->GetNewArrSize(arrRefVN);
+    int      size;
+    return m_pCompiler->vnStore->TryGetNewArrSize(arrRefVN, &size) ? size : 0;
 }
 
 //------------------------------------------------------------------------
@@ -196,7 +211,7 @@ void RangeCheck::OptimizeRangeCheck(BasicBlock* block, Statement* stmt, GenTree*
 
     // If we are not looking at array bounds check, bail.
     GenTree* tree = isComma ? treeParent->AsOp()->gtOp1 : treeParent;
-    if (!tree->OperIsBoundsCheck())
+    if (!tree->OperIs(GT_BOUNDS_CHECK))
     {
         return;
     }
@@ -222,13 +237,6 @@ void RangeCheck::OptimizeRangeCheck(BasicBlock* block, Statement* stmt, GenTree*
         }
     }
     else
-#ifdef FEATURE_SIMD
-        if (tree->gtOper != GT_SIMD_CHK
-#ifdef FEATURE_HW_INTRINSICS
-            && tree->gtOper != GT_HW_INTRINSIC_CHK
-#endif // FEATURE_HW_INTRINSICS
-            )
-#endif // FEATURE_SIMD
     {
         arrSize = GetArrLength(arrLenVn);
 
@@ -262,6 +270,7 @@ void RangeCheck::OptimizeRangeCheck(BasicBlock* block, Statement* stmt, GenTree*
         {
             JITDUMP("Removing range check\n");
             m_pCompiler->optRemoveRangeCheck(bndsChk, comma, stmt);
+            m_updateStmt = true;
             return;
         }
     }
@@ -269,6 +278,68 @@ void RangeCheck::OptimizeRangeCheck(BasicBlock* block, Statement* stmt, GenTree*
     GetRangeMap()->RemoveAll();
     GetOverflowMap()->RemoveAll();
     m_pSearchPath = new (m_alloc) SearchPath(m_alloc);
+
+    // Special case: arr[arr.Length - CNS] if we know that arr.Length >= CNS
+    // We assume that SUB(x, CNS) is canonized into ADD(x, -CNS)
+    VNFuncApp funcApp;
+    if (m_pCompiler->vnStore->GetVNFunc(idxVn, &funcApp) && funcApp.m_func == (VNFunc)GT_ADD)
+    {
+        bool     isArrlenAddCns = false;
+        ValueNum cnsVN          = {};
+        if ((arrLenVn == funcApp.m_args[1]) && m_pCompiler->vnStore->IsVNInt32Constant(funcApp.m_args[0]))
+        {
+            // ADD(cnsVN, arrLenVn);
+            isArrlenAddCns = true;
+            cnsVN          = funcApp.m_args[0];
+        }
+        else if ((arrLenVn == funcApp.m_args[0]) && m_pCompiler->vnStore->IsVNInt32Constant(funcApp.m_args[1]))
+        {
+            // ADD(arrLenVn, cnsVN);
+            isArrlenAddCns = true;
+            cnsVN          = funcApp.m_args[1];
+        }
+
+        if (isArrlenAddCns)
+        {
+            // Calculate range for arrLength from assertions, e.g. for
+            //
+            //   bool result = (arr.Length == 0) || (arr[arr.Length - 1] == 0);
+            //
+            // here for the array access we know that arr.Length >= 1
+            Range arrLenRange = GetRange(block, bndsChk->GetArrayLength(), false DEBUGARG(0));
+            if (arrLenRange.LowerLimit().IsConstant())
+            {
+                // Lower known limit of ArrLen:
+                const int lenLowerLimit = arrLenRange.LowerLimit().GetConstant();
+
+                // Negative delta in the array access (ArrLen + -CNS)
+                const int delta = m_pCompiler->vnStore->GetConstantInt32(cnsVN);
+                if ((lenLowerLimit > 0) && (delta < 0) && (delta > -CORINFO_Array_MaxLength) &&
+                    (lenLowerLimit >= -delta))
+                {
+                    JITDUMP("[RangeCheck::OptimizeRangeCheck] Between bounds\n");
+                    m_pCompiler->optRemoveRangeCheck(bndsChk, comma, stmt);
+                    m_updateStmt = true;
+                    return;
+                }
+            }
+        }
+    }
+
+    if (m_pCompiler->vnStore->GetVNFunc(idxVn, &funcApp) && (funcApp.m_func == (VNFunc)GT_UMOD))
+    {
+        // We can always omit bound checks for Arr[X u% Arr.Length] pattern (unsigned MOD).
+        //
+        // if arr.Length is 0 we technically should keep the bounds check, but since the expression
+        // has to throw DividedByZeroException anyway - no special handling needed.
+        if (funcApp.m_args[1] == arrLenVn)
+        {
+            JITDUMP("[RangeCheck::OptimizeRangeCheck] UMOD(X, ARR_LEN) is always between bounds\n");
+            m_pCompiler->optRemoveRangeCheck(bndsChk, comma, stmt);
+            m_updateStmt = true;
+            return;
+        }
+    }
 
     // Get the range for this index.
     Range range = GetRange(block, treeIndex, false DEBUGARG(0));
@@ -303,8 +374,8 @@ void RangeCheck::OptimizeRangeCheck(BasicBlock* block, Statement* stmt, GenTree*
     {
         JITDUMP("[RangeCheck::OptimizeRangeCheck] Between bounds\n");
         m_pCompiler->optRemoveRangeCheck(bndsChk, comma, stmt);
+        m_updateStmt = true;
     }
-    return;
 }
 
 void RangeCheck::Widen(BasicBlock* block, GenTree* tree, Range* pRange)
@@ -336,18 +407,20 @@ void RangeCheck::Widen(BasicBlock* block, GenTree* tree, Range* pRange)
 
 bool RangeCheck::IsBinOpMonotonicallyIncreasing(GenTreeOp* binop)
 {
-    assert(binop->OperIs(GT_ADD));
+    assert(binop->OperIs(GT_ADD, GT_MUL, GT_LSH));
 
     GenTree* op1 = binop->gtGetOp1();
     GenTree* op2 = binop->gtGetOp2();
 
     JITDUMP("[RangeCheck::IsBinOpMonotonicallyIncreasing] [%06d], [%06d]\n", Compiler::dspTreeID(op1),
             Compiler::dspTreeID(op2));
-    // Check if we have a var + const.
-    if (op2->OperGet() == GT_LCL_VAR)
+
+    // Check if we have a var + const or var * const.
+    if (binop->OperIs(GT_ADD, GT_MUL) && op2->OperGet() == GT_LCL_VAR)
     {
         std::swap(op1, op2);
     }
+
     if (op1->OperGet() != GT_LCL_VAR)
     {
         JITDUMP("Not monotonically increasing because op1 is not lclVar.\n");
@@ -356,7 +429,8 @@ bool RangeCheck::IsBinOpMonotonicallyIncreasing(GenTreeOp* binop)
     switch (op2->OperGet())
     {
         case GT_LCL_VAR:
-            // When adding two local variables, we also must ensure that any constant is non-negative.
+            // When adding/multiplying/shifting two local variables, we also must ensure that any constant is
+            // non-negative.
             return IsMonotonicallyIncreasing(op1, true) && IsMonotonicallyIncreasing(op2, true);
 
         case GT_CNS_INT:
@@ -413,11 +487,10 @@ bool RangeCheck::IsMonotonicallyIncreasing(GenTree* expr, bool rejectNegativeCon
     // If the rhs expr is local, then try to find the def of the local.
     else if (expr->IsLocal())
     {
-        LclSsaVarDsc* ssaDef = GetSsaDefAsg(expr->AsLclVarCommon());
-        return (ssaDef != nullptr) &&
-               IsMonotonicallyIncreasing(ssaDef->GetAssignment()->gtGetOp2(), rejectNegativeConst);
+        LclSsaVarDsc* ssaDef = GetSsaDefStore(expr->AsLclVarCommon());
+        return (ssaDef != nullptr) && IsMonotonicallyIncreasing(ssaDef->GetDefNode()->Data(), rejectNegativeConst);
     }
-    else if (expr->OperGet() == GT_ADD)
+    else if (expr->OperIs(GT_ADD, GT_MUL, GT_LSH))
     {
         return IsBinOpMonotonicallyIncreasing(expr->AsOp());
     }
@@ -447,7 +520,7 @@ bool RangeCheck::IsMonotonicallyIncreasing(GenTree* expr, bool rejectNegativeCon
 }
 
 // Given a lclvar use, try to find the lclvar's defining assignment and its containing block.
-LclSsaVarDsc* RangeCheck::GetSsaDefAsg(GenTreeLclVarCommon* lclUse)
+LclSsaVarDsc* RangeCheck::GetSsaDefStore(GenTreeLclVarCommon* lclUse)
 {
     unsigned ssaNum = lclUse->GetSsaNum();
 
@@ -456,22 +529,26 @@ LclSsaVarDsc* RangeCheck::GetSsaDefAsg(GenTreeLclVarCommon* lclUse)
         return nullptr;
     }
 
-    LclVarDsc* varDsc = m_pCompiler->lvaGetDesc(lclUse);
-    if (varDsc->CanBeReplacedWithItsField(m_pCompiler))
-    {
-        varDsc = m_pCompiler->lvaGetDesc(varDsc->lvFieldLclStart);
-    }
+    unsigned      lclNum = lclUse->GetLclNum();
+    LclVarDsc*    varDsc = m_pCompiler->lvaGetDesc(lclNum);
     LclSsaVarDsc* ssaDef = varDsc->GetPerSsaData(ssaNum);
 
     // RangeCheck does not care about uninitialized variables.
-    if (ssaDef->GetAssignment() == nullptr)
+    if (ssaDef->GetDefNode() == nullptr)
     {
+        // Parameters are expected to be defined in fgFirstBB if FIRST_SSA_NUM is set
+        if (varDsc->lvIsParam && (ssaNum == SsaConfig::FIRST_SSA_NUM))
+        {
+            assert(ssaDef->GetBlock() == m_pCompiler->fgFirstBB);
+        }
         return nullptr;
     }
 
     // RangeCheck does not understand definitions generated by LCL_FLD nodes
-    // nor definitions generated by indirect stores to local variables.
-    if (!ssaDef->GetAssignment()->gtGetOp1()->OperIs(GT_LCL_VAR))
+    // nor definitions generated by indirect stores to local variables, nor
+    // stores through parent structs.
+    GenTreeLclVarCommon* defStore = ssaDef->GetDefNode();
+    if (!defStore->OperIs(GT_STORE_LCL_VAR) || !defStore->HasSsaName())
     {
         return nullptr;
     }
@@ -479,7 +556,7 @@ LclSsaVarDsc* RangeCheck::GetSsaDefAsg(GenTreeLclVarCommon* lclUse)
 #ifdef DEBUG
     Location* loc = GetDef(lclUse);
     assert(loc != nullptr);
-    assert(loc->parent == ssaDef->GetAssignment());
+    assert(loc->tree == defStore);
     assert(loc->block == ssaDef->GetBlock());
 #endif
 
@@ -489,11 +566,6 @@ LclSsaVarDsc* RangeCheck::GetSsaDefAsg(GenTreeLclVarCommon* lclUse)
 #ifdef DEBUG
 UINT64 RangeCheck::HashCode(unsigned lclNum, unsigned ssaNum)
 {
-    LclVarDsc* varDsc = m_pCompiler->lvaGetDesc(lclNum);
-    if (varDsc->CanBeReplacedWithItsField(m_pCompiler))
-    {
-        lclNum = varDsc->lvFieldLclStart;
-    }
     assert(ssaNum != SsaConfig::RESERVED_SSA_NUM);
     return UINT64(lclNum) << 32 | ssaNum;
 }
@@ -521,8 +593,7 @@ RangeCheck::Location* RangeCheck::GetDef(unsigned lclNum, unsigned ssaNum)
 
 RangeCheck::Location* RangeCheck::GetDef(GenTreeLclVarCommon* lcl)
 {
-    unsigned lclNum = lcl->GetLclNum();
-    return GetDef(lclNum, lcl->GetSsaNum());
+    return GetDef(lcl->GetLclNum(), lcl->GetSsaNum());
 }
 
 // Add the def location to the hash table.
@@ -560,12 +631,7 @@ void RangeCheck::MergeEdgeAssertions(GenTreeLclVarCommon* lcl, ASSERT_VALARG_TP 
         return;
     }
 
-    LclVarDsc* varDsc = m_pCompiler->lvaGetDesc(lcl);
-    if (varDsc->CanBeReplacedWithItsField(m_pCompiler))
-    {
-        varDsc = m_pCompiler->lvaGetDesc(varDsc->lvFieldLclStart);
-    }
-    LclSsaVarDsc* ssaData     = varDsc->GetPerSsaData(lcl->GetSsaNum());
+    LclSsaVarDsc* ssaData     = m_pCompiler->lvaGetDesc(lcl)->GetPerSsaData(lcl->GetSsaNum());
     ValueNum      normalLclVN = m_pCompiler->vnStore->VNConservativeNormalValue(ssaData->m_vnPair);
     MergeEdgeAssertions(normalLclVN, assertions, pRange);
 }
@@ -602,6 +668,7 @@ void RangeCheck::MergeEdgeAssertions(ValueNum normalLclVN, ASSERT_VALARG_TP asse
         Limit      limit(Limit::keUndef);
         genTreeOps cmpOper             = GT_NONE;
         bool       isConstantAssertion = false;
+        bool       isUnsigned          = false;
 
         // Current assertion is of the form (i < len - cns) != 0
         if (curAssertion->IsCheckedBoundArithBound())
@@ -657,7 +724,7 @@ void RangeCheck::MergeEdgeAssertions(ValueNum normalLclVN, ASSERT_VALARG_TP asse
             }
         }
         // Current assertion is of the form (i < 100) != 0
-        else if (curAssertion->IsConstantBound())
+        else if (curAssertion->IsConstantBound() || curAssertion->IsConstantBoundUnsigned())
         {
             ValueNumStore::ConstantBoundInfo info;
 
@@ -670,8 +737,9 @@ void RangeCheck::MergeEdgeAssertions(ValueNum normalLclVN, ASSERT_VALARG_TP asse
                 continue;
             }
 
-            limit   = Limit(Limit::keConstant, info.constVal);
-            cmpOper = (genTreeOps)info.cmpOper;
+            limit      = Limit(Limit::keConstant, info.constVal);
+            cmpOper    = (genTreeOps)info.cmpOper;
+            isUnsigned = info.isUnsigned;
         }
         // Current assertion is of the form i == 100
         else if (curAssertion->IsConstantInt32Assertion())
@@ -803,7 +871,7 @@ void RangeCheck::MergeEdgeAssertions(ValueNum normalLclVN, ASSERT_VALARG_TP asse
             }
 
             int curCns = pRange->uLimit.cns;
-            int limCns = (limit.IsBinOpArray()) ? limit.cns : 0;
+            int limCns = limit.IsBinOpArray() ? limit.cns : 0;
 
             // Incoming limit doesn't tighten the existing upper limit.
             if (limCns >= curCns)
@@ -827,11 +895,16 @@ void RangeCheck::MergeEdgeAssertions(ValueNum normalLclVN, ASSERT_VALARG_TP asse
             case GT_LT:
             case GT_LE:
                 pRange->uLimit = limit;
+                if (isUnsigned)
+                {
+                    pRange->lLimit = Limit(Limit::keConstant, 0);
+                }
                 break;
 
             case GT_GT:
             case GT_GE:
                 pRange->lLimit = limit;
+                // it doesn't matter if it's isUnsigned or not here - it's not negative anyway.
                 break;
 
             case GT_EQ:
@@ -862,13 +935,13 @@ void RangeCheck::MergeAssertion(BasicBlock* block, GenTree* op, Range* pRange DE
     {
         GenTreePhiArg* arg  = (GenTreePhiArg*)op;
         BasicBlock*    pred = arg->gtPredBB;
-        if (pred->bbFallsThrough() && pred->bbNext == block)
+        if (pred->bbFallsThrough() && pred->NextIs(block))
         {
             assertions = pred->bbAssertionOut;
             JITDUMP("Merge assertions from pred " FMT_BB " edge: ", pred->bbNum);
             Compiler::optDumpAssertionIndices(assertions, "\n");
         }
-        else if ((pred->bbJumpKind == BBJ_COND || pred->bbJumpKind == BBJ_ALWAYS) && pred->bbJumpDest == block)
+        else if (pred->KindIs(BBJ_COND, BBJ_ALWAYS) && pred->HasJumpTo(block))
         {
             if (m_pCompiler->bbJtrueAssertionOut != nullptr)
             {
@@ -894,11 +967,12 @@ void RangeCheck::MergeAssertion(BasicBlock* block, GenTree* op, Range* pRange DE
 // Compute the range for a binary operation.
 Range RangeCheck::ComputeRangeForBinOp(BasicBlock* block, GenTreeOp* binop, bool monIncreasing DEBUGARG(int indent))
 {
-    assert(binop->OperIs(GT_ADD, GT_AND, GT_RSH, GT_LSH, GT_UMOD));
+    assert(binop->OperIs(GT_ADD, GT_AND, GT_RSH, GT_LSH, GT_UMOD, GT_MUL));
 
     GenTree* op1 = binop->gtGetOp1();
     GenTree* op2 = binop->gtGetOp2();
 
+    // Special cases for binops where op2 is a constant
     if (binop->OperIs(GT_AND, GT_RSH, GT_LSH, GT_UMOD))
     {
         if (!op2->IsIntCnsFitsInI32())
@@ -929,17 +1003,21 @@ Range RangeCheck::ComputeRangeForBinOp(BasicBlock* block, GenTreeOp* binop, bool
             }
         }
 
-        if (icon < 0)
+        if (icon >= 0)
+        {
+            Range range(Limit(Limit::keConstant, 0), Limit(Limit::keConstant, icon));
+            JITDUMP("Limit range to %s\n", range.ToString(m_pCompiler->getAllocatorDebugOnly()));
+            return range;
+        }
+        // Generalized range computation not implemented for these operators
+        else if (binop->OperIs(GT_AND, GT_UMOD))
         {
             return Range(Limit::keUnknown);
         }
-        Range range(Limit(Limit::keConstant, 0), Limit(Limit::keConstant, icon));
-        JITDUMP("Limit range to %s\n", range.ToString(m_pCompiler->getAllocatorDebugOnly()));
-        return range;
     }
 
     // other operators are expected to be handled above.
-    assert(binop->OperIs(GT_ADD));
+    assert(binop->OperIs(GT_ADD, GT_MUL, GT_LSH, GT_RSH));
 
     Range* op1RangeCached = nullptr;
     Range  op1Range       = Limit(Limit::keUndef);
@@ -985,10 +1063,64 @@ Range RangeCheck::ComputeRangeForBinOp(BasicBlock* block, GenTreeOp* binop, bool
         op2Range = *op2RangeCached;
     }
 
-    Range r = RangeOps::Add(op1Range, op2Range);
-    JITDUMP("BinOp add ranges %s %s = %s\n", op1Range.ToString(m_pCompiler->getAllocatorDebugOnly()),
-            op2Range.ToString(m_pCompiler->getAllocatorDebugOnly()), r.ToString(m_pCompiler->getAllocatorDebugOnly()));
+    Range r = Range(Limit::keUnknown);
+    if (binop->OperIs(GT_ADD))
+    {
+        r = RangeOps::Add(op1Range, op2Range);
+        JITDUMP("BinOp add ranges %s %s = %s\n", op1Range.ToString(m_pCompiler->getAllocatorDebugOnly()),
+                op2Range.ToString(m_pCompiler->getAllocatorDebugOnly()),
+                r.ToString(m_pCompiler->getAllocatorDebugOnly()));
+    }
+    else if (binop->OperIs(GT_MUL))
+    {
+        r = RangeOps::Multiply(op1Range, op2Range);
+        JITDUMP("BinOp multiply ranges %s %s = %s\n", op1Range.ToString(m_pCompiler->getAllocatorDebugOnly()),
+                op2Range.ToString(m_pCompiler->getAllocatorDebugOnly()),
+                r.ToString(m_pCompiler->getAllocatorDebugOnly()));
+    }
+    else if (binop->OperIs(GT_LSH))
+    {
+        // help the next step a bit, convert the LSH rhs to a multiply
+        Range convertedOp2Range = RangeOps::ConvertShiftToMultiply(op2Range);
+        r                       = RangeOps::Multiply(op1Range, convertedOp2Range);
+        JITDUMP("BinOp multiply ranges %s %s = %s\n", op1Range.ToString(m_pCompiler->getAllocatorDebugOnly()),
+                convertedOp2Range.ToString(m_pCompiler->getAllocatorDebugOnly()),
+                r.ToString(m_pCompiler->getAllocatorDebugOnly()));
+    }
+    else if (binop->OperIs(GT_RSH))
+    {
+        r = RangeOps::ShiftRight(op1Range, op2Range);
+        JITDUMP("Right shift range: %s >> %s = %s\n", op1Range.ToString(m_pCompiler->getAllocatorDebugOnly()),
+                op2Range.ToString(m_pCompiler->getAllocatorDebugOnly()),
+                r.ToString(m_pCompiler->getAllocatorDebugOnly()));
+    }
     return r;
+}
+
+//------------------------------------------------------------------------
+// GetRangeFromType: Compute the range from the given type
+//
+// Arguments:
+//   type - input type
+//
+// Return value:
+//   range that represents the values given type allows
+//
+Range RangeCheck::GetRangeFromType(var_types type)
+{
+    switch (type)
+    {
+        case TYP_UBYTE:
+            return Range(Limit(Limit::keConstant, 0), Limit(Limit::keConstant, BYTE_MAX));
+        case TYP_BYTE:
+            return Range(Limit(Limit::keConstant, INT8_MIN), Limit(Limit::keConstant, INT8_MAX));
+        case TYP_USHORT:
+            return Range(Limit(Limit::keConstant, 0), Limit(Limit::keConstant, UINT16_MAX));
+        case TYP_SHORT:
+            return Range(Limit(Limit::keConstant, INT16_MIN), Limit(Limit::keConstant, INT16_MAX));
+        default:
+            return Range(Limit(Limit::keUnknown));
+    }
 }
 
 // Compute the range for a local var definition.
@@ -996,7 +1128,7 @@ Range RangeCheck::ComputeRangeForLocalDef(BasicBlock*          block,
                                           GenTreeLclVarCommon* lcl,
                                           bool monIncreasing DEBUGARG(int indent))
 {
-    LclSsaVarDsc* ssaDef = GetSsaDefAsg(lcl);
+    LclSsaVarDsc* ssaDef = GetSsaDefStore(lcl);
     if (ssaDef == nullptr)
     {
         return Range(Limit(Limit::keUnknown));
@@ -1005,30 +1137,24 @@ Range RangeCheck::ComputeRangeForLocalDef(BasicBlock*          block,
     if (m_pCompiler->verbose)
     {
         JITDUMP("----------------------------------------------------\n");
-        m_pCompiler->gtDispTree(ssaDef->GetAssignment());
+        m_pCompiler->gtDispTree(ssaDef->GetDefNode());
         JITDUMP("----------------------------------------------------\n");
     }
 #endif
-    Range range = GetRange(ssaDef->GetBlock(), ssaDef->GetAssignment()->gtGetOp2(), monIncreasing DEBUGARG(indent));
+    Range range = GetRange(ssaDef->GetBlock(), ssaDef->GetDefNode()->Data(), monIncreasing DEBUGARG(indent));
     if (!BitVecOps::MayBeUninit(block->bbAssertionIn) && (m_pCompiler->GetAssertionCount() > 0))
     {
         JITDUMP("Merge assertions from " FMT_BB ": ", block->bbNum);
         Compiler::optDumpAssertionIndices(block->bbAssertionIn, " ");
-        JITDUMP("for assignment about [%06d]\n", Compiler::dspTreeID(ssaDef->GetAssignment()->gtGetOp1()))
+        JITDUMP("for definition [%06d]\n", Compiler::dspTreeID(ssaDef->GetDefNode()))
 
-        MergeEdgeAssertions(ssaDef->GetAssignment()->gtGetOp1()->AsLclVarCommon(), block->bbAssertionIn, &range);
+        MergeEdgeAssertions(ssaDef->GetDefNode(), block->bbAssertionIn, &range);
         JITDUMP("done merging\n");
     }
     return range;
 }
 
-// https://msdn.microsoft.com/en-us/windows/apps/hh285054.aspx
-// CLR throws IDS_EE_ARRAY_DIMENSIONS_EXCEEDED if array length is > INT_MAX.
-// new byte[INT_MAX]; still throws OutOfMemoryException on my system with 32 GB RAM.
-// I believe practical limits are still smaller than this number.
-#define ARRLEN_MAX (0x7FFFFFFF)
-
-// Get the limit's maximum possible value, treating array length to be ARRLEN_MAX.
+// Get the limit's maximum possible value.
 bool RangeCheck::GetLimitMax(Limit& limit, int* pMax)
 {
     int& max1 = *pMax;
@@ -1043,7 +1169,21 @@ bool RangeCheck::GetLimitMax(Limit& limit, int* pMax)
             int tmp = GetArrLength(limit.vn);
             if (tmp <= 0)
             {
-                tmp = ARRLEN_MAX;
+                // If we can't figure out the array length, use the maximum array length,
+                // CORINFO_Array_MaxLength (0x7FFFFFC7). However, we get here also when
+                // we can't find a Span/ReadOnlySpan bounds check length, and these have
+                // a maximum length of INT_MAX (0x7FFFFFFF). If limit.vn refers to a
+                // GT_ARR_LENGTH node, then it's an array length, otherwise use the INT_MAX value.
+
+                if (m_pCompiler->vnStore->IsVNArrLen(limit.vn))
+                {
+                    tmp = CORINFO_Array_MaxLength;
+                }
+                else
+                {
+                    const int MaxSpanLength = 0x7FFFFFFF;
+                    tmp                     = MaxSpanLength;
+                }
             }
             if (IntAddOverflows(tmp, limit.GetConstant()))
             {
@@ -1077,6 +1217,24 @@ bool RangeCheck::AddOverflows(Limit& limit1, Limit& limit2)
     return IntAddOverflows(max1, max2);
 }
 
+// Check if the arithmetic overflows.
+bool RangeCheck::MultiplyOverflows(Limit& limit1, Limit& limit2)
+{
+    int max1;
+    if (!GetLimitMax(limit1, &max1))
+    {
+        return true;
+    }
+
+    int max2;
+    if (!GetLimitMax(limit2, &max2))
+    {
+        return true;
+    }
+
+    return CheckedOps::MulOverflows(max1, max2, CheckedOps::Signed);
+}
+
 // Does the bin operation overflow.
 bool RangeCheck::DoesBinOpOverflow(BasicBlock* block, GenTreeOp* binop)
 {
@@ -1106,21 +1264,36 @@ bool RangeCheck::DoesBinOpOverflow(BasicBlock* block, GenTreeOp* binop)
         return true;
     }
 
-    JITDUMP("Checking bin op overflow %s %s\n", op1Range->ToString(m_pCompiler->getAllocatorDebugOnly()),
+    JITDUMP("Checking bin op overflow %s %s %s\n", GenTree::OpName(binop->OperGet()),
+            op1Range->ToString(m_pCompiler->getAllocatorDebugOnly()),
             op2Range->ToString(m_pCompiler->getAllocatorDebugOnly()));
 
-    if (!AddOverflows(op1Range->UpperLimit(), op2Range->UpperLimit()))
+    if (binop->OperIs(GT_ADD))
     {
-        return false;
+        return AddOverflows(op1Range->UpperLimit(), op2Range->UpperLimit());
     }
+    else if (binop->OperIs(GT_MUL))
+    {
+        return MultiplyOverflows(op1Range->UpperLimit(), op2Range->UpperLimit());
+    }
+
     return true;
 }
 
 // Check if the var definition the rhs involves arithmetic that overflows.
 bool RangeCheck::DoesVarDefOverflow(GenTreeLclVarCommon* lcl)
 {
-    LclSsaVarDsc* ssaDef = GetSsaDefAsg(lcl);
-    return (ssaDef == nullptr) || DoesOverflow(ssaDef->GetBlock(), ssaDef->GetAssignment()->gtGetOp2());
+    LclSsaVarDsc* ssaDef = GetSsaDefStore(lcl);
+    if (ssaDef == nullptr)
+    {
+        if ((lcl->GetSsaNum() == SsaConfig::FIRST_SSA_NUM) && m_pCompiler->lvaIsParameter(lcl->GetLclNum()))
+        {
+            // Parameter definitions that come from outside the method could not have overflown.
+            return false;
+        }
+        return true;
+    }
+    return DoesOverflow(ssaDef->GetBlock(), ssaDef->GetDefNode()->Data());
 }
 
 bool RangeCheck::DoesPhiOverflow(BasicBlock* block, GenTree* expr)
@@ -1166,11 +1339,11 @@ bool RangeCheck::ComputeDoesOverflow(BasicBlock* block, GenTree* expr)
     {
         overflows = false;
     }
-    else if (expr->OperGet() == GT_IND)
+    else if (expr->OperIs(GT_IND))
     {
         overflows = false;
     }
-    else if (expr->OperGet() == GT_COMMA)
+    else if (expr->OperIs(GT_COMMA))
     {
         overflows = ComputeDoesOverflow(block, expr->gtEffectiveVal());
     }
@@ -1180,7 +1353,7 @@ bool RangeCheck::ComputeDoesOverflow(BasicBlock* block, GenTree* expr)
         overflows = DoesVarDefOverflow(expr->AsLclVarCommon());
     }
     // Check if add overflows.
-    else if (expr->OperGet() == GT_ADD)
+    else if (expr->OperIs(GT_ADD, GT_MUL))
     {
         overflows = DoesBinOpOverflow(block, expr->AsOp());
     }
@@ -1191,9 +1364,13 @@ bool RangeCheck::ComputeDoesOverflow(BasicBlock* block, GenTree* expr)
         overflows = false;
     }
     // Walk through phi arguments to check if phi arguments involve arithmetic that overflows.
-    else if (expr->OperGet() == GT_PHI)
+    else if (expr->OperIs(GT_PHI))
     {
         overflows = DoesPhiOverflow(block, expr);
+    }
+    else if (expr->OperIs(GT_CAST))
+    {
+        overflows = ComputeDoesOverflow(block, expr->gtGetOp1());
     }
     GetOverflowMap()->Set(expr, overflows, OverflowMap::Overwrite);
     m_pSearchPath->Remove(expr);
@@ -1276,12 +1453,12 @@ Range RangeCheck::ComputeRange(BasicBlock* block, GenTree* expr, bool monIncreas
         MergeAssertion(block, expr, &range DEBUGARG(indent + 1));
     }
     // compute the range for binary operation
-    else if (expr->OperIs(GT_ADD, GT_AND, GT_RSH, GT_LSH, GT_UMOD))
+    else if (expr->OperIs(GT_ADD, GT_AND, GT_RSH, GT_LSH, GT_UMOD, GT_MUL))
     {
         range = ComputeRangeForBinOp(block, expr->AsOp(), monIncreasing DEBUGARG(indent + 1));
     }
     // If phi, then compute the range for arguments, calling the result "dependent" when looping begins.
-    else if (expr->OperGet() == GT_PHI)
+    else if (expr->OperIs(GT_PHI))
     {
         for (GenTreePhi::Use& use : expr->AsPhi()->Uses())
         {
@@ -1306,30 +1483,17 @@ Range RangeCheck::ComputeRange(BasicBlock* block, GenTree* expr, bool monIncreas
     }
     else if (varTypeIsSmallInt(expr->TypeGet()))
     {
-        switch (expr->TypeGet())
-        {
-            case TYP_UBYTE:
-                range = Range(Limit(Limit::keConstant, 0), Limit(Limit::keConstant, 255));
-                break;
-            case TYP_BYTE:
-                range = Range(Limit(Limit::keConstant, -128), Limit(Limit::keConstant, 127));
-                break;
-            case TYP_USHORT:
-                range = Range(Limit(Limit::keConstant, 0), Limit(Limit::keConstant, 65535));
-                break;
-            case TYP_SHORT:
-                range = Range(Limit(Limit::keConstant, -32768), Limit(Limit::keConstant, 32767));
-                break;
-            default:
-                range = Range(Limit(Limit::keUnknown));
-                break;
-        }
-
+        range = GetRangeFromType(expr->TypeGet());
         JITDUMP("%s\n", range.ToString(m_pCompiler->getAllocatorDebugOnly()));
     }
-    else if (expr->OperGet() == GT_COMMA)
+    else if (expr->OperIs(GT_COMMA))
     {
         range = GetRange(block, expr->gtEffectiveVal(), monIncreasing DEBUGARG(indent + 1));
+    }
+    else if (expr->OperIs(GT_CAST))
+    {
+        // TODO: consider computing range for CastOp and intersect it with this.
+        range = GetRangeFromType(expr->AsCast()->CastToType());
     }
     else
     {
@@ -1359,7 +1523,7 @@ Range RangeCheck::GetRange(BasicBlock* block, GenTree* expr, bool monIncreasing 
     if (m_pCompiler->verbose)
     {
         Indent(indent);
-        JITDUMP("[RangeCheck::GetRange] " FMT_BB, block->bbNum);
+        JITDUMP("[RangeCheck::GetRange] " FMT_BB " ", block->bbNum);
         m_pCompiler->gtDispTree(expr);
         Indent(indent);
         JITDUMP("{\n", expr);
@@ -1389,33 +1553,9 @@ void RangeCheck::MapStmtDefs(const Location& loc)
 {
     GenTreeLclVarCommon* tree = loc.tree;
 
-    unsigned lclNum = tree->GetLclNum();
-    unsigned ssaNum = tree->GetSsaNum();
-    if (ssaNum == SsaConfig::RESERVED_SSA_NUM)
+    if (tree->HasSsaName() && tree->OperIsLocalStore())
     {
-        return;
-    }
-
-    // If useasg then get the correct ssaNum to add to the map.
-    if (tree->gtFlags & GTF_VAR_USEASG)
-    {
-        unsigned ssaNum = m_pCompiler->GetSsaNumForLocalVarDef(tree);
-        if (ssaNum != SsaConfig::RESERVED_SSA_NUM)
-        {
-            // To avoid ind(addr) use asgs
-            if (loc.parent->OperIs(GT_ASG))
-            {
-                SetDef(HashCode(lclNum, ssaNum), new (m_alloc) Location(loc));
-            }
-        }
-    }
-    // If def get the location and store it against the variable's ssaNum.
-    else if (tree->gtFlags & GTF_VAR_DEF)
-    {
-        if (loc.parent->OperGet() == GT_ASG)
-        {
-            SetDef(HashCode(lclNum, ssaNum), new (m_alloc) Location(loc));
-        }
+        SetDef(HashCode(tree->GetLclNum(), tree->GetSsaNum()), new (m_alloc) Location(loc));
     }
 }
 
@@ -1437,7 +1577,7 @@ Compiler::fgWalkResult MapMethodDefsVisitor(GenTree** ptr, Compiler::fgWalkData*
 
     if (tree->IsLocal())
     {
-        rcd->rc->MapStmtDefs(RangeCheck::Location(rcd->block, rcd->stmt, tree->AsLclVarCommon(), data->parent));
+        rcd->rc->MapStmtDefs(RangeCheck::Location(rcd->block, rcd->stmt, tree->AsLclVarCommon()));
     }
 
     return Compiler::WALK_CONTINUE;
@@ -1459,34 +1599,40 @@ void RangeCheck::MapMethodDefs()
 #endif
 
 // Entry point to range check optimizations.
-void RangeCheck::OptimizeRangeChecks()
+bool RangeCheck::OptimizeRangeChecks()
 {
     if (m_pCompiler->fgSsaPassesCompleted == 0)
     {
-        return;
+        return false;
     }
-#ifdef DEBUG
-    if (m_pCompiler->verbose)
-    {
-        JITDUMP("*************** In OptimizeRangeChecks()\n");
-        JITDUMP("Blocks/trees before phase\n");
-        m_pCompiler->fgDispBasicBlocks(true);
-    }
-#endif
+
+    bool madeChanges = false;
 
     // Walk through trees looking for arrBndsChk node and check if it can be optimized.
     for (BasicBlock* const block : m_pCompiler->Blocks())
     {
         for (Statement* const stmt : block->Statements())
         {
+            m_updateStmt = false;
+
             for (GenTree* const tree : stmt->TreeList())
             {
-                if (IsOverBudget())
+                if (IsOverBudget() && !m_updateStmt)
                 {
-                    return;
+                    return madeChanges;
                 }
+
                 OptimizeRangeCheck(block, stmt, tree);
+            }
+
+            if (m_updateStmt)
+            {
+                m_pCompiler->gtSetStmtInfo(stmt);
+                m_pCompiler->fgSetStmtSeq(stmt);
+                madeChanges = true;
             }
         }
     }
+
+    return madeChanges;
 }

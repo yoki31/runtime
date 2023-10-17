@@ -6,13 +6,12 @@
 .assembly extern xunit.core {}
 .assembly extern mscorlib { auto }
 
-.assembly MCCTest {}
-.module mcc_i03.exe
+.assembly 'mcc_i03' {}
 
 
 .namespace MCCTest
 {
-  .class MyClass
+  .class public MyClass
   {
     .method assembly static pinvokeimpl("native_i0c" as "#1" cdecl)
         vararg valuetype MCCTest.VType0 Sum(unsigned int64) cil managed preservesig {
@@ -64,7 +63,7 @@
       ret
     } // end of method MyClass::.ctor
 
-    .method private static int32 Main(string[] args)
+    .method public static int32 Main()
     {
       .custom instance void [xunit.core]Xunit.FactAttribute::.ctor() = (
           01 00 00 00

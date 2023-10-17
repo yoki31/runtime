@@ -29,7 +29,7 @@ namespace System.Net.Sockets
         // BytesTransferred property variables.
         private int _bytesTransferred;
 
-        // DisconnectReuseSocket propery variables.
+        // DisconnectReuseSocket property variables.
         private bool _disconnectReuseSocket;
 
         // LastOperation property variables.
@@ -65,7 +65,7 @@ namespace System.Net.Sockets
         private int _acceptAddressBufferCount;
 
         // Internal SocketAddress buffer.
-        internal Internals.SocketAddress? _socketAddress;
+        internal SocketAddress? _socketAddress;
 
         // Misc state variables.
         private readonly bool _flowExecutionContext;
@@ -153,7 +153,7 @@ namespace System.Net.Sockets
                         if (!_buffer.Equals(default))
                         {
                             // Can't have both set
-                            throw new ArgumentException(SR.Format(SR.net_ambiguousbuffers, nameof(Buffer)));
+                            throw new ArgumentException(SR.net_ambiguousbuffers);
                         }
 
                         // Copy the user-provided list into our internal buffer list,
@@ -201,7 +201,11 @@ namespace System.Net.Sockets
 
         private void OnCompletedInternal()
         {
-            if (SocketsTelemetry.Log.IsEnabled()) AfterConnectAcceptTelemetry();
+            // The following check checks if the operation was Accept (1) or Connect (2)
+            if (LastOperation <= SocketAsyncOperation.Connect)
+            {
+                AfterConnectAcceptTelemetry();
+            }
 
             OnCompleted(this);
         }
@@ -221,6 +225,10 @@ namespace System.Net.Sockets
 
                 case SocketAsyncOperation.Connect:
                     SocketsTelemetry.Log.AfterConnect(SocketError);
+                    break;
+
+                default:
+                    Debug.Fail($"Callers should guard against calling this method for '{LastOperation}'");
                     break;
             }
         }
@@ -301,14 +309,8 @@ namespace System.Net.Sockets
             {
                 if (!_buffer.Equals(default))
                 {
-                    if ((uint)offset > _buffer.Length)
-                    {
-                        throw new ArgumentOutOfRangeException(nameof(offset));
-                    }
-                    if ((uint)count > (_buffer.Length - offset))
-                    {
-                        throw new ArgumentOutOfRangeException(nameof(count));
-                    }
+                    ArgumentOutOfRangeException.ThrowIfGreaterThan((uint)offset, (uint)_buffer.Length, nameof(offset));
+                    ArgumentOutOfRangeException.ThrowIfGreaterThan((uint)count, (long)(_buffer.Length - offset), nameof(count));
                     if (!_bufferIsExplicitArray)
                     {
                         throw new InvalidOperationException(SR.InvalidOperation_BufferNotExplicitArray);
@@ -358,19 +360,13 @@ namespace System.Net.Sockets
                     // Can't have both Buffer and BufferList.
                     if (_bufferList != null)
                     {
-                        throw new ArgumentException(SR.Format(SR.net_ambiguousbuffers, nameof(BufferList)));
+                        throw new ArgumentException(SR.net_ambiguousbuffers);
                     }
 
                     // Offset and count can't be negative and the
                     // combination must be in bounds of the array.
-                    if ((uint)offset > buffer.Length)
-                    {
-                        throw new ArgumentOutOfRangeException(nameof(offset));
-                    }
-                    if ((uint)count > (buffer.Length - offset))
-                    {
-                        throw new ArgumentOutOfRangeException(nameof(count));
-                    }
+                    ArgumentOutOfRangeException.ThrowIfGreaterThan((uint)offset, (uint)buffer.Length, nameof(offset));
+                    ArgumentOutOfRangeException.ThrowIfGreaterThan((uint)count, (long)(buffer.Length - offset), nameof(count));
 
                     _buffer = buffer;
                     _offset = offset;
@@ -391,7 +387,7 @@ namespace System.Net.Sockets
             {
                 if (buffer.Length != 0 && _bufferList != null)
                 {
-                    throw new ArgumentException(SR.Format(SR.net_ambiguousbuffers, nameof(BufferList)));
+                    throw new ArgumentException(SR.net_ambiguousbuffers);
                 }
 
                 _buffer = buffer;
@@ -510,9 +506,8 @@ namespace System.Net.Sockets
         private void ThrowForNonFreeStatus(int status)
         {
             Debug.Assert(status == InProgress || status == Configuring || status == Disposed, $"Unexpected status: {status}");
-            throw status == Disposed ?
-                new ObjectDisposedException(GetType().FullName) :
-                new InvalidOperationException(SR.net_socketopinprogress);
+            ObjectDisposedException.ThrowIf(status == Disposed, this);
+            throw new InvalidOperationException(SR.net_socketopinprogress);
         }
 
         // Prepares for a native async socket call.
@@ -559,7 +554,7 @@ namespace System.Net.Sockets
                 // Caller specified a buffer - see if it is large enough
                 if (_count < _acceptAddressBufferCount)
                 {
-                    throw new ArgumentException(SR.Format(SR.net_buffercounttoosmall, nameof(Count)));
+                    throw new ArgumentException(SR.net_buffercounttoosmall, nameof(Count));
                 }
             }
             else
@@ -625,7 +620,7 @@ namespace System.Net.Sockets
                     break;
             }
 
-            // Don't log transfered byte count in case of a failure.
+            // Don't log transferred byte count in case of a failure.
 
             Complete();
         }
@@ -866,12 +861,12 @@ namespace System.Net.Sockets
                 LogBuffer(bytesTransferred);
             }
 
-            SocketError socketError = SocketError.Success;
+            SocketError socketError;
             switch (_completedOperation)
             {
                 case SocketAsyncOperation.Accept:
                     // Get the endpoint.
-                    Internals.SocketAddress remoteSocketAddress = IPEndPointExtensions.Serialize(_currentSocket!._rightEndPoint!);
+                    SocketAddress remoteSocketAddress = _currentSocket!._rightEndPoint!.Serialize();
 
                     socketError = FinishOperationAccept(remoteSocketAddress);
 
@@ -927,13 +922,19 @@ namespace System.Net.Sockets
 
                 case SocketAsyncOperation.ReceiveFrom:
                     // Deal with incoming address.
-                    _socketAddress!.InternalSize = GetSocketAddressSize();
-                    Internals.SocketAddress socketAddressOriginal = IPEndPointExtensions.Serialize(_remoteEndPoint!);
-                    if (!socketAddressOriginal.Equals(_socketAddress))
+                    UpdateReceivedSocketAddress(_socketAddress!);
+                    if (_remoteEndPoint != null && !SocketAddressExtensions.Equals(_socketAddress!, _remoteEndPoint))
                     {
                         try
                         {
-                            _remoteEndPoint = _remoteEndPoint!.Create(_socketAddress);
+                            if (_remoteEndPoint!.AddressFamily == AddressFamily.InterNetworkV6 && _socketAddress!.Family == AddressFamily.InterNetwork)
+                            {
+                                _remoteEndPoint = new IPEndPoint(_socketAddress.GetIPAddress().MapToIPv6(), _socketAddress.GetPort());
+                            }
+                            else
+                            {
+                                _remoteEndPoint = _remoteEndPoint!.Create(_socketAddress!);
+                            }
                         }
                         catch
                         {
@@ -943,13 +944,19 @@ namespace System.Net.Sockets
 
                 case SocketAsyncOperation.ReceiveMessageFrom:
                     // Deal with incoming address.
-                    _socketAddress!.InternalSize = GetSocketAddressSize();
-                    socketAddressOriginal = IPEndPointExtensions.Serialize(_remoteEndPoint!);
-                    if (!socketAddressOriginal.Equals(_socketAddress))
+                    UpdateReceivedSocketAddress(_socketAddress!);
+                    if (!SocketAddressExtensions.Equals(_socketAddress!, _remoteEndPoint))
                     {
                         try
                         {
-                            _remoteEndPoint = _remoteEndPoint!.Create(_socketAddress);
+                            if (_remoteEndPoint!.AddressFamily == AddressFamily.InterNetworkV6 && _socketAddress!.Family == AddressFamily.InterNetwork)
+                            {
+                                _remoteEndPoint = new IPEndPoint(_socketAddress.GetIPAddress().MapToIPv6(), _socketAddress.GetPort());
+                            }
+                            else
+                            {
+                                _remoteEndPoint = _remoteEndPoint!.Create(_socketAddress!);
+                            }
                         }
                         catch
                         {
@@ -999,7 +1006,11 @@ namespace System.Net.Sockets
                 FinishOperationSyncFailure(socketError, bytesTransferred, flags);
             }
 
-            if (SocketsTelemetry.Log.IsEnabled()) AfterConnectAcceptTelemetry();
+            // The following check checks if the operation was Accept (1) or Connect (2)
+            if (LastOperation <= SocketAsyncOperation.Connect)
+            {
+                AfterConnectAcceptTelemetry();
+            }
         }
 
         private static void LogBytesTransferEvents(SocketType? socketType, SocketAsyncOperation operation, int bytesTransferred)

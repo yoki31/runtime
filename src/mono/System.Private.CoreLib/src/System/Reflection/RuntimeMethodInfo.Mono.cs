@@ -140,7 +140,7 @@ namespace System.Reflection
 
 #region Sync with _MonoReflectionMethod in object-internals.h
     [StructLayout(LayoutKind.Sequential)]
-    internal sealed partial class RuntimeMethodInfo : MethodInfo
+    internal sealed unsafe partial class RuntimeMethodInfo : MethodInfo
     {
 #pragma warning disable 649
         internal IntPtr mhandle;
@@ -150,19 +150,26 @@ namespace System.Reflection
 #endregion
         private string? toString;
         private RuntimeType[]? parameterTypes;
-        private InvocationFlags invocationFlags;
+        private MethodBaseInvoker? invoker;
 
         internal InvocationFlags InvocationFlags
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             get
             {
-                InvocationFlags flags = invocationFlags;
-                if ((flags & InvocationFlags.Initialized) == 0)
-                {
-                    flags = ComputeAndUpdateInvocationFlags(this, ref invocationFlags);
-                }
+                InvocationFlags flags = Invoker._invocationFlags;
+                Debug.Assert((flags & InvocationFlags.Initialized) == InvocationFlags.Initialized);
                 return flags;
+            }
+        }
+
+        private MethodBaseInvoker Invoker
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get
+            {
+                invoker ??= new MethodBaseInvoker(this);
+                return invoker;
             }
         }
 
@@ -180,10 +187,10 @@ namespace System.Reflection
             StringBuilder sbName = new StringBuilder(Name);
 
             if (IsGenericMethod)
-                sbName.Append(RuntimeMethodHandle.ConstructInstantiation(this, TypeNameFormatFlags.FormatBasic));
+                sbName.Append(RuntimeMethodHandle.ConstructInstantiation(this));
 
             sbName.Append('(');
-            RuntimeParameterInfo.FormatParameters(sbName, GetParametersNoCopy(), CallingConvention);
+            RuntimeParameterInfo.FormatParameters(sbName, GetParametersAsSpan(), CallingConvention);
             sbName.Append(')');
 
             return sbName.ToString();
@@ -211,7 +218,7 @@ namespace System.Reflection
                 sbName.Append(Name);
 
                 if (IsGenericMethod)
-                    sbName.Append(RuntimeMethodHandle.ConstructInstantiation(this, TypeNameFormatFlags.FormatBasic));
+                    sbName.Append(RuntimeMethodHandle.ConstructInstantiation(this));
 
                 sbName.Append('(');
                 AppendParameters(ref sbName, GetParameterTypes(), CallingConvention);
@@ -329,7 +336,7 @@ namespace System.Reflection
 
             // Have to clone because GetParametersInfo icall returns cached value
             var dest = new ParameterInfo[src.Length];
-            Array.FastCopy(src, 0, dest, 0, src.Length);
+            Array.FastCopy(ObjectHandleOnStack.Create (ref src), 0, ObjectHandleOnStack.Create (ref dest), 0, src.Length);
             return dest;
         }
 
@@ -343,7 +350,7 @@ namespace System.Reflection
             return MonoMethodInfo.GetParametersInfo(mhandle, this).Length;
         }
 
-        private RuntimeType[] ArgumentTypes
+        internal RuntimeType[] ArgumentTypes
         {
             get
             {
@@ -371,80 +378,7 @@ namespace System.Reflection
          * Exceptions thrown by the called method propagate normally.
          */
         [MethodImplAttribute(MethodImplOptions.InternalCall)]
-        internal extern object? InternalInvoke(object? obj, in Span<object?> parameters, out Exception? exc);
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private object? InvokeWorker(object? obj, BindingFlags invokeAttr, Span<object?> parameters)
-        {
-            Exception? exc;
-            object? o = null;
-
-            if ((invokeAttr & BindingFlags.DoNotWrapExceptions) == 0)
-            {
-                try
-                {
-                    o = InternalInvoke(obj, parameters, out exc);
-                }
-                catch (Mono.NullByRefReturnException)
-                {
-                    throw new NullReferenceException();
-                }
-                catch (OverflowException)
-                {
-                    throw;
-                }
-                catch (Exception e)
-                {
-                    throw new TargetInvocationException(e);
-                }
-            }
-            else
-            {
-                try
-                {
-                    o = InternalInvoke(obj, parameters, out exc);
-                }
-                catch (Mono.NullByRefReturnException)
-                {
-                    throw new NullReferenceException();
-                }
-            }
-
-            if (exc != null)
-                throw exc;
-            return o;
-        }
-
-        internal static void ConvertValues(Binder binder, object?[]? args, ParameterInfo[] pinfo, CultureInfo? culture, BindingFlags invokeAttr)
-        {
-            if (args == null)
-            {
-                if (pinfo.Length == 0)
-                    return;
-
-                throw new TargetParameterCountException();
-            }
-
-            if (pinfo.Length != args.Length)
-                throw new TargetParameterCountException();
-
-            for (int i = 0; i < args.Length; ++i)
-            {
-                object? arg = args[i];
-                ParameterInfo pi = pinfo[i];
-                if (arg == Type.Missing)
-                {
-                    if (pi.DefaultValue == DBNull.Value)
-                        throw new ArgumentException(SR.Arg_VarMissNull, "parameters");
-
-                    args[i] = pi.DefaultValue;
-                    continue;
-                }
-
-                var rt = (RuntimeType)pi.ParameterType;
-                args[i] = rt.CheckValue(arg, binder, culture, invokeAttr);
-            }
-        }
+        internal extern object? InternalInvoke(object? obj, IntPtr *args, out Exception? exc);
 
         public override RuntimeMethodHandle MethodHandle
         {
@@ -538,12 +472,11 @@ namespace System.Reflection
             return attrs;
         }
 
-        private Attribute GetDllImportAttribute()
+        private DllImportAttribute GetDllImportAttribute()
         {
             string entryPoint;
-            string? dllName = null;
-            int token = MetadataToken;
-            PInvokeAttributes flags = 0;
+            string? dllName;
+            PInvokeAttributes flags;
 
             GetPInvoke(out flags, out entryPoint, out dllName);
 
@@ -618,14 +551,14 @@ namespace System.Reflection
             return attrsData;
         }
 
-        private CustomAttributeData? GetDllImportAttributeData()
+        private RuntimeCustomAttributeData? GetDllImportAttributeData()
         {
             if ((Attributes & MethodAttributes.PinvokeImpl) == 0)
                 return null;
 
             string entryPoint;
-            string? dllName = null;
-            PInvokeAttributes flags = 0;
+            string? dllName;
+            PInvokeAttributes flags;
 
             GetPInvoke(out flags, out entryPoint, out dllName);
 
@@ -682,15 +615,14 @@ namespace System.Reflection
         [RequiresUnreferencedCode("If some of the generic arguments are annotated (either with DynamicallyAccessedMembersAttribute, or generic constraints), trimming can't validate that the requirements of those annotations are met.")]
         public override MethodInfo MakeGenericMethod(Type[] methodInstantiation)
         {
-            if (methodInstantiation == null)
-                throw new ArgumentNullException(nameof(methodInstantiation));
+            ArgumentNullException.ThrowIfNull(methodInstantiation);
 
             if (!IsGenericMethodDefinition)
-                throw new InvalidOperationException("not a generic method definition");
+                throw new InvalidOperationException(SR.Format(SR.Arg_NotGenericMethodDefinition, this));
 
             /*FIXME add GetGenericArgumentsLength() internal vcall to speed this up*/
             if (GetGenericArguments().Length != methodInstantiation.Length)
-                throw new ArgumentException("Incorrect length");
+                throw new ArgumentException(SR.Format(SR.Argument_NotEnoughGenArguments, GetGenericArguments().Length, methodInstantiation.Length));
 
             bool hasUserType = false;
             foreach (Type type in methodInstantiation)
@@ -704,14 +636,14 @@ namespace System.Reflection
             if (hasUserType)
             {
                 if (RuntimeFeature.IsDynamicCodeSupported)
-                    return new MethodOnTypeBuilderInst(this, methodInstantiation);
+                    return new MethodOnTypeBuilderInstantiation(this, methodInstantiation);
 
-                throw new NotSupportedException("User types are not supported under full aot");
+                throw new NotSupportedException(SR.PlatformNotSupported_ReflectionEmit);
             }
 
             MethodInfo ret = MakeGenericMethod_impl(methodInstantiation);
             if (ret == null)
-                throw new ArgumentException(string.Format("The method has {0} generic parameter(s) but {1} generic argument(s) were provided.", GetGenericArguments().Length, methodInstantiation.Length));
+                throw new ArgumentException(SR.Format(SR.Argument_NotEnoughGenArguments, GetGenericArguments().Length, methodInstantiation.Length));
             return ret;
         }
 
@@ -774,7 +706,7 @@ namespace System.Reflection
     }
 #region Sync with _MonoReflectionMethod in object-internals.h
     [StructLayout(LayoutKind.Sequential)]
-    internal sealed partial class RuntimeConstructorInfo : ConstructorInfo
+    internal sealed unsafe partial class RuntimeConstructorInfo : ConstructorInfo
     {
 #pragma warning disable 649
         internal IntPtr mhandle;
@@ -784,19 +716,26 @@ namespace System.Reflection
 #endregion
         private string? toString;
         private RuntimeType[]? parameterTypes;
-        private InvocationFlags invocationFlags;
+        private MethodBaseInvoker? invoker;
 
         internal InvocationFlags InvocationFlags
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             get
             {
-                InvocationFlags flags = invocationFlags;
-                if ((flags & InvocationFlags.Initialized) == 0)
-                {
-                    flags = ComputeAndUpdateInvocationFlags(this, ref invocationFlags);
-                }
+                InvocationFlags flags = Invoker._invocationFlags;
+                Debug.Assert((flags & InvocationFlags.Initialized) == InvocationFlags.Initialized);
                 return flags;
+            }
+        }
+
+        internal MethodBaseInvoker Invoker
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get
+            {
+                invoker ??= new MethodBaseInvoker(this);
+                return invoker;
             }
         }
 
@@ -834,7 +773,7 @@ namespace System.Reflection
             return pi == null ? 0 : pi.Length;
         }
 
-        private RuntimeType[] ArgumentTypes
+        internal RuntimeType[] ArgumentTypes
         {
             get
             {
@@ -855,24 +794,13 @@ namespace System.Reflection
             }
         }
 
+        [MethodImplAttribute(MethodImplOptions.InternalCall)]
+        internal static extern void InvokeClassConstructor(QCallTypeHandle type);
+
         private void InvokeClassConstructor()
         {
-            // [TODO] Mechanism for invoking class constructor
-            // See https://github.com/dotnet/runtime/issues/40351
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal object? InvokeWorker(object? obj, BindingFlags invokeAttr, Span<object?> arguments)
-        {
-            bool wrapExceptions = (invokeAttr & BindingFlags.DoNotWrapExceptions) == 0;
-            return InternalInvoke(obj, arguments, wrapExceptions);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal object InvokeCtorWorker(BindingFlags invokeAttr, Span<object?> arguments)
-        {
-            bool wrapExceptions = (invokeAttr & BindingFlags.DoNotWrapExceptions) == 0;
-            return InternalInvoke(null, arguments, wrapExceptions)!;
+            RuntimeType type = (RuntimeType)DeclaringType;
+            InvokeClassConstructor(new QCallTypeHandle(ref type));
         }
 
         /*
@@ -880,42 +808,7 @@ namespace System.Reflection
          * to match the types of the method signature.
          */
         [MethodImplAttribute(MethodImplOptions.InternalCall)]
-        internal extern object InternalInvoke(object? obj, in Span<object?> parameters, out Exception exc);
-
-        private object? InternalInvoke(object? obj, Span<object?> parameters, bool wrapExceptions)
-        {
-            Exception exc;
-            object? o = null;
-
-            if (wrapExceptions)
-            {
-                try
-                {
-                    o = InternalInvoke(obj, parameters, out exc);
-                }
-                catch (MethodAccessException)
-                {
-                    throw;
-                }
-                catch (OverflowException)
-                {
-                    throw;
-                }
-                catch (Exception e)
-                {
-                    throw new TargetInvocationException(e);
-                }
-            }
-            else
-            {
-                o = InternalInvoke(obj, parameters, out exc);
-            }
-
-            if (exc != null)
-                throw exc;
-
-            return obj == null ? o : null;
-        }
+        internal extern object InternalInvoke(object? obj, IntPtr *args, out Exception? exc);
 
         public override RuntimeMethodHandle MethodHandle
         {

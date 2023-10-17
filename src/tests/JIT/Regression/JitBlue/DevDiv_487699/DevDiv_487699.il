@@ -2,13 +2,12 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 .assembly extern mscorlib {}
-.assembly a {}
+.assembly 'DevDiv_487699' {}
 .assembly extern xunit.core {}
-.module a.exe
 
 // This test originally triggered an error, that we do not reload shift index, if it was spilled to rcx.
 
-.class ILGEN_CLASS
+.class public ILGEN_CLASS
 {
    .method static native int ILGEN_METHOD(unsigned int8, int64, native int, unsigned int16)
    {
@@ -106,7 +105,7 @@
         IL_00fb: ret   
     }
     
-      .method private static int32 Main()
+      .method public static int32 Main()
     {
         .custom instance void [xunit.core]Xunit.FactAttribute::.ctor() = (
             01 00 00 00

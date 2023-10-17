@@ -4,13 +4,15 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Linq.Expressions;
 using System.Reflection;
 
 namespace Microsoft.Extensions.DependencyInjection.ServiceLookup
 {
-    internal sealed class ExpressionResolverBuilder : CallSiteVisitor<object, Expression>
+    internal sealed class ExpressionResolverBuilder : CallSiteVisitor<object?, Expression>
     {
         private static readonly ParameterExpression ScopeParameter = Expression.Parameter(typeof(ServiceProviderEngineScope));
 
@@ -20,13 +22,13 @@ namespace Microsoft.Extensions.DependencyInjection.ServiceLookup
             Expression.Assign(ResolvedServices,
                 Expression.Property(
                     ScopeParameter,
-                    typeof(ServiceProviderEngineScope).GetProperty(nameof(ServiceProviderEngineScope.ResolvedServices), BindingFlags.Instance | BindingFlags.NonPublic)));
+                    typeof(ServiceProviderEngineScope).GetProperty(nameof(ServiceProviderEngineScope.ResolvedServices), BindingFlags.Instance | BindingFlags.NonPublic)!));
 
         private static readonly BinaryExpression SyncVariableAssignment =
             Expression.Assign(Sync,
                 Expression.Property(
                     ScopeParameter,
-                    typeof(ServiceProviderEngineScope).GetProperty(nameof(ServiceProviderEngineScope.Sync), BindingFlags.Instance | BindingFlags.NonPublic)));
+                    typeof(ServiceProviderEngineScope).GetProperty(nameof(ServiceProviderEngineScope.Sync), BindingFlags.Instance | BindingFlags.NonPublic)!));
 
         private static readonly ParameterExpression CaptureDisposableParameter = Expression.Parameter(typeof(object));
         private static readonly LambdaExpression CaptureDisposable = Expression.Lambda(
@@ -90,36 +92,54 @@ namespace Microsoft.Extensions.DependencyInjection.ServiceLookup
                 ScopeParameter);
         }
 
-        protected override Expression VisitRootCache(ServiceCallSite singletonCallSite, object context)
+        protected override Expression VisitRootCache(ServiceCallSite singletonCallSite, object? context)
         {
             return Expression.Constant(CallSiteRuntimeResolver.Instance.Resolve(singletonCallSite, _rootScope));
         }
 
-        protected override Expression VisitConstant(ConstantCallSite constantCallSite, object context)
+        protected override Expression VisitConstant(ConstantCallSite constantCallSite, object? context)
         {
             return Expression.Constant(constantCallSite.DefaultValue);
         }
 
-        protected override Expression VisitServiceProvider(ServiceProviderCallSite serviceProviderCallSite, object context)
+        protected override Expression VisitServiceProvider(ServiceProviderCallSite serviceProviderCallSite, object? context)
         {
             return ScopeParameter;
         }
 
-        protected override Expression VisitFactory(FactoryCallSite factoryCallSite, object context)
+        protected override Expression VisitFactory(FactoryCallSite factoryCallSite, object? context)
         {
             return Expression.Invoke(Expression.Constant(factoryCallSite.Factory), ScopeParameter);
         }
 
-        protected override Expression VisitIEnumerable(IEnumerableCallSite callSite, object context)
+        protected override Expression VisitIEnumerable(IEnumerableCallSite callSite, object? context)
         {
+            [UnconditionalSuppressMessage("AotAnalysis", "IL3050:RequiresDynamicCode",
+                Justification = "VerifyAotCompatibility ensures elementType is not a ValueType")]
+            static MethodInfo GetArrayEmptyMethodInfo(Type elementType)
+            {
+                Debug.Assert(!ServiceProvider.VerifyAotCompatibility || !elementType.IsValueType, "VerifyAotCompatibility=true will throw during building the IEnumerableCallSite if elementType is a ValueType.");
+
+                return ServiceLookupHelpers.GetArrayEmptyMethodInfo(elementType);
+            }
+
+            [UnconditionalSuppressMessage("AotAnalysis", "IL3050:RequiresDynamicCode",
+                Justification = "VerifyAotCompatibility ensures elementType is not a ValueType")]
+            static NewArrayExpression NewArrayInit(Type elementType, IEnumerable<Expression> expr)
+            {
+                Debug.Assert(!ServiceProvider.VerifyAotCompatibility || !elementType.IsValueType, "VerifyAotCompatibility=true will throw during building the IEnumerableCallSite if elementType is a ValueType.");
+
+                return Expression.NewArrayInit(elementType, expr);
+            }
+
             if (callSite.ServiceCallSites.Length == 0)
             {
                 return Expression.Constant(
-                    ServiceLookupHelpers.GetArrayEmptyMethodInfo(callSite.ItemType)
+                    GetArrayEmptyMethodInfo(callSite.ItemType)
                     .Invoke(obj: null, parameters: Array.Empty<object>()));
             }
 
-            return Expression.NewArrayInit(
+            return NewArrayInit(
                 callSite.ItemType,
                 callSite.ServiceCallSites.Select(cs =>
                     Convert(
@@ -127,7 +147,7 @@ namespace Microsoft.Extensions.DependencyInjection.ServiceLookup
                         callSite.ItemType)));
         }
 
-        protected override Expression VisitDisposeCache(ServiceCallSite callSite, object context)
+        protected override Expression VisitDisposeCache(ServiceCallSite callSite, object? context)
         {
             // Elide calls to GetCaptureDisposable if the implementation type isn't disposable
             return TryCaptureDisposable(
@@ -136,7 +156,7 @@ namespace Microsoft.Extensions.DependencyInjection.ServiceLookup
                 VisitCallSiteMain(callSite, context));
         }
 
-        private Expression TryCaptureDisposable(ServiceCallSite callSite, ParameterExpression scope, Expression service)
+        private static Expression TryCaptureDisposable(ServiceCallSite callSite, ParameterExpression scope, Expression service)
         {
             if (!callSite.CaptureDisposable)
             {
@@ -146,7 +166,7 @@ namespace Microsoft.Extensions.DependencyInjection.ServiceLookup
             return Expression.Invoke(GetCaptureDisposable(scope), service);
         }
 
-        protected override Expression VisitConstructor(ConstructorCallSite callSite, object context)
+        protected override Expression VisitConstructor(ConstructorCallSite callSite, object? context)
         {
             ParameterInfo[] parameters = callSite.ConstructorInfo.GetParameters();
             Expression[] parameterExpressions;
@@ -164,7 +184,7 @@ namespace Microsoft.Extensions.DependencyInjection.ServiceLookup
             }
 
             Expression expression = Expression.New(callSite.ConstructorInfo, parameterExpressions);
-            if (callSite.ImplementationType.IsValueType)
+            if (callSite.ImplementationType!.IsValueType)
             {
                 expression = Expression.Convert(expression, typeof(object));
             }
@@ -183,14 +203,14 @@ namespace Microsoft.Extensions.DependencyInjection.ServiceLookup
             return Expression.Convert(expression, type);
         }
 
-        protected override Expression VisitScopeCache(ServiceCallSite callSite, object context)
+        protected override Expression VisitScopeCache(ServiceCallSite callSite, object? context)
         {
             Func<ServiceProviderEngineScope, object> lambda = Build(callSite);
             return Expression.Invoke(Expression.Constant(lambda), ScopeParameter);
         }
 
         // Move off the main stack
-        private Expression BuildScopedExpression(ServiceCallSite callSite)
+        private ConditionalExpression BuildScopedExpression(ServiceCallSite callSite)
         {
             ConstantExpression callSiteExpression = Expression.Constant(
                 callSite,
@@ -260,7 +280,7 @@ namespace Microsoft.Extensions.DependencyInjection.ServiceLookup
                     Expression.Property(
                         ScopeParameter,
                         typeof(ServiceProviderEngineScope)
-                            .GetProperty(nameof(ServiceProviderEngineScope.IsRootScope), BindingFlags.Instance | BindingFlags.Public)),
+                            .GetProperty(nameof(ServiceProviderEngineScope.IsRootScope), BindingFlags.Instance | BindingFlags.Public)!),
                     resolveRootScopeExpression,
                     Expression.Block(
                         typeof(object),
@@ -269,7 +289,7 @@ namespace Microsoft.Extensions.DependencyInjection.ServiceLookup
                 );
         }
 
-        public Expression GetCaptureDisposable(ParameterExpression scope)
+        public static Expression GetCaptureDisposable(ParameterExpression scope)
         {
             if (scope != ScopeParameter)
             {

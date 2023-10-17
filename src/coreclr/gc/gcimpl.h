@@ -66,7 +66,6 @@ public:
 
 public:
     GCHeap(){};
-    ~GCHeap(){};
 
     /* BaseGCHeap Methods*/
     PER_HEAP_ISOLATED   HRESULT StaticShutdown ();
@@ -151,7 +150,8 @@ public:
     //Unregister an object for finalization
     void    SetFinalizationRun (Object* obj);
 
-    //returns the generation number of an object (not valid during relocation)
+    // returns the generation number of an object (not valid during relocation) or
+    // INT32_MAX if the object belongs to a non-GC heap.
     unsigned WhichGeneration (Object* object);
     // returns TRUE is the object is ephemeral
     bool IsEphemeral (Object* object);
@@ -160,7 +160,6 @@ public:
     void    ValidateObjectMember (Object *obj);
 
     PER_HEAP    size_t  ApproxTotalBytesInUse(BOOL small_heap_only = FALSE);
-    PER_HEAP    size_t  ApproxFreeBytes();
 
     unsigned GetCondemnedGeneration();
 
@@ -180,7 +179,11 @@ public:
                        bool* isConcurrent,
                        uint64_t* genInfoRaw,
                        uint64_t* pauseInfoRaw,
-                       int kind);;
+                       int kind);
+
+    int64_t GetTotalPauseDuration();
+
+    void EnumerateConfigurationValues(void* context, ConfigurationValueFunc configurationValueFunc);
 
     uint32_t GetMemoryLoad();
 
@@ -198,13 +201,14 @@ public:
 
     int StartNoGCRegion(uint64_t totalSize, bool lohSizeKnown, uint64_t lohSize, bool disallowFullBlockingGC);
     int EndNoGCRegion();
+    enable_no_gc_region_callback_status EnableNoGCRegionCallback(NoGCRegionCallbackFinalizerWorkItem* callback, uint64_t callback_threshold);
+    FinalizerWorkItem* GetExtraWorkForFinalization();
+    uint64_t GetGenerationBudget(int generation);
 
     unsigned GetGcCount();
 
     Object* GetNextFinalizable() { return GetNextFinalizableObject(); };
     size_t GetNumberOfFinalizable() { return GetNumberFinalizableObjects(); }
-
-    PER_HEAP_ISOLATED HRESULT GetGcCounters(int gen, gc_counters* counters);
 
     size_t GetValidSegmentSize(bool large_seg = false);
 
@@ -242,6 +246,7 @@ public:	// FIX
     virtual segment_handle RegisterFrozenSegment(segment_info *pseginfo);
     virtual void UnregisterFrozenSegment(segment_handle seg);
     virtual bool IsInFrozenSegment(Object *object);
+    virtual void UpdateFrozenSegment(segment_handle seg, uint8_t* allocated, uint8_t* committed);
 
     // Event control functions
     void ControlEvents(GCEventKeyword keyword, GCEventLevel level);
@@ -277,7 +282,7 @@ public:
     //return TRUE if GC actually happens, otherwise FALSE
     bool StressHeap(gc_alloc_context * acontext);
 
-#ifndef FEATURE_REDHAWK // Redhawk forces relocation a different way
+#ifndef FEATURE_NATIVEAOT // Redhawk forces relocation a different way
 #ifdef STRESS_HEAP
 protected:
 
@@ -291,7 +296,7 @@ protected:
     PER_HEAP int m_CurStressObj;
 #endif  // !defined(MULTIPLE_HEAPS)
 #endif  // STRESS_HEAP
-#endif // FEATURE_REDHAWK
+#endif // FEATURE_NATIVEAOT
 
     virtual void DiagDescrGenerations (gen_walk_fn fn, void *context);
 
@@ -320,6 +325,8 @@ public:
     virtual void Shutdown();
 
     static void ReportGenerationBounds();
+
+    virtual int RefreshMemoryLimit();
 };
 
 #endif  // GCIMPL_H_

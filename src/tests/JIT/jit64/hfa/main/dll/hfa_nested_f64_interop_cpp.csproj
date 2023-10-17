@@ -1,8 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Library</OutputType>
-    <CLRTestKind>BuildOnly</CLRTestKind>
-    <GenerateRunScript>false</GenerateRunScript>
   </PropertyGroup>
   <PropertyGroup>
     <DebugType />
@@ -13,6 +11,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="hfa_nested_f64_common.csproj" />
-    <ProjectReference Include="CMakelists.txt" />
+    <CMakeProjectReference Include="CMakelists.txt" />
   </ItemGroup>
 </Project>

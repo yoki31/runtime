@@ -16,7 +16,7 @@ The bug related to populating MethodDesc slots in generic dictionaries at runtim
 */
 
 .assembly extern mscorlib {}
-.assembly Generated30 {}
+.assembly 'dev10_710121' {}
 
 .class public DerivedDerived
 		extends class Derived`2<string,string>
@@ -54,7 +54,7 @@ The bug related to populating MethodDesc slots in generic dictionaries at runtim
 
 
 
-.class private auto ansi beforefieldinit Framework
+.class public auto ansi beforefieldinit Framework
 {
 	.method private hidebysig static void  CheckResult(string expected, string actual) cil managed {
 	  .maxstack  8

@@ -67,7 +67,7 @@ class My {
   .publickeytoken = (B7 7A 5C 56 19 34 E0 89 )                         // .z\V.4..
   .ver 4:0:0:0
 }
-.assembly initializearray_enum
+.assembly ASSEMBLY_NAME
 {
   .custom instance void [mscorlib]System.Runtime.CompilerServices.CompilationRelaxationsAttribute::.ctor(int32) = ( 01 00 08 00 00 00 00 00 ) 
   .custom instance void [mscorlib]System.Runtime.CompilerServices.RuntimeCompatibilityAttribute::.ctor() = ( 01 00 01 00 54 02 16 57 72 61 70 4E 6F 6E 45 78   // ....T..WrapNonEx
@@ -76,7 +76,6 @@ class My {
   .ver 0:0:0:0
 }
 .assembly extern xunit.core {}
-.module initializearray_enum.exe
 // MVID: {88A311DA-3D49-42AC-8FA7-6DB1266177BC}
 .imagebase 0x00400000
 .file alignment 0x00000200
@@ -97,7 +96,7 @@ class My {
   .field public static literal valuetype Color Blue = int32(0x00000002)
 } // end of class Color
 
-.class private auto ansi beforefieldinit My
+.class public auto ansi beforefieldinit My
        extends [mscorlib]System.Object
 {
   .method private hidebysig static valuetype Color[] 
@@ -128,7 +127,7 @@ class My {
     IL_0011:  ret
   } // end of method My::WithMinOpts
 
-  .method private hidebysig static int32 
+  .method public hidebysig static int32 
           Main() cil managed
   {
     .custom instance void [xunit.core]Xunit.FactAttribute::.ctor() = (

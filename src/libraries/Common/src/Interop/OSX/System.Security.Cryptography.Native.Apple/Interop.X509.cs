@@ -14,37 +14,37 @@ internal static partial class Interop
 {
     internal static partial class AppleCrypto
     {
-        [GeneratedDllImport(Libraries.AppleCryptoNative)]
+        [LibraryImport(Libraries.AppleCryptoNative)]
         private static partial int AppleCryptoNative_X509GetRawData(
             SafeSecCertificateHandle cert,
             out SafeCFDataHandle cfDataOut,
             out int pOSStatus);
 
-        [GeneratedDllImport(Libraries.AppleCryptoNative)]
+        [LibraryImport(Libraries.AppleCryptoNative)]
         private static partial int AppleCryptoNative_X509GetSubjectSummary(
             SafeSecCertificateHandle cert,
             out SafeCFStringHandle cfSubjectSummaryOut);
 
-        [GeneratedDllImport(Libraries.AppleCryptoNative)]
-        private static partial int AppleCryptoNative_X509GetPublicKey(SafeSecCertificateHandle cert, out SafeSecKeyRefHandle publicKey, out int pOSStatus);
+        [LibraryImport(Libraries.AppleCryptoNative)]
+        private static partial int AppleCryptoNative_X509GetPublicKey(SafeSecCertificateHandle cert, out SafeSecKeyRefHandle publicKey);
 
         internal static X509ContentType X509GetContentType(ReadOnlySpan<byte> data)
             => X509GetContentType(ref MemoryMarshal.GetReference(data), data.Length);
 
-        [GeneratedDllImport(Libraries.AppleCryptoNative, EntryPoint = "AppleCryptoNative_X509GetContentType")]
+        [LibraryImport(Libraries.AppleCryptoNative, EntryPoint = "AppleCryptoNative_X509GetContentType")]
         private static partial X509ContentType X509GetContentType(ref byte pbData, int cbData);
 
-        [GeneratedDllImport(Libraries.AppleCryptoNative)]
+        [LibraryImport(Libraries.AppleCryptoNative)]
         private static partial int AppleCryptoNative_X509CopyCertFromIdentity(
             SafeSecIdentityHandle identity,
             out SafeSecCertificateHandle cert);
 
-        [GeneratedDllImport(Libraries.AppleCryptoNative)]
+        [LibraryImport(Libraries.AppleCryptoNative)]
         private static partial int AppleCryptoNative_X509CopyPrivateKeyFromIdentity(
             SafeSecIdentityHandle identity,
             out SafeSecKeyRefHandle key);
 
-        [GeneratedDllImport(Libraries.AppleCryptoNative)]
+        [LibraryImport(Libraries.AppleCryptoNative)]
         private static partial int AppleCryptoNative_X509DemuxAndRetainHandle(
             IntPtr handle,
             out SafeSecCertificateHandle certHandle,
@@ -125,8 +125,7 @@ internal static partial class Interop
         internal static SafeSecKeyRefHandle X509GetPublicKey(SafeSecCertificateHandle cert)
         {
             SafeSecKeyRefHandle publicKey;
-            int osStatus;
-            int ret = AppleCryptoNative_X509GetPublicKey(cert, out publicKey, out osStatus);
+            int ret = AppleCryptoNative_X509GetPublicKey(cert, out publicKey);
 
             if (ret == 1)
             {
@@ -134,11 +133,6 @@ internal static partial class Interop
             }
 
             publicKey.Dispose();
-
-            if (ret == 0)
-            {
-                throw CreateExceptionForOSStatus(osStatus);
-            }
 
             Debug.Fail($"Unexpected return value {ret}");
             throw new CryptographicException();

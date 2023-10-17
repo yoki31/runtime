@@ -46,6 +46,13 @@ enum LFH {
 
 #include "runtimeexceptionkind.h"
 
+#ifndef TARGET_UNIX
+// Windows uses 64kB as the null-reference area
+#define NULL_AREA_SIZE   (64 * 1024)
+#else // !TARGET_UNIX
+#define NULL_AREA_SIZE   GetOsPageSize()
+#endif // !TARGET_UNIX
+
 class IJitManager;
 
 //
@@ -146,7 +153,6 @@ BOOL IsCOMPlusExceptionHandlerInstalled();
 #endif
 
 BOOL InstallUnhandledExceptionFilter();
-void UninstallUnhandledExceptionFilter();
 
 #if !defined(TARGET_UNIX)
 // Section naming is a strategy by itself. Ideally, we could have named the UEF section
@@ -195,20 +201,11 @@ enum UnhandledExceptionLocation
 };
 
 #ifdef HOST_WINDOWS
-
-// Must be the same as the copy in pal.h and the WriteDumpFlags enum in the diagnostics repo
-enum
-{
-    GenerateDumpFlagsNone = 0x00,
-    GenerateDumpFlagsLoggingEnabled = 0x01,
-    GenerateDumpFlagsVerboseLoggingEnabled = 0x02,
-    GenerateDumpFlagsCrashReportEnabled = 0x04
-};
-
+#include <generatedumpflags.h>
 void InitializeCrashDump();
 void CreateCrashDumpIfEnabled(bool stackoverflow = false);
 #endif
-bool GenerateDump(LPCWSTR dumpName, INT dumpType, ULONG32 flags);
+bool GenerateDump(LPCWSTR dumpName, INT dumpType, ULONG32 flags, LPSTR errorMessageBuffer, INT cbErrorMessageBuffer);
 
 // Generates crash dumps if enabled for both Windows and Linux
 void CrashDumpAndTerminateProcess(UINT exitCode);
@@ -259,6 +256,7 @@ VOID DECLSPEC_NORETURN RealCOMPlusThrowNonLocalized(RuntimeExceptionKind reKind,
 //==========================================================================
 
 VOID DECLSPEC_NORETURN RealCOMPlusThrow(OBJECTREF throwable);
+VOID DECLSPEC_NORETURN RealCOMPlusThrow(Object *exceptionObj);
 
 //==========================================================================
 // Throw an undecorated runtime exception.
@@ -289,19 +287,20 @@ VOID DECLSPEC_NORETURN RealCOMPlusThrow(RuntimeExceptionKind  reKind, UINT resID
 // passed as the first substitution string (%1).
 //==========================================================================
 
-enum tagGetErrorInfo
-{
-    kGetErrorInfo
-};
-
 VOID DECLSPEC_NORETURN RealCOMPlusThrowHR(HRESULT hr, IErrorInfo* pErrInfo, Exception * pInnerException = NULL);
-VOID DECLSPEC_NORETURN RealCOMPlusThrowHR(HRESULT hr, tagGetErrorInfo);
 VOID DECLSPEC_NORETURN RealCOMPlusThrowHR(HRESULT hr);
 VOID DECLSPEC_NORETURN RealCOMPlusThrowHR(HRESULT hr, UINT resID, LPCWSTR wszArg1 = NULL, LPCWSTR wszArg2 = NULL,
                                           LPCWSTR wszArg3 = NULL, LPCWSTR wszArg4 = NULL, LPCWSTR wszArg5 = NULL,
                                           LPCWSTR wszArg6 = NULL);
 
 #ifdef FEATURE_COMINTEROP
+
+enum tagGetErrorInfo
+{
+    kGetErrorInfo
+};
+
+VOID DECLSPEC_NORETURN RealCOMPlusThrowHR(HRESULT hr, tagGetErrorInfo);
 
 //==========================================================================
 // Throw a runtime exception based on an HResult, check for error info
@@ -347,7 +346,7 @@ void CreateTypeInitializationExceptionObject(LPCWSTR pTypeThatFailed,
 //==========================================================================
 
 ULONG GetExceptionMessage(OBJECTREF throwable,
-                          __inout_ecount(bufferLength) LPWSTR buffer,
+                          _Inout_updates_(bufferLength) LPWSTR buffer,
                           ULONG bufferLength);
 void GetExceptionMessage(OBJECTREF throwable, SString &result);
 STRINGREF GetExceptionMessage(OBJECTREF throwable);
@@ -581,8 +580,6 @@ VOID DECLSPEC_NORETURN ThrowFieldLayoutError(mdTypeDef cl,                // cl 
 
 UINT GetResourceIDForFileLoadExceptionHR(HRESULT hr);
 
-FCDECL1(Object*, MissingMemberException_FormatSignature, I1Array* pPersistedSigUNSAFE);
-
 #define EXCEPTION_NONCONTINUABLE 0x1    // Noncontinuable exception
 #define EXCEPTION_UNWINDING 0x2         // Unwind is in progress
 #define EXCEPTION_EXIT_UNWIND 0x4       // Exit unwind is in progress
@@ -721,10 +718,9 @@ bool IsInterceptableException(Thread *pThread);
 // perform simple checking to see if the current exception is intercepted
 bool CheckThreadExceptionStateForInterception();
 
-#ifndef TARGET_UNIX
-// Currently, only Windows supports ClrUnwindEx (used inside ClrDebuggerDoUnwindAndIntercept)
+#if defined(TARGET_AMD64) || defined(TARGET_ARM64) || defined(TARGET_ARM) || defined(TARGET_X86)
 #define DEBUGGER_EXCEPTION_INTERCEPTION_SUPPORTED
-#endif // !TARGET_UNIX
+#endif // defined(TARGET_AMD64) || defined(TARGET_ARM64) || defined(TARGET_ARM) || defined(TARGET_X86)
 
 #ifdef DEBUGGER_EXCEPTION_INTERCEPTION_SUPPORTED
 // Intercept the current exception and start an unwind.  This function may never return.
@@ -744,18 +740,13 @@ void CPFH_AdjustContextForThreadSuspensionRace(T_CONTEXT *pContext, Thread *pThr
 DWORD GetGcMarkerExceptionCode(LPVOID ip);
 bool IsGcMarker(T_CONTEXT *pContext, EXCEPTION_RECORD *pExceptionRecord);
 
-void InitSavedExceptionInfo();
-
 bool ShouldHandleManagedFault(
                         EXCEPTION_RECORD*               pExceptionRecord,
-                        T_CONTEXT*                        pContext,
+                        T_CONTEXT*                      pContext,
                         EXCEPTION_REGISTRATION_RECORD*  pEstablisherFrame,
                         Thread*                         pThread);
 
-void HandleManagedFault(EXCEPTION_RECORD*               pExceptionRecord,
-                        T_CONTEXT*                        pContext,
-                        EXCEPTION_REGISTRATION_RECORD*  pEstablisherFrame,
-                        Thread*                         pThread);
+void HandleManagedFault(EXCEPTION_RECORD* pExceptionRecord, T_CONTEXT* pContext);
 
 LONG WatsonLastChance(
     Thread              *pThread,
@@ -764,15 +755,24 @@ LONG WatsonLastChance(
 
 bool DebugIsEECxxException(EXCEPTION_RECORD* pExceptionRecord);
 
+#ifndef FEATURE_EH_FUNCLETS
+#define g_isNewExceptionHandlingEnabled false
+#endif
 
 inline void CopyOSContext(T_CONTEXT* pDest, T_CONTEXT* pSrc)
 {
     SIZE_T cbReadOnlyPost = 0;
 #ifdef TARGET_AMD64
-    cbReadOnlyPost = sizeof(CONTEXT) - FIELD_OFFSET(CONTEXT, FltSave); // older OSes don't have the vector reg fields
+    cbReadOnlyPost = sizeof(CONTEXT) - offsetof(CONTEXT, FltSave); // older OSes don't have the vector reg fields
 #endif // TARGET_AMD64
 
     memcpyNoGCRefs(pDest, pSrc, sizeof(T_CONTEXT) - cbReadOnlyPost);
+#ifdef TARGET_AMD64
+    if (g_isNewExceptionHandlingEnabled)
+    {
+        pDest->ContextFlags = (pDest->ContextFlags & ~(CONTEXT_XSTATE | CONTEXT_FLOATING_POINT)) | CONTEXT_AMD64;
+    }
+#endif // TARGET_AMD64
 }
 
 void SaveCurrentExceptionInfo(PEXCEPTION_RECORD pRecord, PT_CONTEXT pContext);
@@ -782,7 +782,7 @@ void SetReversePInvokeEscapingUnhandledExceptionStatus(BOOL fIsUnwinding,
 #ifdef TARGET_X86
                                                        EXCEPTION_REGISTRATION_RECORD * pEstablisherFrame
 #elif defined(FEATURE_EH_FUNCLETS)
-                                                       ULONG64 pEstablisherFrame
+                                                       PVOID pEstablisherFrame
 #else
 #error Unsupported platform
 #endif

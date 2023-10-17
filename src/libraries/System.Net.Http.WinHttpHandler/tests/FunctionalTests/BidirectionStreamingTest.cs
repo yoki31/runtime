@@ -30,7 +30,7 @@ namespace System.Net.Http.WinHttpHandlerFunctional.Tests
 
         protected override Version UseVersion => new Version(2, 0);
 
-        protected static byte[] DataBytes = Encoding.ASCII.GetBytes("data");
+        protected static byte[] DataBytes = "data"u8.ToArray();
 
         protected static Frame MakeDataFrame(int streamId, byte[] data, bool endStream = false) =>
             new DataFrame(data, (endStream ? FrameFlags.EndStream : FrameFlags.None), 0, streamId);
@@ -143,7 +143,17 @@ namespace System.Net.Http.WinHttpHandlerFunctional.Tests
                 // Server sends RST_STREAM.
                 await connection.WriteFrameAsync(new RstStreamFrame(FrameFlags.EndStream, 0, streamId));
 
-                await Assert.ThrowsAsync<IOException>(() => requestStream.WriteAsync(new byte[50]).AsTask());
+                await Assert.ThrowsAsync<IOException>(async () =>
+                {
+                    for (int i = 0; i < 10; i++)
+                    {
+                        await requestStream.WriteAsync(new byte[50]);
+
+                        // WriteAsync succeeded because handler hasn't processed RST_STREAM yet.
+                        // Small wait before trying again.
+                        await Task.Delay(50);
+                    }
+                });
             }
         }
 

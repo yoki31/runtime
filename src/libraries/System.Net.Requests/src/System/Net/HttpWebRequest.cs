@@ -1,6 +1,7 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
@@ -169,16 +170,19 @@ namespace System.Net
         private const string ChunkedHeader = "chunked";
 
         [Obsolete(Obsoletions.WebRequestMessage, DiagnosticId = Obsoletions.WebRequestDiagId, UrlFormat = Obsoletions.SharedUrlFormat)]
+        [EditorBrowsable(EditorBrowsableState.Never)]
         protected HttpWebRequest(SerializationInfo serializationInfo, StreamingContext streamingContext) : base(serializationInfo, streamingContext)
         {
             throw new PlatformNotSupportedException();
         }
 
+        [Obsolete("Serialization has been deprecated for HttpWebRequest.")]
         void ISerializable.GetObjectData(SerializationInfo serializationInfo, StreamingContext streamingContext)
         {
             throw new PlatformNotSupportedException();
         }
 
+        [Obsolete("Serialization has been deprecated for HttpWebRequest.")]
         protected override void GetObjectData(SerializationInfo serializationInfo, StreamingContext streamingContext)
         {
             throw new PlatformNotSupportedException();
@@ -231,10 +235,7 @@ namespace System.Net
                 {
                     throw new InvalidOperationException(SR.net_reqsubmitted);
                 }
-                if (value < 0 && value != System.Threading.Timeout.Infinite)
-                {
-                    throw new ArgumentOutOfRangeException(nameof(value), SR.net_toosmall);
-                }
+                ArgumentOutOfRangeException.ThrowIfLessThan(value, System.Threading.Timeout.Infinite);
                 _maximumResponseHeadersLen = value;
             }
         }
@@ -247,10 +248,7 @@ namespace System.Net
             }
             set
             {
-                if (value <= 0)
-                {
-                    throw new ArgumentException(SR.net_toosmall, nameof(value));
-                }
+                ArgumentOutOfRangeException.ThrowIfNegativeOrZero(value);
                 _maximumAllowedRedirections = value;
             }
         }
@@ -318,10 +316,7 @@ namespace System.Net
                 {
                     throw new InvalidOperationException(SR.net_writestarted);
                 }
-                if (value < 0)
-                {
-                    throw new ArgumentOutOfRangeException(nameof(value), SR.net_clsmall);
-                }
+                ArgumentOutOfRangeException.ThrowIfNegative(value);
                 SetSpecialHeaders(HttpKnownHeaderNames.ContentLength, value.ToString());
             }
         }
@@ -353,7 +348,7 @@ namespace System.Net
                 Uri hostUri = _hostUri ?? Address;
                 return (_hostUri == null || !_hostHasPort) && Address.IsDefaultPort ?
                     hostUri.Host :
-                    hostUri.Host + ":" + hostUri.Port;
+                    $"{hostUri.Host}:{hostUri.Port}";
             }
             set
             {
@@ -361,10 +356,7 @@ namespace System.Net
                 {
                     throw new InvalidOperationException(SR.net_writestarted);
                 }
-                if (value == null)
-                {
-                    throw new ArgumentNullException(nameof(value));
-                }
+                ArgumentNullException.ThrowIfNull(value);
 
                 Uri? hostUri;
                 if ((value.Contains('/')) || (!TryGetHostUri(value, out hostUri)))
@@ -458,7 +450,7 @@ namespace System.Net
                 //
                 // if not check if the user is trying to set chunked:
                 //
-                fChunked = (value.IndexOf(ChunkedHeader, StringComparison.OrdinalIgnoreCase) != -1);
+                fChunked = (value.Contains(ChunkedHeader, StringComparison.OrdinalIgnoreCase));
 
                 //
                 // prevent them from adding chunked, or from adding an Encoding without
@@ -595,8 +587,8 @@ namespace System.Net
                     return;
                 }
 
-                fKeepAlive = (value.IndexOf("keep-alive", StringComparison.OrdinalIgnoreCase) != -1);
-                fClose = (value.IndexOf("close", StringComparison.OrdinalIgnoreCase) != -1);
+                fKeepAlive = (value.Contains("keep-alive", StringComparison.OrdinalIgnoreCase));
+                fClose = (value.Contains("close", StringComparison.OrdinalIgnoreCase));
 
                 //
                 // Prevent keep-alive and close from being added
@@ -650,7 +642,7 @@ namespace System.Net
                 // Prevent 100-continues from being added
                 //
 
-                fContinue100 = (value.IndexOf(ContinueHeader, StringComparison.OrdinalIgnoreCase) != -1);
+                fContinue100 = (value.Contains(ContinueHeader, StringComparison.OrdinalIgnoreCase));
 
                 if (fContinue100)
                 {
@@ -784,7 +776,11 @@ namespace System.Net
         public X509CertificateCollection ClientCertificates
         {
             get => _clientCertificates ??= new X509CertificateCollection();
-            set => _clientCertificates = value ?? throw new ArgumentNullException(nameof(value));
+            set
+            {
+                ArgumentNullException.ThrowIfNull(value);
+                _clientCertificates = value;
+            }
         }
 
         // HTTP Version
@@ -909,10 +905,7 @@ namespace System.Net
             }
             set
             {
-                if (string.IsNullOrEmpty(value))
-                {
-                    throw new ArgumentException(SR.net_badmethod, nameof(value));
-                }
+                ArgumentException.ThrowIfNullOrEmpty(value);
 
                 if (HttpValidationHelpers.IsInvalidMethodOrHeaderString(value))
                 {
@@ -1134,7 +1127,7 @@ namespace System.Net
                 throw new InvalidOperationException(SR.net_reqsubmitted);
             }
 
-            var request = new HttpRequestMessage(new HttpMethod(_originVerb), _requestUri);
+            var request = new HttpRequestMessage(HttpMethod.Parse(_originVerb), _requestUri);
 
             bool disposeRequired = false;
             HttpClient? client = null;
@@ -1163,11 +1156,8 @@ namespace System.Net
                     // are only allowed in the request headers collection and not in the request content headers collection.
                     if (IsWellKnownContentHeader(headerName))
                     {
-                        if (request.Content == null)
-                        {
-                            // Create empty content so that we can send the entity-body header.
-                            request.Content = new ByteArrayContent(Array.Empty<byte>());
-                        }
+                        // Create empty content so that we can send the entity-body header.
+                        request.Content ??= new ByteArrayContent(Array.Empty<byte>());
 
                         request.Content.Headers.TryAddWithoutValidation(headerName, _webHeaderCollection[headerName!]);
                     }
@@ -1429,14 +1419,8 @@ namespace System.Net
 
         public void AddRange(string rangeSpecifier, long from, long to)
         {
-            //
-            // Do some range checking before assembling the header
-            //
+            ArgumentNullException.ThrowIfNull(rangeSpecifier);
 
-            if (rangeSpecifier == null)
-            {
-                throw new ArgumentNullException(nameof(rangeSpecifier));
-            }
             if ((from < 0) || (to < 0))
             {
                 throw new ArgumentOutOfRangeException(from < 0 ? nameof(from) : nameof(to), SR.net_rangetoosmall);
@@ -1462,10 +1446,8 @@ namespace System.Net
 
         public void AddRange(string rangeSpecifier, long range)
         {
-            if (rangeSpecifier == null)
-            {
-                throw new ArgumentNullException(nameof(rangeSpecifier));
-            }
+            ArgumentNullException.ThrowIfNull(rangeSpecifier);
+
             if (!HttpValidationHelpers.IsValidToken(rangeSpecifier))
             {
                 throw new ArgumentException(SR.net_nottoken, nameof(rangeSpecifier));
@@ -1530,7 +1512,7 @@ namespace System.Net
             HttpKnownHeaderNames.LastModified
         };
 
-        private bool IsWellKnownContentHeader(string header)
+        private static bool IsWellKnownContentHeader(string header)
         {
             foreach (string contentHeaderName in s_wellKnownContentHeaders)
             {
@@ -1563,10 +1545,9 @@ namespace System.Net
 
         private void SetDateHeaderHelper(string headerName, DateTime dateTime)
         {
-            if (dateTime == DateTime.MinValue)
-                SetSpecialHeaders(headerName, null); // remove header
-            else
-                SetSpecialHeaders(headerName, HttpDateParser.DateToString(dateTime.ToUniversalTime()));
+            SetSpecialHeaders(headerName, dateTime == DateTime.MinValue ?
+                null : // remove header
+                dateTime.ToUniversalTime().ToString("r"));
         }
 
         private bool TryGetHostUri(string hostName, [NotNullWhen(true)] out Uri? hostUri)

@@ -6,7 +6,7 @@ using System.Buffers.Text;
 using System.Diagnostics;
 using System.Text.Encodings.Web;
 
-#if !BUILDING_INBOX_LIBRARY
+#if !NETCOREAPP
 using System.Runtime.CompilerServices;
 #endif
 
@@ -21,8 +21,8 @@ namespace System.Text.Json
         //
         // non-zero = allowed, 0 = disallowed
         public const int LastAsciiCharacter = 0x7F;
-        private static ReadOnlySpan<byte> AllowList => new byte[byte.MaxValue + 1]
-        {
+        private static ReadOnlySpan<byte> AllowList => // byte.MaxValue + 1
+        [
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // U+0000..U+000F
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // U+0010..U+001F
             1, 1, 0, 1, 1, 1, 0, 0, 1, 1, 1, 0, 1, 1, 1, 1, // U+0020..U+002F
@@ -41,9 +41,9 @@ namespace System.Text.Json
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // U+00F0..U+00FF
-        };
+        ];
 
-#if BUILDING_INBOX_LIBRARY
+#if NETCOREAPP
         private const string HexFormatString = "X4";
 #endif
 
@@ -291,7 +291,7 @@ namespace System.Text.Json
                     break;
                 default:
                     destination[written++] = 'u';
-#if BUILDING_INBOX_LIBRARY
+#if NETCOREAPP
                     int intChar = value;
                     intChar.TryFormat(destination.Slice(written), out int charsWritten, HexFormatString);
                     Debug.Assert(charsWritten == 4);
@@ -303,7 +303,7 @@ namespace System.Text.Json
             }
         }
 
-#if !BUILDING_INBOX_LIBRARY
+#if !NETCOREAPP
         private static int WriteHex(int value, Span<char> destination, int written)
         {
             destination[written++] = HexConverter.ToCharUpper(value >> 12);

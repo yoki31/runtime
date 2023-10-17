@@ -39,7 +39,7 @@ internal static partial class Interop
                 out pOSStatus);
         }
 
-        [GeneratedDllImport(Libraries.AppleCryptoNative)]
+        [LibraryImport(Libraries.AppleCryptoNative)]
         private static partial int AppleCryptoNative_X509ImportCertificate(
             ref byte pbKeyBlob,
             int cbKeyBlob,
@@ -51,7 +51,7 @@ internal static partial class Interop
             out SafeSecIdentityHandle pPrivateKeyOut,
             out int pOSStatus);
 
-        [GeneratedDllImport(Libraries.AppleCryptoNative)]
+        [LibraryImport(Libraries.AppleCryptoNative)]
         private static partial int AppleCryptoNative_X509ImportCollection(
             ref byte pbKeyBlob,
             int cbKeyBlob,
@@ -62,7 +62,7 @@ internal static partial class Interop
             out SafeCFArrayHandle pCollectionOut,
             out int pOSStatus);
 
-        [GeneratedDllImport(Libraries.AppleCryptoNative)]
+        [LibraryImport(Libraries.AppleCryptoNative)]
         private static partial int AppleCryptoNative_X509ExportData(
             SafeCreateHandle data,
             X509ContentType type,
@@ -70,7 +70,7 @@ internal static partial class Interop
             out SafeCFDataHandle pExportOut,
             out int pOSStatus);
 
-        [GeneratedDllImport(Libraries.AppleCryptoNative)]
+        [LibraryImport(Libraries.AppleCryptoNative)]
         private static partial int AppleCryptoNative_X509CopyWithPrivateKey(
             SafeSecCertificateHandle certHandle,
             SafeSecKeyRefHandle privateKeyHandle,
@@ -78,7 +78,7 @@ internal static partial class Interop
             out SafeSecIdentityHandle pIdentityHandleOut,
             out int pOSStatus);
 
-        [GeneratedDllImport(Libraries.AppleCryptoNative)]
+        [LibraryImport(Libraries.AppleCryptoNative)]
         private static partial int AppleCryptoNative_X509MoveToKeychain(
             SafeSecCertificateHandle certHandle,
             SafeKeychainHandle targetKeychain,
@@ -264,6 +264,8 @@ internal static partial class Interop
                 out identityHandle,
                 out osStatus);
 
+            SafeTemporaryKeychainHandle.TrackItem(identityHandle);
+
             if (result == 1)
             {
                 Debug.Assert(!identityHandle.IsInvalid);
@@ -288,13 +290,25 @@ internal static partial class Interop
         {
             SafeSecIdentityHandle identityHandle;
             int osStatus;
+            int result;
 
-            int result = AppleCryptoNative_X509MoveToKeychain(
-                cert,
-                targetKeychain,
-                privateKey ?? SafeSecKeyRefHandle.InvalidHandle,
-                out identityHandle,
-                out osStatus);
+            // Ensure the keychain is not disposed, if there is any associated one
+            using (SafeKeychainHandle keychain = Interop.AppleCrypto.SecKeychainItemCopyKeychain(cert))
+            {
+                // AppleCryptoNative_X509MoveToKeychain can change the keychain of the input
+                // certificate, so we need to reflect that change.
+                SafeTemporaryKeychainHandle.UntrackItem(cert.DangerousGetHandle());
+
+                result = AppleCryptoNative_X509MoveToKeychain(
+                    cert,
+                    targetKeychain,
+                    privateKey ?? SafeSecKeyRefHandle.InvalidHandle,
+                    out identityHandle,
+                    out osStatus);
+
+                SafeTemporaryKeychainHandle.TrackItem(cert);
+                SafeTemporaryKeychainHandle.TrackItem(identityHandle);
+            }
 
             if (result == 0)
             {

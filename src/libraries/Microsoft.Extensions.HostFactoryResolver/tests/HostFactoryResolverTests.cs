@@ -244,6 +244,7 @@ namespace Microsoft.Extensions.Hosting.Tests
         }
 
         [ConditionalFact(typeof(PlatformDetection), nameof(PlatformDetection.IsThreadingSupported))]
+        [DynamicDependency(DynamicallyAccessedMemberTypes.All, "Program", "TopLevelStatements")]
         public void TopLevelStatements()
         {
             var assembly = Assembly.Load("TopLevelStatements");
@@ -254,6 +255,7 @@ namespace Microsoft.Extensions.Hosting.Tests
         }
 
         [ConditionalFact(typeof(PlatformDetection), nameof(PlatformDetection.IsThreadingSupported))]
+        [DynamicDependency(DynamicallyAccessedMemberTypes.All, "Program", "TopLevelStatementsTestsTimeout")]
         public void TopLevelStatementsTestsTimeout()
         {
             var assembly = Assembly.Load("TopLevelStatementsTestsTimeout");
@@ -264,18 +266,20 @@ namespace Microsoft.Extensions.Hosting.Tests
         }
 
         [ConditionalFact(typeof(PlatformDetection), nameof(PlatformDetection.IsThreadingSupported))]
-        public void ApplicationNameSetFromAgrument()
+        [DynamicDependency(DynamicallyAccessedMemberTypes.All, "Program", "ApplicationNameSetFromArgument")]
+        public void ApplicationNameSetFromArgument()
         {
-            Assembly assembly = Assembly.Load("ApplicationNameSetFromAgrument");
+            Assembly assembly = Assembly.Load("ApplicationNameSetFromArgument");
             var factory = HostFactoryResolver.ResolveServiceProviderFactory(assembly, s_WaitTimeout);
             IServiceProvider? serviceProvider = factory(Array.Empty<string>());
 
             var configuration = (IConfiguration)serviceProvider.GetService(typeof(IConfiguration));
-            Assert.Contains("ApplicationNameSetFromAgrument", configuration["applicationName"]);
+            Assert.Contains("ApplicationNameSetFromArgument", configuration["applicationName"]);
         }
 
         [ConditionalFact(typeof(PlatformDetection), nameof(PlatformDetection.IsThreadingSupported))]
         [DynamicDependency(DynamicallyAccessedMemberTypes.All, typeof(NoSpecialEntryPointPattern.Program))]
+        [ActiveIssue("https://github.com/dotnet/runtime/issues/91538", typeof(PlatformDetection), nameof(PlatformDetection.IsWasmThreadingSupported))]
         public void NoSpecialEntryPointPatternCanRunInParallel()
         {
             var factory = HostFactoryResolver.ResolveServiceProviderFactory(typeof(NoSpecialEntryPointPattern.Program).Assembly, s_WaitTimeout);

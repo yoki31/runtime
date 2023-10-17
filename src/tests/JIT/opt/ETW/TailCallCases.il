@@ -30,7 +30,6 @@
   .hash algorithm 0x00008004
   .ver 4:0:20225:0
 }
-.module TailCallCases.exe
 // MVID: {E63A46BE-A0B6-41DA-82A6-56B3E895EC8C}
 .imagebase 0x00400000
 .file alignment 0x00000200
@@ -89,7 +88,7 @@
 
 } // end of class ETW.threeByteStruct
 
-.class private auto ansi beforefieldinit ETW.TailCallETW
+.class public auto ansi beforefieldinit ETW.TailCallETW
        extends [mscorlib]System.Object
 {
   .method private hidebysig static int32 
@@ -223,7 +222,7 @@
     IL_0011:  ret
   } // end of method TailCallETW::failedHelper
 
-  .method private hidebysig static int32 
+  .method public hidebysig static int32 
           Main() cil managed
   {
     .custom instance void [xunit.core]Xunit.FactAttribute::.ctor() = (

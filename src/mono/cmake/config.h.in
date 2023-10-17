@@ -3,26 +3,6 @@
 
 #ifdef _MSC_VER
 
-// FIXME This is all questionable but the logs are flooded and nothing else is fixing them.
-#pragma warning(disable:4018) // signed/unsigned mismatch
-#pragma warning(disable:4090) // const problem
-#pragma warning(disable:4146) // unary minus operator applied to unsigned type, result still unsigned
-#pragma warning(disable:4244) // integer conversion, possible loss of data
-#pragma warning(disable:4267) // integer conversion, possible loss of data
-
-// promote warnings to errors
-#pragma warning(  error:4013) // function undefined; assuming extern returning int
-#pragma warning(  error:4022) // call and prototype disagree
-#pragma warning(  error:4047) // differs in level of indirection
-#pragma warning(  error:4098) // void return returns a value
-#pragma warning(  error:4113) // call and prototype disagree
-#pragma warning(  error:4172) // returning address of local variable or temporary
-#pragma warning(  error:4197) // top-level volatile in cast is ignored
-#pragma warning(  error:4273) // inconsistent dll linkage
-#pragma warning(  error:4293) // shift count negative or too big, undefined behavior
-#pragma warning(  error:4312) // 'type cast': conversion from 'MonoNativeThreadId' to 'gpointer' of greater size
-#pragma warning(  error:4715) // 'keyword' not all control paths return a value
-
 #include <SDKDDKVer.h>
 
 #if _WIN32_WINNT < 0x0601
@@ -38,13 +18,13 @@
 
 #if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_DESKTOP)
 	#define HAVE_CLASSIC_WINAPI_SUPPORT 1
-	#define HAVE_UWP_WINAPI_SUPPORT 0
+	#define HAVE_APP_WINAPI_SUPPORT 0
 #elif WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_APP)
 	#define HAVE_CLASSIC_WINAPI_SUPPORT 0
-	#define HAVE_UWP_WINAPI_SUPPORT 1
+	#define HAVE_APP_WINAPI_SUPPORT 1
 #else
 	#define HAVE_CLASSIC_WINAPI_SUPPORT 0
-	#define HAVE_UWP_WINAPI_SUPPORT 0
+	#define HAVE_APP_WINAPI_SUPPORT 0
 #ifndef HAVE_EXTERN_DEFINED_WINAPI_SUPPORT
 	#error Unsupported WINAPI family
 #endif
@@ -53,29 +33,14 @@
 #endif
 #endif
 
-/* Define to the full name of this package. */
-#cmakedefine PACKAGE_NAME 1
-
-/* Define to the one symbol short name of this package. */
-#cmakedefine PACKAGE_TARNAME 1
-
-/* Define to the version of this package. */
-#cmakedefine PACKAGE_VERSION 1
-
-/* Define to the full name and version of this package. */
-#cmakedefine PACKAGE_STRING 1
-
-/* Define to the address where bug reports for this package should be sent. */
-#cmakedefine PACKAGE_BUGREPORT 1
-
-/* Define to the home page for this package. */
-#cmakedefine PACKAGE_URL 1
-
 /* This platform does not support symlinks */
 #cmakedefine HOST_NO_SYMLINKS 1
 
 /* pthread is a pointer */
 #cmakedefine PTHREAD_POINTER_ID 1
+
+/* Targeting a Unix-like platform */
+#cmakedefine TARGET_UNIX 1
 
 /* Targeting the Android platform */
 #cmakedefine HOST_ANDROID 1
@@ -98,8 +63,17 @@
 /* Target Platform is Win32 */
 #cmakedefine TARGET_WIN32 1
 
+/* ... */
+#cmakedefine TARGET_WINDOWS 1
+
 /* Host Platform is Darwin */
 #cmakedefine HOST_DARWIN 1
+
+/* Host Platform is OSX or Mac Catalyst */
+#cmakedefine HOST_OSX 1
+
+/* ... */
+#cmakedefine TARGET_OSX 1
 
 /* Host Platform is iOS */
 #cmakedefine HOST_IOS 1
@@ -110,14 +84,14 @@
 /* Host Platform is Mac Catalyst */
 #cmakedefine HOST_MACCAT 1
 
-/* Use classic Windows API support */
-#cmakedefine HAVE_CLASSIC_WINAPI_SUPPORT 1
+/* Target Platform is Linux */
+#cmakedefine TARGET_LINUX 1
 
-/* Don't use UWP Windows API support */
-#cmakedefine HAVE_UWP_WINAPI_SUPPORT 1
+/* Target Platform is Linux (bionic libc)*/
+#cmakedefine TARGET_LINUX_BIONIC 1
 
-/* Define to 1 if you have the ANSI C header files. */
-#cmakedefine STDC_HEADERS 1
+/* Target Platform is Linux (musl libc)*/
+#cmakedefine TARGET_LINUX_MUSL 1
 
 /* Define to 1 if you have the <sys/types.h> header file. */
 #cmakedefine HAVE_SYS_TYPES_H 1
@@ -143,28 +117,11 @@
 /* Define to 1 if you have the <syslog.h> header file. */
 #cmakedefine HAVE_SYSLOG_H 1
 
-/* Define to 1 if `major', `minor', and `makedev' are declared in <mkdev.h>.
-   */
-#cmakedefine MAJOR_IN_MKDEV 1
-
-/* Define to 1 if `major', `minor', and `makedev' are declared in
-   <sysmacros.h>. */
-#cmakedefine MAJOR_IN_SYSMACROS 1
-
-/* Define to 1 if you have the <sys/filio.h> header file. */
-#cmakedefine HAVE_SYS_FILIO_H 1
-
 /* Define to 1 if you have the <sys/sockio.h> header file. */
 #cmakedefine HAVE_SYS_SOCKIO_H 1
 
 /* Define to 1 if you have the <netdb.h> header file. */
 #cmakedefine HAVE_NETDB_H 1
-
-/* Define to 1 if you have the <utime.h> header file. */
-#cmakedefine HAVE_UTIME_H 1
-
-/* Define to 1 if you have the <sys/utime.h> header file. */
-#cmakedefine HAVE_SYS_UTIME_H 1
 
 /* Define to 1 if you have the <semaphore.h> header file. */
 #cmakedefine HAVE_SEMAPHORE_H 1
@@ -183,9 +140,6 @@
 
 /* Define to 1 if you have the <sys/sysctl.h> header file. */
 #cmakedefine HAVE_SYS_SYSCTL_H 1
-
-/* Define to 1 if you have the <libproc.h> header file. */
-#cmakedefine HAVE_LIBPROC_H 1
 
 /* Define to 1 if you have the <sys/prctl.h> header file. */
 #cmakedefine HAVE_SYS_PRCTL_H 1
@@ -208,6 +162,9 @@
 /* Define to 1 if you have the <pwd.h> header file. */
 #cmakedefine HAVE_PWD_H 1
 
+/* Define to 1 if you have the <grp.h> header file. */
+#cmakedefine HAVE_GRP_H 1
+
 /* Define to 1 if you have the <sys/select.h> header file. */
 #cmakedefine HAVE_SYS_SELECT_H 1
 
@@ -226,14 +183,11 @@
 /* Define to 1 if you have the <unwind.h> header file. */
 #cmakedefine HAVE_UNWIND_H 1
 
-/* Define to 1 if you have the <sys/user.h> header file. */
-#cmakedefine HAVE_SYS_USER_H 1
-
 /* Use static ICU */
 #cmakedefine STATIC_ICU 1
 
-/* Use OS-provided zlib */
-#cmakedefine HAVE_SYS_ZLIB 1
+/* Use in-tree zlib */
+#cmakedefine INTERNAL_ZLIB 1
 
 /* Define to 1 if you have the <poll.h> header file. */
 #cmakedefine HAVE_POLL_H 1
@@ -254,12 +208,6 @@
    */
 #cmakedefine HAVE_ANDROID_LEGACY_SIGNAL_INLINES_H 1
 
-/* Define to 1 if you have the <android/ndk-version.h> header file. */
-#cmakedefine HAVE_ANDROID_NDK_VERSION_H 1
-
-/* Whether Android NDK unified headers are used */
-#cmakedefine ANDROID_UNIFIED_HEADERS 1
-
 /* The size of `void *', as computed by sizeof. */
 #define SIZEOF_VOID_P @SIZEOF_VOID_P@
 
@@ -272,29 +220,8 @@
 /* The size of `long long', as computed by sizeof. */
 #define SIZEOF_LONG_LONG @SIZEOF_LONG_LONG@
 
-/* Xen-specific behaviour */
-#cmakedefine MONO_XEN_OPT 1
-
 /* Reduce runtime requirements (and capabilities) */
 #cmakedefine MONO_SMALL_CONFIG 1
-
-/* Make jemalloc assert for mono */
-#cmakedefine MONO_JEMALLOC_ASSERT 1
-
-/* Make jemalloc default for mono */
-#cmakedefine MONO_JEMALLOC_DEFAULT 1
-
-/* Enable jemalloc usage for mono */
-#cmakedefine MONO_JEMALLOC_ENABLED 1
-
-/* Do not include names of unmanaged functions in the crash dump */
-#cmakedefine MONO_PRIVATE_CRASHES 1
-
-/* Do not create structured crash files during unmanaged crashes */
-#cmakedefine DISABLE_STRUCTURED_CRASH 1
-
-/* String of disabled features */
-#define DISABLED_FEATURES @DISABLED_FEATURES@
 
 /* Disable AOT Compiler */
 #cmakedefine DISABLE_AOT 1
@@ -321,9 +248,6 @@
 /* Disable the interpreter. */
 #cmakedefine DISABLE_INTERPRETER 1
 
-/* Some VES is available at runtime */
-#cmakedefine ENABLE_ILGEN 1
-
 /* Disable non-blittable marshalling */
 #cmakedefine DISABLE_NONBLITTABLE
 
@@ -333,17 +257,8 @@
 /* Disable Soft Debugger Agent. */
 #cmakedefine DISABLE_DEBUGGER_AGENT 1
 
-/* Disable Performance Counters. */
-#cmakedefine DISABLE_PERFCOUNTERS 1
-
-/* Disable shared perfcounters. */
-#cmakedefine DISABLE_SHARED_PERFCOUNTERS 1
-
 /* Disable support code for the LLDB plugin. */
 #cmakedefine DISABLE_LLDB 1
-
-/* Disable support for .mdb symbol files. */
-#cmakedefine DISABLE_MDB 1
 
 /* Disable assertion messages. */
 #cmakedefine DISABLE_ASSERT_MESSAGES 1
@@ -363,32 +278,17 @@
 /* Disable sockets */
 #cmakedefine DISABLE_SOCKETS 1
 
-/* Disables use of DllMaps in MonoVM */
-#cmakedefine DISABLE_DLLMAP 1
-
 /* Disable Threads */
 #cmakedefine DISABLE_THREADS 1
 
-/* Disable perf counters */
-#cmakedefine DISABLE_PERF_COUNTERS
-
 /* Disable MONO_LOG_DEST */
 #cmakedefine DISABLE_LOG_DEST
-
-/* GC description */
-#cmakedefine DEFAULT_GC_NAME 1
-
-/* No GC support. */
-#cmakedefine HAVE_NULL_GC 1
 
 /* Length of zero length arrays */
 #define MONO_ZERO_LEN_ARRAY @MONO_ZERO_LEN_ARRAY@
 
 /* Define to 1 if you have the `sigaction' function. */
 #cmakedefine HAVE_SIGACTION 1
-
-/* Define to 1 if you have the `kill' function. */
-#cmakedefine HAVE_KILL 1
 
 /* CLOCK_MONOTONIC */
 #cmakedefine HAVE_CLOCK_MONOTONIC 1
@@ -411,20 +311,11 @@
 /* Define to 1 if you have the `clock_nanosleep' function. */
 #cmakedefine HAVE_CLOCK_NANOSLEEP 1
 
-/* Does dlsym require leading underscore. */
-#cmakedefine MONO_DL_NEED_USCORE 1
-
 /* Define to 1 if you have the <execinfo.h> header file. */
 #cmakedefine HAVE_EXECINFO_H 1
 
-/* Define to 1 if you have the <sys/auxv.h> header file. */
-#cmakedefine HAVE_SYS_AUXV_H 1
-
 /* Define to 1 if you have the <sys/resource.h> header file. */
 #cmakedefine HAVE_SYS_RESOURCE_H 1
-
-/* kqueue */
-#cmakedefine HAVE_KQUEUE 1
 
 /* Define to 1 if you have the `backtrace_symbols' function. */
 #cmakedefine HAVE_BACKTRACE_SYMBOLS 1
@@ -438,9 +329,6 @@
 /* Define to 1 if you have the `madvise' function. */
 #cmakedefine HAVE_MADVISE 1
 
-/* Define to 1 if you have the `getrusage' function. */
-#cmakedefine HAVE_GETRUSAGE 1
-
 /* Define to 1 if you have the `dladdr' function. */
 #cmakedefine HAVE_DLADDR 1
 
@@ -453,47 +341,17 @@
 /* Define to 1 if you have the `prctl' function. */
 #cmakedefine HAVE_PRCTL 1
 
-/* Define to 1 if you have the `nl_langinfo' function. */
-#cmakedefine HAVE_NL_LANGINFO 1
-
 /* sched_getaffinity */
 #cmakedefine HAVE_SCHED_GETAFFINITY 1
 
 /* sched_setaffinity */
 #cmakedefine HAVE_SCHED_SETAFFINITY 1
 
-/* Define to 1 if you have the `sched_getcpu' function. */
-#cmakedefine HAVE_SCHED_GETCPU 1
-
-/* Define to 1 if you have the `getpwuid_r' function. */
-#cmakedefine HAVE_GETPWUID_R 1
-
-/* Define to 1 if you have the `readlink' function. */
-#cmakedefine HAVE_READLINK 1
-
-/* Define to 1 if you have the `chmod' function. */
-#cmakedefine HAVE_CHMOD 1
-
 /* Define to 1 if you have the `lstat' function. */
 #cmakedefine HAVE_LSTAT 1
 
-/* Define to 1 if you have the `getdtablesize' function. */
-#cmakedefine HAVE_GETDTABLESIZE 1
-
 /* Define to 1 if you have the `ftruncate' function. */
 #cmakedefine HAVE_FTRUNCATE 1
-
-/* Define to 1 if you have the `msync' function. */
-#cmakedefine HAVE_MSYNC 1
-
-/* Define to 1 if you have the `getpeername' function. */
-#cmakedefine HAVE_GETPEERNAME 1
-
-/* Define to 1 if you have the `utime' function. */
-#cmakedefine HAVE_UTIME 1
-
-/* Define to 1 if you have the `utimes' function. */
-#cmakedefine HAVE_UTIMES 1
 
 /* Define to 1 if you have the `openlog' function. */
 #cmakedefine HAVE_OPENLOG 1
@@ -510,9 +368,6 @@
 /* Define to 1 if you have the `strerror_r' function. */
 #cmakedefine HAVE_STRERROR_R 1
 
-/* Have GLIBC_BEFORE_2_3_4_SCHED_SETAFFINITY */
-#cmakedefine GLIBC_BEFORE_2_3_4_SCHED_SETAFFINITY 1
-
 /* GLIBC has CPU_COUNT macro in sched.h */
 #cmakedefine HAVE_GNU_CPU_COUNT
 
@@ -527,24 +382,6 @@
 
 /* Have gethostbyname */
 #cmakedefine HAVE_GETHOSTBYNAME 1
-
-/* Have getprotobyname */
-#cmakedefine HAVE_GETPROTOBYNAME 1
-
-/* Have getprotobyname_r */
-#cmakedefine HAVE_GETPROTOBYNAME_R 1
-
-/* Have getnameinfo */
-#cmakedefine HAVE_GETNAMEINFO 1
-
-/* Have inet_ntop */
-#cmakedefine HAVE_INET_NTOP 1
-
-/* Have inet_pton */
-#cmakedefine HAVE_INET_PTON 1
-
-/* Define to 1 if you have the `inet_aton' function. */
-#cmakedefine HAVE_INET_ATON 1
 
 /* Define to 1 if you have the <pthread.h> header file. */
 #cmakedefine HAVE_PTHREAD_H 1
@@ -577,38 +414,24 @@
 /* Define to 1 if you have the `pthread_attr_setstacksize' function. */
 #cmakedefine HAVE_PTHREAD_ATTR_SETSTACKSIZE 1
 
-/* Define to 1 if you have the `pthread_attr_getstack' function. */
-#cmakedefine HAVE_PTHREAD_ATTR_GETSTACK 1
-
-/* Define to 1 if you have the `pthread_attr_getstacksize' function. */
-#cmakedefine HAVE_PTHREAD_ATTR_GETSTACKSIZE 1
-
-/* Define to 1 if you have the `pthread_get_stacksize_np' function. */
-#cmakedefine HAVE_PTHREAD_GET_STACKSIZE_NP 1
-
 /* Define to 1 if you have the `pthread_get_stackaddr_np' function. */
 #cmakedefine HAVE_PTHREAD_GET_STACKADDR_NP 1
 
 /* Define to 1 if you have the `pthread_jit_write_protect_np' function. */
 #cmakedefine HAVE_PTHREAD_JIT_WRITE_PROTECT_NP 1
 
+/* Have getauxval */
 #cmakedefine01 HAVE_GETAUXVAL
 
 /* Define to 1 if you have the declaration of `pthread_mutexattr_setprotocol',
    and to 0 if you don't. */
 #cmakedefine HAVE_DECL_PTHREAD_MUTEXATTR_SETPROTOCOL 1
 
-/* Have a working sigaltstack */
-#cmakedefine HAVE_WORKING_SIGALTSTACK 1
-
-/* Define to 1 if you have the `shm_open' function. */
-#cmakedefine HAVE_SHM_OPEN 1
+/* Enable support for using sigaltstack for SIGSEGV and stack overflow handling, this doesn't work on some platforms */
+#cmakedefine ENABLE_SIGALTSTACK 1
 
 /* Define to 1 if you have the `poll' function. */
 #cmakedefine HAVE_POLL 1
-
-/* epoll_create1 */
-#cmakedefine HAVE_EPOLL 1
 
 /* Define to 1 if you have the <sys/ioctl.h> header file. */
 #cmakedefine HAVE_SYS_IOCTL_H 1
@@ -616,20 +439,11 @@
 /* Define to 1 if you have the <net/if.h> header file. */
 #cmakedefine HAVE_NET_IF_H 1
 
-/* Can get interface list */
-#cmakedefine HAVE_SIOCGIFCONF 1
-
 /* sockaddr_in has sin_len */
 #cmakedefine HAVE_SOCKADDR_IN_SIN_LEN 1
 
 /* sockaddr_in6 has sin6_len */
 #cmakedefine HAVE_SOCKADDR_IN6_SIN_LEN 1
-
-/* Have getifaddrs */
-#cmakedefine HAVE_GETIFADDRS 1
-
-/* Have access */
-#cmakedefine HAVE_ACCESS 1
 
 /* Have getpid */
 #cmakedefine HAVE_GETPID 1
@@ -637,51 +451,24 @@
 /* Have mktemp */
 #cmakedefine HAVE_MKTEMP 1
 
-/* Define to 1 if you have the <sys/errno.h> header file. */
-#cmakedefine HAVE_SYS_ERRNO_H 1
-
-/* Define to 1 if you have the <sys/sendfile.h> header file. */
-#cmakedefine HAVE_SYS_SENDFILE_H 1
-
-/* Define to 1 if you have the <sys/statvfs.h> header file. */
-#cmakedefine HAVE_SYS_STATVFS_H 1
-
-/* Define to 1 if you have the <sys/statfs.h> header file. */
-#cmakedefine HAVE_SYS_STATFS_H 1
-
 /* Define to 1 if you have the <sys/mman.h> header file. */
 #cmakedefine HAVE_SYS_MMAN_H 1
 
 /* Define to 1 if you have the <sys/mount.h> header file. */
 #cmakedefine HAVE_SYS_MOUNT_H 1
 
-/* Define to 1 if you have the `getfsstat' function. */
-#cmakedefine HAVE_GETFSSTAT 1
-
 /* Define to 1 if you have the `mremap' function. */
 #cmakedefine HAVE_MREMAP 1
 
-/* Define to 1 if you have the `posix_fadvise' function. */
-#cmakedefine HAVE_POSIX_FADVISE 1
-
 /* Define to 1 if you have the `vsnprintf' function. */
 #cmakedefine HAVE_VSNPRINTF 1
-
-/* Define to 1 if you have the `sendfile' function. */
-#cmakedefine HAVE_SENDFILE 1
-
-/* struct statfs */
-#cmakedefine HAVE_STATFS 1
-
-/* Define to 1 if you have the `statvfs' function. */
-#cmakedefine HAVE_STATVFS 1
 
 /* Define to 1 if you have the `setpgid' function. */
 #cmakedefine HAVE_SETPGID 1
 
 /* Define to 1 if you have the `system' function. */
 #ifdef _MSC_VER
-#if HAVE_WINAPI_FAMILY_SUPPORT(HAVE_CLASSIC_WINAPI_SUPPORT)
+#if HAVE_CLASSIC_WINAPI_SUPPORT
 #cmakedefine HAVE_SYSTEM 1
 #endif
 #else
@@ -690,15 +477,6 @@
 
 /* Define to 1 if you have the `fork' function. */
 #cmakedefine HAVE_FORK 1
-
-/* Define to 1 if you have the `execv' function. */
-#cmakedefine HAVE_EXECV 1
-
-/* Define to 1 if you have the `execve' function. */
-#cmakedefine HAVE_EXECVE 1
-
-/* Define to 1 if you have the `waitpid' function. */
-#cmakedefine HAVE_WAITPID 1
 
 /* Define to 1 if you have the `localtime_r' function. */
 #cmakedefine HAVE_LOCALTIME_R 1
@@ -720,20 +498,8 @@
 /* Define to 1 if the system has the type `struct sockaddr_in6'. */
 #cmakedefine HAVE_STRUCT_SOCKADDR_IN6 1
 
-/* Define to 1 if the system has the type `struct stat'. */
-#cmakedefine HAVE_STRUCT_STAT 1
-
-/* Define to 1 if the system has the type `struct timeval'. */
-#cmakedefine HAVE_STRUCT_TIMEVAL 1
-
-/* Define to 1 if `st_atim' is a member of `struct stat'. */
-#cmakedefine HAVE_STRUCT_STAT_ST_ATIM 1
-
-/* Define to 1 if `st_atimespec' is a member of `struct stat'. */
-#cmakedefine HAVE_STRUCT_STAT_ST_ATIMESPEC 1
-
-/* Define to 1 if `kp_proc' is a member of `struct kinfo_proc'. */
-#cmakedefine HAVE_STRUCT_KINFO_PROC_KP_PROC 1
+/* Define to 1 if `super_class' is a member of `struct objc_super'. */
+#cmakedefine HAVE_OBJC_SUPER_SUPER_CLASS 1
 
 /* Define to 1 if you have the <sys/time.h> header file. */
 #cmakedefine HAVE_SYS_TIME_H 1
@@ -753,9 +519,6 @@
 /* Define to 1 if you have the `getentropy' function. */
 #cmakedefine HAVE_GETENTROPY 1
 
-/* Qp2getifaddrs */
-#cmakedefine HAVE_QP2GETIFADDRS 1
-
 /* Define to 1 if you have the `strlcpy' function. */
 #cmakedefine HAVE_STRLCPY 1
 
@@ -770,9 +533,6 @@
 
 /* Name of /dev/random */
 #define NAME_DEV_RANDOM @NAME_DEV_RANDOM@
-
-/* Enable the allocation and indexing of arrays greater than Int32.MaxValue */
-#cmakedefine MONO_BIG_ARRAYS 1
 
 /* Enable DTrace probes */
 #cmakedefine ENABLE_DTRACE 1
@@ -793,7 +553,13 @@
 #cmakedefine MONO_CROSS_COMPILE 1
 
 /* ... */
+#cmakedefine TARGET_BROWSER 1
+
+/* ... */
 #cmakedefine TARGET_WASM 1
+
+/* ... */
+#cmakedefine TARGET_WASI 1
 
 /* The JIT/AOT targets WatchOS */
 #cmakedefine TARGET_WATCHOS 1
@@ -802,16 +568,10 @@
 #cmakedefine TARGET_PS3 1
 
 /* ... */
-#cmakedefine __mono_ppc64__ 1
-
-/* ... */
 #cmakedefine TARGET_XBOX360 1
 
 /* ... */
 #cmakedefine TARGET_PS4 1
-
-/* ... */
-#cmakedefine DISABLE_HW_TRAPS 1
 
 /* Target is RISC-V */
 #cmakedefine TARGET_RISCV 1
@@ -844,15 +604,6 @@
 #cmakedefine TARGET_S390X 1
 
 /* ... */
-#cmakedefine TARGET_MIPS 1
-
-/* ... */
-#cmakedefine TARGET_SPARC 1
-
-/* ... */
-#cmakedefine TARGET_SPARC64 1
-
-/* ... */
 #cmakedefine HOST_WASM 1
 
 /* ... */
@@ -882,15 +633,6 @@
 /* ... */
 #cmakedefine HOST_S390X 1
 
-/* ... */
-#cmakedefine HOST_MIPS 1
-
-/* ... */
-#cmakedefine HOST_SPARC 1
-
-/* ... */
-#cmakedefine HOST_SPARC64 1
-
 /* Host is RISC-V */
 #cmakedefine HOST_RISCV 1
 
@@ -912,11 +654,14 @@
 /* The JIT/AOT targets Mac Catalyst */
 #cmakedefine TARGET_MACCAT 1
 
-/* The JIT/AOT targets OSX */
+/* The JIT/AOT targets OSX or Mac Catalyst */
 #cmakedefine TARGET_OSX 1
 
 /* The JIT/AOT targets Apple platforms */
 #cmakedefine TARGET_MACH 1
+
+/* The JIT/AOT targets Apple mobile platforms */
+#cmakedefine TARGET_APPLE_MOBILE 1
 
 /* byte order of target */
 #define TARGET_BYTE_ORDER @TARGET_BYTE_ORDER@
@@ -930,9 +675,6 @@
 /* host or target doesn't allow unaligned memory access */
 #cmakedefine NO_UNALIGNED_ACCESS 1
 
-/* Support for the visibility ("hidden") attribute */
-#cmakedefine HAVE_VISIBILITY_HIDDEN 1
-
 /* Support for the deprecated attribute */
 #cmakedefine HAVE_DEPRECATED 1
 
@@ -942,14 +684,8 @@
 /* Defaults to concurrent GC */
 #cmakedefine HAVE_CONC_GC_AS_DEFAULT 1
 
-/* Define to 1 if you have the `stpcpy' function. */
-#cmakedefine HAVE_STPCPY 1
-
 /* Define to 1 if you have the `strtok_r' function. */
 #cmakedefine HAVE_STRTOK_R 1
-
-/* Define to 1 if you have the `rewinddir' function. */
-#cmakedefine HAVE_REWINDDIR 1
 
 /* Define to 1 if you have the `vasprintf' function. */
 #cmakedefine HAVE_VASPRINTF 1
@@ -963,12 +699,6 @@
 /* Define to 1 if you have the <getopt.h> header file. */
 #cmakedefine HAVE_GETOPT_H 1
 
-/* Define to 1 if you have the <iconv.h> header file. */
-#cmakedefine HAVE_ICONV_H 1
-
-/* Define to 1 if you have the `iconv' library (-liconv). */
-#cmakedefine HAVE_LIBICONV 1
-
 /* Icall symbol map enabled */
 #cmakedefine ENABLE_ICALL_SYMBOL_MAP 1
 
@@ -980,6 +710,12 @@
 
 /* QCalls disabled */
 #cmakedefine DISABLE_QCALLS 1
+
+/* Embedded PDB support disabled */
+#cmakedefine DISABLE_EMBEDDED_PDB
+
+/* log profiler compressed output disabled */
+#cmakedefine DISABLE_LOG_PROFILER_GZ
 
 /* Have __thread keyword */
 #cmakedefine MONO_KEYWORD_THREAD @MONO_KEYWORD_THREAD@
@@ -1017,35 +753,17 @@
 /* Enable hybrid suspend for GC stop-the-world */
 #cmakedefine ENABLE_HYBRID_SUSPEND 1
 
-/* Enable feature experiments */
-#cmakedefine ENABLE_EXPERIMENTS 1
-
-/* Enable experiment 'null' */
-#cmakedefine ENABLE_EXPERIMENT_null 1
-
 /* Enable experiment 'Tiered Compilation' */
 #cmakedefine ENABLE_EXPERIMENT_TIERED 1
-
-/* Enable checked build */
-#cmakedefine ENABLE_CHECKED_BUILD 1
-
-/* Enable GC checked build */
-#cmakedefine ENABLE_CHECKED_BUILD_GC 1
-
-/* Enable metadata checked build */
-#cmakedefine ENABLE_CHECKED_BUILD_METADATA 1
-
-/* Enable thread checked build */
-#cmakedefine ENABLE_CHECKED_BUILD_THREAD 1
-
-/* Enable private types checked build */
-#cmakedefine ENABLE_CHECKED_BUILD_PRIVATE_TYPES 1
 
 /* Enable EventPipe library support */
 #cmakedefine ENABLE_PERFTRACING 1
 
 /* Define to 1 if you have /usr/include/malloc.h. */
 #cmakedefine HAVE_USR_INCLUDE_MALLOC_H 1
+
+/* Define to 1 if you have linux cgroups */
+#cmakedefine HAVE_CGROUP_SUPPORT 1
 
 /* The architecture this is running on */
 #define MONO_ARCHITECTURE @MONO_ARCHITECTURE@
@@ -1080,11 +798,23 @@
 /* Enable runtime checks of mempool references between metadata images (must set env var MONO_CHECK_MODE=metadata) */
 #cmakedefine ENABLE_CHECKED_BUILD_METADATA 1
 
+/* Enable runtime checks of casts between types */
+#cmakedefine ENABLE_CHECKED_BUILD_CASTS 1
+
 /* Enable static linking of mono runtime components */
 #cmakedefine STATIC_COMPONENTS
 
 /* Enable perf jit dump support */
 #cmakedefine ENABLE_JIT_DUMP 1
+
+/* Enable System.WeakAttribute support */
+#cmakedefine ENABLE_WEAK_ATTR 1
+
+/* Enable WebCIL image loader */
+#cmakedefine ENABLE_WEBCIL 1
+
+/* define if clockgettime exists */
+#cmakedefine HAVE_CLOCK_GETTIME 1
 
 #if defined(ENABLE_LLVM) && defined(HOST_WIN32) && defined(TARGET_WIN32) && (!defined(TARGET_AMD64) || !defined(_MSC_VER))
 #error LLVM for host=Windows and target=Windows is only supported on x64 MSVC build.

@@ -1,9 +1,8 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
-// See the LICENSE file in the project root for more information.
-//
 
 using System.Runtime.CompilerServices;
+using Xunit;
 
 namespace Benchstone.MDBenchI
 {
@@ -38,7 +37,7 @@ public static class MDGeneralArray
 
         return true;
     }
-    
+
     [MethodImpl(MethodImplOptions.NoInlining)]
     static bool Bench(int loop, int[,,] s, int[,,] d) {
 
@@ -73,7 +72,8 @@ public static class MDGeneralArray
         return Bench(Iterations, s, d);
     }
 
-    public static int Main() {
+    [Fact]
+    public static int TestEntryPoint() {
         bool result = Test() && Test2();
         return (result ? 100 : -1);
     }

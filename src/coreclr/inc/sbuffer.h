@@ -97,6 +97,7 @@ class SBuffer
     SBuffer(COUNT_T size);
     SBuffer(const BYTE *buffer, COUNT_T size);
     explicit SBuffer(const SBuffer &buffer);
+    SBuffer(SBuffer &&buffer);
 
     // Immutable constructor should ONLY be used if buffer will
     // NEVER BE FREED OR MODIFIED. PERIOD. .
@@ -108,6 +109,10 @@ class SBuffer
 
     ~SBuffer();
 
+  private:
+    void InitializeInstance();
+
+  public:
     void Clear();
 
     void Set(const SBuffer &buffer);
@@ -137,11 +142,11 @@ class SBuffer
     // Preallocate some memory you expect to use.  This can prevent
     // multiple reallocations.  Note this does not change the visible
     // size of the buffer.
-    void Preallocate(COUNT_T allocation) const;
+    void Preallocate(COUNT_T allocation);
 
     // Shrink memory usage of buffer to minimal amount.  Note that
     // this does not change the visible size of the buffer.
-    void Trim() const;
+    void Trim();
 
     //--------------------------------------------------------------------
     // Content manipulation routines
@@ -351,8 +356,8 @@ class SBuffer
     // Manipulates contents of the buffer via the plugins below, but
     // adds some debugging checks.  Should always call through here rather
     // than directly calling the extensibility points.
-    void DebugMoveBuffer(__out_bcount(size) BYTE *to, BYTE *from, COUNT_T size);
-    void DebugCopyConstructBuffer(__out_bcount(size) BYTE *to, const BYTE *from, COUNT_T size);
+    void DebugMoveBuffer(_Out_writes_bytes_(size) BYTE *to, BYTE *from, COUNT_T size);
+    void DebugCopyConstructBuffer(_Out_writes_bytes_(size) BYTE *to, const BYTE *from, COUNT_T size);
     void DebugConstructBuffer(BYTE *buffer, COUNT_T size);
     void DebugDestructBuffer(BYTE *buffer, COUNT_T size);
 
@@ -550,13 +555,6 @@ class EMPTY_BASES_DECL InlineSBuffer : public SBuffer
 #define GARBAGE_FILL_DWORD  0x24242424 // $$$$
 #define GARBAGE_FILL_BUFFER_ITEMS 16
 #define GARBAGE_FILL_BUFFER_SIZE GARBAGE_FILL_BUFFER_ITEMS*sizeof(DWORD)
-// ================================================================================
-// StackSBuffer : SBuffer with relatively large preallocated buffer for stack use
-// ================================================================================
-
-#define STACK_ALLOC 256
-
-typedef InlineSBuffer<STACK_ALLOC> StackSBuffer;
 
 // ================================================================================
 // Inline definitions

@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <OutputType>Exe</OutputType>
+    <!-- Needed for UnloadabilityIncompatible, CMakeProjectReference, GC.WaitForPendingFinalizers -->
+    <RequiresProcessIsolation>true</RequiresProcessIsolation>
     <!-- Registers global instances of ComWrappers -->
     <UnloadabilityIncompatible>true</UnloadabilityIncompatible>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
@@ -9,7 +10,7 @@
     <Compile Include="WeakReferenceTest.cs" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="CMakeLists.txt" />
+    <CMakeProjectReference Include="CMakeLists.txt" />
   </ItemGroup>
   <PropertyGroup>
     <CLRTestNeedTarget>1</CLRTestNeedTarget>

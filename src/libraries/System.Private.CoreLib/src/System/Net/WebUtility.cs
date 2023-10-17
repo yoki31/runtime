@@ -30,7 +30,7 @@ namespace System.Net
 
         #region HtmlEncode / HtmlDecode methods
 
-        [return: NotNullIfNotNull("value")]
+        [return: NotNullIfNotNull(nameof(value))]
         public static string? HtmlEncode(string? value)
         {
             if (string.IsNullOrEmpty(value))
@@ -42,7 +42,7 @@ namespace System.Net
 
             // Don't create ValueStringBuilder if we don't have anything to encode
             int index = IndexOfHtmlEncodingChars(valueSpan);
-            if (index == -1)
+            if (index < 0)
             {
                 return value;
             }
@@ -64,10 +64,8 @@ namespace System.Net
 
         public static void HtmlEncode(string? value, TextWriter output)
         {
-            if (output == null)
-            {
-                throw new ArgumentNullException(nameof(output));
-            }
+            ArgumentNullException.ThrowIfNull(output);
+
             if (string.IsNullOrEmpty(value))
             {
                 output.Write(value);
@@ -78,7 +76,7 @@ namespace System.Net
 
             // Don't create ValueStringBuilder if we don't have anything to encode
             int index = IndexOfHtmlEncodingChars(valueSpan);
-            if (index == -1)
+            if (index < 0)
             {
                 output.Write(value);
                 return;
@@ -177,7 +175,7 @@ namespace System.Net
             }
         }
 
-        [return: NotNullIfNotNull("value")]
+        [return: NotNullIfNotNull(nameof(value))]
         public static string? HtmlDecode(string? value)
         {
             if (string.IsNullOrEmpty(value))
@@ -187,8 +185,8 @@ namespace System.Net
 
             ReadOnlySpan<char> valueSpan = value.AsSpan();
 
-            int index = IndexOfHtmlDecodingChars(valueSpan);
-            if (index == -1)
+            int index = valueSpan.IndexOf('&');
+            if (index < 0)
             {
                 return value;
             }
@@ -207,10 +205,7 @@ namespace System.Net
 
         public static void HtmlDecode(string? value, TextWriter output)
         {
-            if (output == null)
-            {
-                throw new ArgumentNullException(nameof(output));
-            }
+            ArgumentNullException.ThrowIfNull(output);
 
             if (string.IsNullOrEmpty(value))
             {
@@ -220,7 +215,7 @@ namespace System.Net
 
             ReadOnlySpan<char> valueSpan = value.AsSpan();
 
-            int index = IndexOfHtmlDecodingChars(valueSpan);
+            int index = valueSpan.IndexOf('&');
             if (index == -1)
             {
                 output.Write(value);
@@ -392,7 +387,7 @@ namespace System.Net
 
         #region UrlEncode public methods
 
-        [return: NotNullIfNotNull("value")]
+        [return: NotNullIfNotNull(nameof(value))]
         public static string? UrlEncode(string? value)
         {
             if (string.IsNullOrEmpty(value))
@@ -444,7 +439,7 @@ namespace System.Net
             return Encoding.UTF8.GetString(newBytes);
         }
 
-        [return: NotNullIfNotNull("value")]
+        [return: NotNullIfNotNull(nameof(value))]
         public static byte[]? UrlEncodeToBytes(byte[]? value, int offset, int count)
         {
             if (!ValidateUrlEncodingParameters(value, offset, count))
@@ -484,7 +479,7 @@ namespace System.Net
 
         #region UrlDecode implementation
 
-        [return: NotNullIfNotNull("value")]
+        [return: NotNullIfNotNull(nameof(value))]
         private static string? UrlDecodeInternal(string? value, Encoding encoding)
         {
             if (string.IsNullOrEmpty(value))
@@ -547,7 +542,7 @@ namespace System.Net
             return helper.GetString();
         }
 
-        [return: NotNullIfNotNull("bytes")]
+        [return: NotNullIfNotNull(nameof(bytes))]
         private static byte[]? UrlDecodeInternal(byte[]? bytes, int offset, int count)
         {
             if (!ValidateUrlEncodingParameters(bytes, offset, count))
@@ -595,13 +590,13 @@ namespace System.Net
         #region UrlDecode public methods
 
 
-        [return: NotNullIfNotNull("encodedValue")]
+        [return: NotNullIfNotNull(nameof(encodedValue))]
         public static string? UrlDecode(string? encodedValue)
         {
             return UrlDecodeInternal(encodedValue, Encoding.UTF8);
         }
 
-        [return: NotNullIfNotNull("encodedValue")]
+        [return: NotNullIfNotNull(nameof(encodedValue))]
         public static byte[]? UrlDecodeToBytes(byte[]? encodedValue, int offset, int count)
         {
             return UrlDecodeInternal(encodedValue, offset, count);
@@ -684,48 +679,25 @@ namespace System.Net
                 1 << ((int)'-' - 0x20) | // 0x2D
                 1 << ((int)'.' - 0x20); // 0x2E
 
-            unchecked
-            {
-                return ((uint)(code - 'a') <= (uint)('z' - 'a')) ||
-                       ((uint)(code - 'A') <= (uint)('Z' - 'A')) ||
-                       ((uint)(code - 0x20) <= (uint)('9' - 0x20) && ((1 << (code - 0x20)) & safeSpecialCharMask) != 0) ||
-                       (code == (int)'_');
-            }
+            return char.IsAsciiLetter(ch) ||
+                   ((uint)(code - 0x20) <= (uint)('9' - 0x20) && ((1 << (code - 0x20)) & safeSpecialCharMask) != 0) ||
+                   (code == (int)'_');
         }
 
         private static bool ValidateUrlEncodingParameters(byte[]? bytes, int offset, int count)
         {
             if (bytes == null && count == 0)
                 return false;
-            if (bytes == null)
-            {
-                throw new ArgumentNullException(nameof(bytes));
-            }
-            if (offset < 0 || offset > bytes.Length)
-            {
-                throw new ArgumentOutOfRangeException(nameof(offset));
-            }
-            if (count < 0 || offset + count > bytes.Length)
-            {
-                throw new ArgumentOutOfRangeException(nameof(count));
-            }
+
+            ArgumentNullException.ThrowIfNull(bytes);
+
+            ArgumentOutOfRangeException.ThrowIfNegative(offset);
+            ArgumentOutOfRangeException.ThrowIfGreaterThan(offset, bytes.Length);
+
+            ArgumentOutOfRangeException.ThrowIfNegative(count);
+            ArgumentOutOfRangeException.ThrowIfGreaterThan(count, bytes.Length - offset);
 
             return true;
-        }
-
-        private static int IndexOfHtmlDecodingChars(ReadOnlySpan<char> input)
-        {
-            // this string requires html decoding if it contains '&' or a surrogate character
-            for (int i = 0; i < input.Length; i++)
-            {
-                char c = input[i];
-                if (c == '&' || char.IsSurrogate(c))
-                {
-                    return i;
-                }
-            }
-
-            return -1;
         }
 
         #endregion
@@ -749,8 +721,7 @@ namespace System.Net
             private void FlushBytes()
             {
                 Debug.Assert(_numBytes > 0);
-                if (_charBuffer == null)
-                    _charBuffer = new char[_bufferSize];
+                _charBuffer ??= new char[_bufferSize];
 
                 _numChars += _encoding.GetChars(_byteBuffer!, 0, _numBytes, _charBuffer, _numChars);
                 _numBytes = 0;
@@ -773,16 +744,14 @@ namespace System.Net
                 if (_numBytes > 0)
                     FlushBytes();
 
-                if (_charBuffer == null)
-                    _charBuffer = new char[_bufferSize];
+                _charBuffer ??= new char[_bufferSize];
 
                 _charBuffer[_numChars++] = ch;
             }
 
             internal void AddByte(byte b)
             {
-                if (_byteBuffer == null)
-                    _byteBuffer = new byte[_bufferSize];
+                _byteBuffer ??= new byte[_bufferSize];
 
                 _byteBuffer[_numBytes++] = b;
             }
@@ -817,8 +786,8 @@ namespace System.Net
             // is defined in http://www.w3.org/TR/2008/REC-xml-20081126/#sec-predefined-ent.
             private static Dictionary<ulong, char> InitializeLookupTable()
             {
-                ReadOnlySpan<byte> tableData = new byte[]
-                    {
+                ReadOnlySpan<byte> tableData =
+                    [
                         0x74, 0x6F, 0x75, 0x71, 0x00, 0x00, 0x00, 0x00, /*ToUInt64Key("quot")*/    0x22, 0x00, /*'\x0022'*/
                         0x70, 0x6D, 0x61, 0x00, 0x00, 0x00, 0x00, 0x00, /*ToUInt64Key("amp")*/     0x26, 0x00, /*'\x0026'*/
                         0x73, 0x6F, 0x70, 0x61, 0x00, 0x00, 0x00, 0x00, /*ToUInt64Key("apos")*/    0x27, 0x00, /*'\x0027'*/
@@ -1072,7 +1041,7 @@ namespace System.Net
                         0x73, 0x62, 0x75, 0x6C, 0x63, 0x00, 0x00, 0x00, /*ToUInt64Key("clubs")*/   0x63, 0x26, /*'\x2663'*/
                         0x73, 0x74, 0x72, 0x61, 0x65, 0x68, 0x00, 0x00, /*ToUInt64Key("hearts")*/  0x65, 0x26, /*'\x2665'*/
                         0x73, 0x6D, 0x61, 0x69, 0x64, 0x00, 0x00, 0x00, /*ToUInt64Key("diams")*/   0x66, 0x26, /*'\x2666'*/
-                    };
+                    ];
 
                 var dictionary = new Dictionary<ulong, char>(tableData.Length / (sizeof(ulong) + sizeof(char)));
                 while (!tableData.IsEmpty)

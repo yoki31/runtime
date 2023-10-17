@@ -10,12 +10,14 @@ using System.Numerics;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using Internal.Runtime.CompilerServices;
+using Internal.Runtime;
+
+#pragma warning disable 8500 // sizeof of managed types
 
 namespace System
 {
     [Serializable]
-    [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
+    [TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     public abstract partial class Array : ICloneable, IList, IStructuralComparable, IStructuralEquatable
     {
         // This is the threshold where Introspective sort switches to Insertion sort.
@@ -33,8 +35,9 @@ namespace System
                 ThrowHelper.ThrowArgumentNullException(ExceptionArgument.array);
             }
 
-            // T[] implements IList<T>.
-            return new ReadOnlyCollection<T>(array);
+            return array.Length == 0 ?
+                ReadOnlyCollection<T>.Empty :
+                new ReadOnlyCollection<T>(array);
         }
 
         public static void Resize<T>([NotNull] ref T[]? array, int newSize)
@@ -58,7 +61,7 @@ namespace System
                 // other way around), we can use Buffer.Memmove here.
 
                 T[] newArray = new T[newSize];
-                Buffer.Memmove<T>(
+                Buffer.Memmove(
                     ref MemoryMarshal.GetArrayDataReference(newArray),
                     ref MemoryMarshal.GetArrayDataReference(larray),
                     (uint)Math.Min(newSize, larray.Length));
@@ -68,6 +71,119 @@ namespace System
             Debug.Assert(array != null);
         }
 
+        [RequiresDynamicCode("The code for an array of the specified type might not be available.")]
+        public static unsafe Array CreateInstance(Type elementType, int length)
+        {
+            if (elementType is null)
+                ThrowHelper.ThrowArgumentNullException(ExceptionArgument.elementType);
+            if (length < 0)
+                ThrowHelper.ThrowLengthArgumentOutOfRange_ArgumentOutOfRange_NeedNonNegNum();
+
+            RuntimeType? t = elementType.UnderlyingSystemType as RuntimeType;
+            if (t == null)
+                ThrowHelper.ThrowArgumentException(ExceptionResource.Arg_MustBeType, ExceptionArgument.elementType);
+
+            return InternalCreate(t, 1, &length, null);
+        }
+
+        [UnconditionalSuppressMessage("AotAnalysis", "IL3050:RequiresDynamicCode",
+            Justification = "MDArrays of Rank != 1 can be created because they don't implement generic interfaces.")]
+        public static unsafe Array CreateInstance(Type elementType, int length1, int length2)
+        {
+            if (elementType is null)
+                ThrowHelper.ThrowArgumentNullException(ExceptionArgument.elementType);
+            if (length1 < 0)
+                ThrowHelper.ThrowArgumentOutOfRangeException(ExceptionArgument.length1, ExceptionResource.ArgumentOutOfRange_NeedNonNegNum);
+            if (length2 < 0)
+                ThrowHelper.ThrowArgumentOutOfRangeException(ExceptionArgument.length2, ExceptionResource.ArgumentOutOfRange_NeedNonNegNum);
+
+            RuntimeType? t = elementType.UnderlyingSystemType as RuntimeType;
+            if (t == null)
+                ThrowHelper.ThrowArgumentException(ExceptionResource.Arg_MustBeType, ExceptionArgument.elementType);
+
+            int* pLengths = stackalloc int[] { length1, length2 };
+            return InternalCreate(t, 2, pLengths, null);
+        }
+
+        [UnconditionalSuppressMessage("AotAnalysis", "IL3050:RequiresDynamicCode",
+            Justification = "MDArrays of Rank != 1 can be created because they don't implement generic interfaces.")]
+        public static unsafe Array CreateInstance(Type elementType, int length1, int length2, int length3)
+        {
+            if (elementType is null)
+                ThrowHelper.ThrowArgumentNullException(ExceptionArgument.elementType);
+            if (length1 < 0)
+                ThrowHelper.ThrowArgumentOutOfRangeException(ExceptionArgument.length1, ExceptionResource.ArgumentOutOfRange_NeedNonNegNum);
+            if (length2 < 0)
+                ThrowHelper.ThrowArgumentOutOfRangeException(ExceptionArgument.length2, ExceptionResource.ArgumentOutOfRange_NeedNonNegNum);
+            if (length3 < 0)
+                ThrowHelper.ThrowArgumentOutOfRangeException(ExceptionArgument.length3, ExceptionResource.ArgumentOutOfRange_NeedNonNegNum);
+
+            RuntimeType? t = elementType.UnderlyingSystemType as RuntimeType;
+            if (t == null)
+                ThrowHelper.ThrowArgumentException(ExceptionResource.Arg_MustBeType, ExceptionArgument.elementType);
+
+            int* pLengths = stackalloc int[3] { length1, length2, length3 };
+            return InternalCreate(t, 3, pLengths, null);
+        }
+
+        [RequiresDynamicCode("The code for an array of the specified type might not be available.")]
+        public static unsafe Array CreateInstance(Type elementType, params int[] lengths)
+        {
+            if (elementType is null)
+                ThrowHelper.ThrowArgumentNullException(ExceptionArgument.elementType);
+            if (lengths == null)
+                ThrowHelper.ThrowArgumentNullException(ExceptionArgument.lengths);
+            if (lengths.Length == 0)
+                ThrowHelper.ThrowArgumentException(ExceptionResource.Arg_NeedAtLeast1Rank);
+
+            RuntimeType? t = elementType.UnderlyingSystemType as RuntimeType;
+            if (t == null)
+                ThrowHelper.ThrowArgumentException(ExceptionResource.Arg_MustBeType, ExceptionArgument.elementType);
+
+            // Check to make sure the lengths are all non-negative. Note that we check this here to give
+            // a good exception message if they are not; however we check this again inside the execution
+            // engine's low level allocation function after having made a copy of the array to prevent a
+            // malicious caller from mutating the array after this check.
+            for (int i = 0; i < lengths.Length; i++)
+                if (lengths[i] < 0)
+                    ThrowHelper.ThrowArgumentOutOfRangeException(ExceptionArgument.lengths, i, ExceptionResource.ArgumentOutOfRange_NeedNonNegNum);
+
+            fixed (int* pLengths = &lengths[0])
+                return InternalCreate(t, lengths.Length, pLengths, null);
+        }
+
+        [RequiresDynamicCode("The code for an array of the specified type might not be available.")]
+        public static unsafe Array CreateInstance(Type elementType, int[] lengths, int[] lowerBounds)
+        {
+            if (elementType == null)
+                ThrowHelper.ThrowArgumentNullException(ExceptionArgument.elementType);
+            if (lengths == null)
+                ThrowHelper.ThrowArgumentNullException(ExceptionArgument.lengths);
+            if (lowerBounds == null)
+                ThrowHelper.ThrowArgumentNullException(ExceptionArgument.lowerBounds);
+            if (lengths.Length != lowerBounds.Length)
+                ThrowHelper.ThrowArgumentException(ExceptionResource.Arg_RanksAndBounds);
+            if (lengths.Length == 0)
+                ThrowHelper.ThrowArgumentException(ExceptionResource.Arg_NeedAtLeast1Rank);
+
+            RuntimeType? t = elementType.UnderlyingSystemType as RuntimeType;
+            if (t == null)
+                ThrowHelper.ThrowArgumentException(ExceptionResource.Arg_MustBeType, ExceptionArgument.elementType);
+
+            // Check to make sure the lengths are all non-negative. Note that we check this here to give
+            // a good exception message if they are not; however we check this again inside the execution
+            // engine's low level allocation function after having made a copy of the array to prevent a
+            // malicious caller from mutating the array after this check.
+            for (int i = 0; i < lengths.Length; i++)
+                if (lengths[i] < 0)
+                    ThrowHelper.ThrowArgumentOutOfRangeException(ExceptionArgument.lengths, i, ExceptionResource.ArgumentOutOfRange_NeedNonNegNum);
+
+            fixed (int* pLengths = &lengths[0])
+            fixed (int* pLowerBounds = &lowerBounds[0])
+                return InternalCreate(t, lengths.Length, pLengths, pLowerBounds);
+        }
+
+        [RequiresDynamicCode("The code for an array of the specified type might not be available.")]
         public static Array CreateInstance(Type elementType, params long[] lengths)
         {
             if (lengths == null)
@@ -88,7 +204,7 @@ namespace System
                 intLengths[i] = ilen;
             }
 
-            return Array.CreateInstance(elementType, intLengths);
+            return CreateInstance(elementType, intLengths);
         }
 
         public static void Copy(Array sourceArray, Array destinationArray, long length)
@@ -116,6 +232,73 @@ namespace System
             Copy(sourceArray, isourceIndex, destinationArray, idestinationIndex, ilength);
         }
 
+#if !MONO // implementation details of MethodTable
+
+        // Copies length elements from sourceArray, starting at index 0, to
+        // destinationArray, starting at index 0.
+        public static unsafe void Copy(Array sourceArray, Array destinationArray, int length)
+        {
+            if (sourceArray is null)
+                ThrowHelper.ThrowArgumentNullException(ExceptionArgument.sourceArray);
+            if (destinationArray is null)
+                ThrowHelper.ThrowArgumentNullException(ExceptionArgument.destinationArray);
+
+            MethodTable* pMT = RuntimeHelpers.GetMethodTable(sourceArray);
+            if (MethodTable.AreSameType(pMT, RuntimeHelpers.GetMethodTable(destinationArray)) &&
+                !pMT->IsMultiDimensionalArray &&
+                (uint)length <= sourceArray.NativeLength &&
+                (uint)length <= destinationArray.NativeLength)
+            {
+                nuint byteCount = (uint)length * (nuint)pMT->ComponentSize;
+                ref byte src = ref Unsafe.As<RawArrayData>(sourceArray).Data;
+                ref byte dst = ref Unsafe.As<RawArrayData>(destinationArray).Data;
+
+                if (pMT->ContainsGCPointers)
+                    Buffer.BulkMoveWithWriteBarrier(ref dst, ref src, byteCount);
+                else
+                    Buffer.Memmove(ref dst, ref src, byteCount);
+
+                // GC.KeepAlive(sourceArray) not required. pMT kept alive via sourceArray
+                return;
+            }
+
+            // Less common
+            CopyImpl(sourceArray, sourceArray.GetLowerBound(0), destinationArray, destinationArray.GetLowerBound(0), length, reliable: false);
+        }
+
+        // Copies length elements from sourceArray, starting at sourceIndex, to
+        // destinationArray, starting at destinationIndex.
+        public static unsafe void Copy(Array sourceArray, int sourceIndex, Array destinationArray, int destinationIndex, int length)
+        {
+            if (sourceArray != null && destinationArray != null)
+            {
+                MethodTable* pMT = RuntimeHelpers.GetMethodTable(sourceArray);
+                if (MethodTable.AreSameType(pMT, RuntimeHelpers.GetMethodTable(destinationArray)) &&
+                    !pMT->IsMultiDimensionalArray &&
+                    length >= 0 && sourceIndex >= 0 && destinationIndex >= 0 &&
+                    (uint)(sourceIndex + length) <= sourceArray.NativeLength &&
+                    (uint)(destinationIndex + length) <= destinationArray.NativeLength)
+                {
+                    nuint elementSize = (nuint)pMT->ComponentSize;
+                    nuint byteCount = (uint)length * elementSize;
+                    ref byte src = ref Unsafe.AddByteOffset(ref Unsafe.As<RawArrayData>(sourceArray).Data, (uint)sourceIndex * elementSize);
+                    ref byte dst = ref Unsafe.AddByteOffset(ref Unsafe.As<RawArrayData>(destinationArray).Data, (uint)destinationIndex * elementSize);
+
+                    if (pMT->ContainsGCPointers)
+                        Buffer.BulkMoveWithWriteBarrier(ref dst, ref src, byteCount);
+                    else
+                        Buffer.Memmove(ref dst, ref src, byteCount);
+
+                    // GC.KeepAlive(sourceArray) not required. pMT kept alive via sourceArray
+                    return;
+                }
+            }
+
+            // Less common
+            CopyImpl(sourceArray!, sourceIndex, destinationArray!, destinationIndex, length, reliable: false);
+        }
+#endif
+
         // The various Get values...
         public object? GetValue(params int[] indices)
         {
@@ -124,15 +307,15 @@ namespace System
             if (Rank != indices.Length)
                 ThrowHelper.ThrowArgumentException(ExceptionResource.Arg_RankIndices);
 
-            return InternalGetValue(GetFlattenedIndex(new ReadOnlySpan<int>(indices)));
+            return InternalGetValue(GetFlattenedIndex(indices));
         }
 
-        public unsafe object? GetValue(int index)
+        public object? GetValue(int index)
         {
             if (Rank != 1)
                 ThrowHelper.ThrowArgumentException(ExceptionResource.Arg_Need1DArray);
 
-            return InternalGetValue(GetFlattenedIndex(new ReadOnlySpan<int>(&index, 1)));
+            return InternalGetValue(GetFlattenedIndex(index));
         }
 
         public object? GetValue(int index1, int index2)
@@ -140,7 +323,7 @@ namespace System
             if (Rank != 2)
                 ThrowHelper.ThrowArgumentException(ExceptionResource.Arg_Need2DArray);
 
-            return InternalGetValue(GetFlattenedIndex(stackalloc int[] { index1, index2 }));
+            return InternalGetValue(GetFlattenedIndex([index1, index2]));
         }
 
         public object? GetValue(int index1, int index2, int index3)
@@ -148,15 +331,15 @@ namespace System
             if (Rank != 3)
                 ThrowHelper.ThrowArgumentException(ExceptionResource.Arg_Need3DArray);
 
-            return InternalGetValue(GetFlattenedIndex(stackalloc int[] { index1, index2, index3 }));
+            return InternalGetValue(GetFlattenedIndex([index1, index2, index3]));
         }
 
-        public unsafe void SetValue(object? value, int index)
+        public void SetValue(object? value, int index)
         {
             if (Rank != 1)
                 ThrowHelper.ThrowArgumentException(ExceptionResource.Arg_Need1DArray);
 
-            InternalSetValue(value, GetFlattenedIndex(new ReadOnlySpan<int>(&index, 1)));
+            InternalSetValue(value, GetFlattenedIndex(index));
         }
 
         public void SetValue(object? value, int index1, int index2)
@@ -164,7 +347,7 @@ namespace System
             if (Rank != 2)
                 ThrowHelper.ThrowArgumentException(ExceptionResource.Arg_Need2DArray);
 
-            InternalSetValue(value, GetFlattenedIndex(stackalloc int[] { index1, index2 }));
+            InternalSetValue(value, GetFlattenedIndex([index1, index2]));
         }
 
         public void SetValue(object? value, int index1, int index2, int index3)
@@ -172,7 +355,7 @@ namespace System
             if (Rank != 3)
                 ThrowHelper.ThrowArgumentException(ExceptionResource.Arg_Need3DArray);
 
-            InternalSetValue(value, GetFlattenedIndex(stackalloc int[] { index1, index2, index3 }));
+            InternalSetValue(value, GetFlattenedIndex([index1, index2, index3]));
         }
 
         public void SetValue(object? value, params int[] indices)
@@ -182,7 +365,7 @@ namespace System
             if (Rank != indices.Length)
                 ThrowHelper.ThrowArgumentException(ExceptionResource.Arg_RankIndices);
 
-            InternalSetValue(value, GetFlattenedIndex(new ReadOnlySpan<int>(indices)));
+            InternalSetValue(value, GetFlattenedIndex(indices));
         }
 
         public object? GetValue(long index)
@@ -350,17 +533,17 @@ namespace System
 
         bool IList.Contains(object? value)
         {
-            return Array.IndexOf(this, value) >= this.GetLowerBound(0);
+            return IndexOf(this, value) >= this.GetLowerBound(0);
         }
 
         void IList.Clear()
         {
-            Array.Clear(this);
+            Clear(this);
         }
 
         int IList.IndexOf(object? value)
         {
-            return Array.IndexOf(this, value);
+            return IndexOf(this, value);
         }
 
         void IList.Insert(int index, object? value)
@@ -422,7 +605,7 @@ namespace System
                 return false;
             }
 
-            if (object.ReferenceEquals(this, other))
+            if (ReferenceEquals(this, other))
             {
                 return true;
             }
@@ -687,22 +870,22 @@ namespace System
         {
             if (array == null)
                 ThrowHelper.ThrowArgumentNullException(ExceptionArgument.array);
-            return BinarySearch<T>(array, 0, array.Length, value, null);
+            return BinarySearch(array, 0, array.Length, value, null);
         }
 
-        public static int BinarySearch<T>(T[] array, T value, System.Collections.Generic.IComparer<T>? comparer)
+        public static int BinarySearch<T>(T[] array, T value, IComparer<T>? comparer)
         {
             if (array == null)
                 ThrowHelper.ThrowArgumentNullException(ExceptionArgument.array);
-            return BinarySearch<T>(array, 0, array.Length, value, comparer);
+            return BinarySearch(array, 0, array.Length, value, comparer);
         }
 
         public static int BinarySearch<T>(T[] array, int index, int length, T value)
         {
-            return BinarySearch<T>(array, index, length, value, null);
+            return BinarySearch(array, index, length, value, null);
         }
 
-        public static int BinarySearch<T>(T[] array, int index, int length, T value, System.Collections.Generic.IComparer<T>? comparer)
+        public static int BinarySearch<T>(T[] array, int index, int length, T value, IComparer<T>? comparer)
         {
             if (array == null)
                 ThrowHelper.ThrowArgumentNullException(ExceptionArgument.array);
@@ -749,7 +932,7 @@ namespace System
             if (array != null && array.Rank != 1)
                 ThrowHelper.ThrowArgumentException(ExceptionResource.Arg_RankMultiDimNotSupported);
             // Note: Array.Copy throws a RankException and we want a consistent ArgumentException for all the IList CopyTo methods.
-            Array.Copy(this, GetLowerBound(0), array!, index, Length);
+            Copy(this, GetLowerBound(0), array!, index, Length);
         }
 
         public void CopyTo(Array array, long index)
@@ -775,7 +958,7 @@ namespace System
 
         public static bool Exists<T>(T[] array, Predicate<T> match)
         {
-            return Array.FindIndex(array, match) != -1;
+            return FindIndex(array, match) != -1;
         }
 
         public static void Fill<T>(T[] array, T value)
@@ -807,7 +990,7 @@ namespace System
 
             if ((uint)startIndex > (uint)array.Length)
             {
-                ThrowHelper.ThrowStartIndexArgumentOutOfRange_ArgumentOutOfRange_Index();
+                ThrowHelper.ThrowStartIndexArgumentOutOfRange_ArgumentOutOfRange_IndexMustBeLessOrEqual();
             }
 
             if ((uint)count > (uint)(array.Length - startIndex))
@@ -903,7 +1086,7 @@ namespace System
 
             if (startIndex < 0 || startIndex > array.Length)
             {
-                ThrowHelper.ThrowStartIndexArgumentOutOfRange_ArgumentOutOfRange_Index();
+                ThrowHelper.ThrowStartIndexArgumentOutOfRange_ArgumentOutOfRange_IndexMustBeLessOrEqual();
             }
 
             if (count < 0 || startIndex > array.Length - count)
@@ -984,7 +1167,7 @@ namespace System
                 // Special case for 0 length List
                 if (startIndex != -1)
                 {
-                    ThrowHelper.ThrowStartIndexArgumentOutOfRange_ArgumentOutOfRange_Index();
+                    ThrowHelper.ThrowStartIndexArgumentOutOfRange_ArgumentOutOfRange_IndexMustBeLess();
                 }
             }
             else
@@ -992,7 +1175,7 @@ namespace System
                 // Make sure we're not out of range
                 if (startIndex < 0 || startIndex >= array.Length)
                 {
-                    ThrowHelper.ThrowStartIndexArgumentOutOfRange_ArgumentOutOfRange_Index();
+                    ThrowHelper.ThrowStartIndexArgumentOutOfRange_ArgumentOutOfRange_IndexMustBeLess();
                 }
             }
 
@@ -1071,7 +1254,7 @@ namespace System
 
             int lb = array.GetLowerBound(0);
             if (startIndex < lb || startIndex > array.Length + lb)
-                ThrowHelper.ThrowStartIndexArgumentOutOfRange_ArgumentOutOfRange_Index();
+                ThrowHelper.ThrowStartIndexArgumentOutOfRange_ArgumentOutOfRange_IndexMustBeLessOrEqual();
             if (count < 0 || count > array.Length - startIndex + lb)
                 ThrowHelper.ThrowCountArgumentOutOfRange_ArgumentOutOfRange_Count();
 
@@ -1195,7 +1378,7 @@ namespace System
             return IndexOf(array, value, startIndex, array.Length - startIndex);
         }
 
-        public static int IndexOf<T>(T[] array, T value, int startIndex, int count)
+        public static unsafe int IndexOf<T>(T[] array, T value, int startIndex, int count)
         {
             if (array == null)
             {
@@ -1204,7 +1387,7 @@ namespace System
 
             if ((uint)startIndex > (uint)array.Length)
             {
-                ThrowHelper.ThrowStartIndexArgumentOutOfRange_ArgumentOutOfRange_Index();
+                ThrowHelper.ThrowStartIndexArgumentOutOfRange_ArgumentOutOfRange_IndexMustBeLessOrEqual();
             }
 
             if ((uint)count > (uint)(array.Length - startIndex))
@@ -1214,41 +1397,41 @@ namespace System
 
             if (RuntimeHelpers.IsBitwiseEquatable<T>())
             {
-                if (Unsafe.SizeOf<T>() == sizeof(byte))
+                if (sizeof(T) == sizeof(byte))
                 {
-                    int result = SpanHelpers.IndexOf(
-                        ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(Unsafe.As<byte[]>(array)), startIndex),
+                    int result = SpanHelpers.IndexOfValueType(
+                        ref Unsafe.Add(ref Unsafe.As<T, byte>(ref MemoryMarshal.GetArrayDataReference(array)), startIndex),
                         Unsafe.As<T, byte>(ref value),
                         count);
                     return (result >= 0 ? startIndex : 0) + result;
                 }
-                else if (Unsafe.SizeOf<T>() == sizeof(char))
+                else if (sizeof(T) == sizeof(short))
                 {
-                    int result = SpanHelpers.IndexOf(
-                        ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(Unsafe.As<char[]>(array)), startIndex),
-                        Unsafe.As<T, char>(ref value),
+                    int result = SpanHelpers.IndexOfValueType(
+                        ref Unsafe.Add(ref Unsafe.As<T, short>(ref MemoryMarshal.GetArrayDataReference(array)), startIndex),
+                        Unsafe.As<T, short>(ref value),
                         count);
                     return (result >= 0 ? startIndex : 0) + result;
                 }
-                else if (Unsafe.SizeOf<T>() == sizeof(int))
+                else if (sizeof(T) == sizeof(int))
                 {
-                    int result = SpanHelpers.IndexOf(
-                        ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(Unsafe.As<int[]>(array)), startIndex),
+                    int result = SpanHelpers.IndexOfValueType(
+                        ref Unsafe.Add(ref Unsafe.As<T, int>(ref MemoryMarshal.GetArrayDataReference(array)), startIndex),
                         Unsafe.As<T, int>(ref value),
                         count);
                     return (result >= 0 ? startIndex : 0) + result;
                 }
-                else if (Unsafe.SizeOf<T>() == sizeof(long))
+                else if (sizeof(T) == sizeof(long))
                 {
-                    int result = SpanHelpers.IndexOf(
-                        ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(Unsafe.As<long[]>(array)), startIndex),
+                    int result = SpanHelpers.IndexOfValueType(
+                        ref Unsafe.Add(ref Unsafe.As<T, long>(ref MemoryMarshal.GetArrayDataReference(array)), startIndex),
                         Unsafe.As<T, long>(ref value),
                         count);
                     return (result >= 0 ? startIndex : 0) + result;
                 }
             }
 
-#if !CORERT
+#if !NATIVEAOT
             return EqualityComparer<T>.Default.IndexOf(array, value, startIndex, count);
 #else
             return IndexOfImpl(array, value, startIndex, count);
@@ -1297,7 +1480,7 @@ namespace System
             }
 
             if (startIndex < lb || startIndex >= array.Length + lb)
-                ThrowHelper.ThrowStartIndexArgumentOutOfRange_ArgumentOutOfRange_Index();
+                ThrowHelper.ThrowStartIndexArgumentOutOfRange_ArgumentOutOfRange_IndexMustBeLess();
             if (count < 0)
                 ThrowHelper.ThrowCountArgumentOutOfRange_ArgumentOutOfRange_Count();
             if (count > startIndex - lb + 1)
@@ -1421,7 +1604,7 @@ namespace System
             return LastIndexOf(array, value, startIndex, (array.Length == 0) ? 0 : (startIndex + 1));
         }
 
-        public static int LastIndexOf<T>(T[] array, T value, int startIndex, int count)
+        public static unsafe int LastIndexOf<T>(T[] array, T value, int startIndex, int count)
         {
             if (array == null)
             {
@@ -1436,7 +1619,7 @@ namespace System
                 //
                 if (startIndex != -1 && startIndex != 0)
                 {
-                    ThrowHelper.ThrowStartIndexArgumentOutOfRange_ArgumentOutOfRange_Index();
+                    ThrowHelper.ThrowStartIndexArgumentOutOfRange_ArgumentOutOfRange_IndexMustBeLess();
                 }
 
                 // only 0 is a valid value for count if array is empty
@@ -1450,7 +1633,7 @@ namespace System
             // Make sure we're not out of range
             if ((uint)startIndex >= (uint)array.Length)
             {
-                ThrowHelper.ThrowStartIndexArgumentOutOfRange_ArgumentOutOfRange_Index();
+                ThrowHelper.ThrowStartIndexArgumentOutOfRange_ArgumentOutOfRange_IndexMustBeLess();
             }
 
             // 2nd have of this also catches when startIndex == MAXINT, so MAXINT - 0 + 1 == -1, which is < 0.
@@ -1461,41 +1644,41 @@ namespace System
 
             if (RuntimeHelpers.IsBitwiseEquatable<T>())
             {
-                if (Unsafe.SizeOf<T>() == sizeof(byte))
+                if (sizeof(T) == sizeof(byte))
                 {
                     int endIndex = startIndex - count + 1;
-                    int result = SpanHelpers.LastIndexOf(
-                        ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(Unsafe.As<byte[]>(array)), endIndex),
+                    int result = SpanHelpers.LastIndexOfValueType(
+                        ref Unsafe.Add(ref Unsafe.As<T, byte>(ref MemoryMarshal.GetArrayDataReference(array)), endIndex),
                         Unsafe.As<T, byte>(ref value),
                         count);
 
                     return (result >= 0 ? endIndex : 0) + result;
                 }
-                else if (Unsafe.SizeOf<T>() == sizeof(char))
+                else if (sizeof(T) == sizeof(short))
                 {
                     int endIndex = startIndex - count + 1;
-                    int result = SpanHelpers.LastIndexOf(
-                        ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(Unsafe.As<char[]>(array)), endIndex),
-                        Unsafe.As<T, char>(ref value),
+                    int result = SpanHelpers.LastIndexOfValueType(
+                        ref Unsafe.Add(ref Unsafe.As<T, short>(ref MemoryMarshal.GetArrayDataReference(array)), endIndex),
+                        Unsafe.As<T, short>(ref value),
                         count);
 
                     return (result >= 0 ? endIndex : 0) + result;
                 }
-                else if (Unsafe.SizeOf<T>() == sizeof(int))
+                else if (sizeof(T) == sizeof(int))
                 {
                     int endIndex = startIndex - count + 1;
-                    int result = SpanHelpers.LastIndexOf(
-                        ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(Unsafe.As<int[]>(array)), endIndex),
+                    int result = SpanHelpers.LastIndexOfValueType(
+                        ref Unsafe.Add(ref Unsafe.As<T, int>(ref MemoryMarshal.GetArrayDataReference(array)), endIndex),
                         Unsafe.As<T, int>(ref value),
                         count);
 
                     return (result >= 0 ? endIndex : 0) + result;
                 }
-                else if (Unsafe.SizeOf<T>() == sizeof(long))
+                else if (sizeof(T) == sizeof(long))
                 {
                     int endIndex = startIndex - count + 1;
-                    int result = SpanHelpers.LastIndexOf(
-                        ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(Unsafe.As<long[]>(array)), endIndex),
+                    int result = SpanHelpers.LastIndexOfValueType(
+                        ref Unsafe.Add(ref Unsafe.As<T, long>(ref MemoryMarshal.GetArrayDataReference(array)), endIndex),
                         Unsafe.As<T, long>(ref value),
                         count);
 
@@ -1503,7 +1686,7 @@ namespace System
                 }
             }
 
-#if !CORERT
+#if !NATIVEAOT
             return EqualityComparer<T>.Default.LastIndexOf(array, value, startIndex, count);
 #else
             return LastIndexOfImpl(array, value, startIndex, count);
@@ -1600,7 +1783,8 @@ namespace System
         {
             if (array == null)
                 ThrowHelper.ThrowArgumentNullException(ExceptionArgument.array);
-            Reverse(array, 0, array.Length);
+            if (array.Length > 1)
+                SpanHelpers.Reverse(ref MemoryMarshal.GetArrayDataReference(array), (nuint)array.Length);
         }
 
         public static void Reverse<T>(T[] array, int index, int length)
@@ -1617,16 +1801,7 @@ namespace System
             if (length <= 1)
                 return;
 
-            ref T first = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(array), index);
-            ref T last = ref Unsafe.Add(ref Unsafe.Add(ref first, length), -1);
-            do
-            {
-                T temp = first;
-                first = last;
-                last = temp;
-                first = ref Unsafe.Add(ref first, 1);
-                last = ref Unsafe.Add(ref last, -1);
-            } while (Unsafe.IsAddressLessThan(ref first, ref last));
+            SpanHelpers.Reverse(ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(array), index), (nuint)length);
         }
 
         // Sorts the elements of an array. The sort compares the elements to each
@@ -1840,34 +2015,34 @@ namespace System
         {
             if (keys == null)
                 ThrowHelper.ThrowArgumentNullException(ExceptionArgument.keys);
-            Sort<TKey, TValue>(keys, items, 0, keys.Length, null);
+            Sort(keys, items, 0, keys.Length, null);
         }
 
         public static void Sort<T>(T[] array, int index, int length)
         {
-            Sort<T>(array, index, length, null);
+            Sort(array, index, length, null);
         }
 
         public static void Sort<TKey, TValue>(TKey[] keys, TValue[]? items, int index, int length)
         {
-            Sort<TKey, TValue>(keys, items, index, length, null);
+            Sort(keys, items, index, length, null);
         }
 
-        public static void Sort<T>(T[] array, System.Collections.Generic.IComparer<T>? comparer)
+        public static void Sort<T>(T[] array, IComparer<T>? comparer)
         {
             if (array == null)
                 ThrowHelper.ThrowArgumentNullException(ExceptionArgument.array);
-            Sort<T>(array, 0, array.Length, comparer);
+            Sort(array, 0, array.Length, comparer);
         }
 
-        public static void Sort<TKey, TValue>(TKey[] keys, TValue[]? items, System.Collections.Generic.IComparer<TKey>? comparer)
+        public static void Sort<TKey, TValue>(TKey[] keys, TValue[]? items, IComparer<TKey>? comparer)
         {
             if (keys == null)
                 ThrowHelper.ThrowArgumentNullException(ExceptionArgument.keys);
-            Sort<TKey, TValue>(keys, items, 0, keys.Length, comparer);
+            Sort(keys, items, 0, keys.Length, comparer);
         }
 
-        public static void Sort<T>(T[] array, int index, int length, System.Collections.Generic.IComparer<T>? comparer)
+        public static void Sort<T>(T[] array, int index, int length, IComparer<T>? comparer)
         {
             if (array == null)
                 ThrowHelper.ThrowArgumentNullException(ExceptionArgument.array);
@@ -1885,7 +2060,7 @@ namespace System
             }
         }
 
-        public static void Sort<TKey, TValue>(TKey[] keys, TValue[]? items, int index, int length, System.Collections.Generic.IComparer<TKey>? comparer)
+        public static void Sort<TKey, TValue>(TKey[] keys, TValue[]? items, int index, int length, IComparer<TKey>? comparer)
         {
             if (keys == null)
                 ThrowHelper.ThrowArgumentNullException(ExceptionArgument.keys);
@@ -1900,7 +2075,7 @@ namespace System
             {
                 if (items == null)
                 {
-                    Sort<TKey>(keys, index, length, comparer);
+                    Sort(keys, index, length, comparer);
                     return;
                 }
 
@@ -2032,6 +2207,9 @@ namespace System
                 }
             }
 
+            // IntroSort is recursive; block it from being inlined into itself as
+            // this is currenly not profitable.
+            [MethodImpl(MethodImplOptions.NoInlining)]
             private void IntroSort(int lo, int hi, int depthLimit)
             {
                 Debug.Assert(hi >= lo);
@@ -2246,6 +2424,9 @@ namespace System
                 }
             }
 
+            // IntroSort is recursive; block it from being inlined into itself as
+            // this is currenly not profitable.
+            [MethodImpl(MethodImplOptions.NoInlining)]
             private void IntroSort(int lo, int hi, int depthLimit)
             {
                 Debug.Assert(hi >= lo);
@@ -2355,13 +2536,11 @@ namespace System
                         break;
 
                     keys.SetValue(keys.GetValue(lo + child - 1), lo + i - 1);
-                    if (items != null)
-                        items.SetValue(items.GetValue(lo + child - 1), lo + i - 1);
+                    items?.SetValue(items.GetValue(lo + child - 1), lo + i - 1);
                     i = child;
                 }
                 keys.SetValue(d, lo + i - 1);
-                if (items != null)
-                    items.SetValue(dt, lo + i - 1);
+                items?.SetValue(dt, lo + i - 1);
             }
 
             private void InsertionSort(int lo, int hi)
@@ -2378,14 +2557,12 @@ namespace System
                     while (j >= lo && comparer.Compare(t, keys.GetValue(j)) < 0)
                     {
                         keys.SetValue(keys.GetValue(j), j + 1);
-                        if (items != null)
-                            items.SetValue(items.GetValue(j), j + 1);
+                        items?.SetValue(items.GetValue(j), j + 1);
                         j--;
                     }
 
                     keys.SetValue(t, j + 1);
-                    if (items != null)
-                        items.SetValue(dt, j + 1);
+                    items?.SetValue(dt, j + 1);
                 }
             }
         }

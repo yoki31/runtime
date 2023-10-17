@@ -202,11 +202,24 @@ def main(main_args):
         path_to_corerun += ".exe"
         path_to_tool += ".exe"
 
+    if not is_windows:
+        # Disable core dumps. The fuzzers have their own graceful handling for
+        # runtime crashes. Especially on macOS we can quickly fill up the drive
+        # with dumps if we find lots of crashes since dumps there are very big.
+        import resource
+        resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+
     try:
         # Run tool such that issues are placed in a temp folder
         with TempDir() as temp_location:
             antigen_log = path.join(temp_location, get_antigen_filename(tag_name))
-            run_command([path_to_tool, "-c", path_to_corerun, "-o", temp_location, "-d", str(run_duration)], _exit_on_fail=True, _output_file= antigen_log)
+            env_variable = {}
+            if 'x86' in coreclr_args.run_configuration or 'x64' in coreclr_args.run_configuration:
+                # For x86 and x64, set this environment variable so Antigen process would
+                # get the hardware acceleration of Avx512 and through that, Antigen will
+                # generate code containing Avx512 specific intrinsic methods.
+                env_variable["DOTNET_PreferredVectorBitWidth"] = "512"
+            run_command([path_to_tool, "-c", path_to_corerun, "-o", temp_location, "-d", str(run_duration)], _exit_on_fail=True, _output_file= antigen_log, _env= env_variable)
 
             # Copy issues for upload
             print("Copying issues to " + output_directory)

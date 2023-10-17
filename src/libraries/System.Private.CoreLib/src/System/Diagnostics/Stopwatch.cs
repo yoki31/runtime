@@ -7,6 +7,7 @@ namespace System.Diagnostics
     // hardware supports it. Otherwise, the class will fall back to DateTime
     // and uses ticks as a measurement.
 
+    [DebuggerDisplay("{DebuggerDisplay,nq}")]
     public partial class Stopwatch
     {
         private const long TicksPerMillisecond = 10000;
@@ -88,6 +89,14 @@ namespace System.Diagnostics
             _isRunning = true;
         }
 
+        /// <summary>
+        /// Returns the <see cref="Elapsed"/> time as a string.
+        /// </summary>
+        /// <returns>
+        /// Elapsed time string in the same format used by <see cref="TimeSpan.ToString()"/>.
+        /// </returns>
+        public override string ToString() => Elapsed.ToString();
+
         public bool IsRunning
         {
             get { return _isRunning; }
@@ -114,6 +123,19 @@ namespace System.Diagnostics
             return QueryPerformanceCounter();
         }
 
+        /// <summary>Gets the elapsed time since the <paramref name="startingTimestamp"/> value retrieved using <see cref="GetTimestamp"/>.</summary>
+        /// <param name="startingTimestamp">The timestamp marking the beginning of the time period.</param>
+        /// <returns>A <see cref="TimeSpan"/> for the elapsed time between the starting timestamp and the time of this call.</returns>
+        public static TimeSpan GetElapsedTime(long startingTimestamp) =>
+            GetElapsedTime(startingTimestamp, GetTimestamp());
+
+        /// <summary>Gets the elapsed time between two timestamps retrieved using <see cref="GetTimestamp"/>.</summary>
+        /// <param name="startingTimestamp">The timestamp marking the beginning of the time period.</param>
+        /// <param name="endingTimestamp">The timestamp marking the end of the time period.</param>
+        /// <returns>A <see cref="TimeSpan"/> for the elapsed time between the starting and ending timestamps.</returns>
+        public static TimeSpan GetElapsedTime(long startingTimestamp, long endingTimestamp) =>
+            new TimeSpan((long)((endingTimestamp - startingTimestamp) * s_tickFrequency));
+
         // Get the elapsed ticks.
         private long GetRawElapsedTicks()
         {
@@ -137,5 +159,7 @@ namespace System.Diagnostics
             // convert high resolution perf counter to DateTime ticks
             return unchecked((long)(GetRawElapsedTicks() * s_tickFrequency));
         }
+
+        private string DebuggerDisplay => $"{Elapsed} (IsRunning = {_isRunning})";
     }
 }

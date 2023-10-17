@@ -15,7 +15,7 @@
   .publickeytoken = (B7 7A 5C 56 19 34 E0 89 )                         // .z\V.4..
   .ver 2:0:0:0
 }
-.assembly FastPropertyAccessor
+.assembly 'b176032'
 {
   .custom instance void [mscorlib]System.Runtime.CompilerServices.CompilationRelaxationsAttribute::.ctor(int32) = ( 01 00 08 00 00 00 00 00 ) 
   .custom instance void [mscorlib]System.Runtime.CompilerServices.RuntimeCompatibilityAttribute::.ctor() = ( 01 00 01 00 54 02 16 57 72 61 70 4E 6F 6E 45 78   // ....T..WrapNonEx
@@ -24,7 +24,6 @@
   .ver 0:0:0:0
 }
 .assembly extern xunit.core {}
-.module FastPropertyAccessor.exe
 // MVID: {67428BBB-6A8A-45FA-BAF9-F8CACEC55247}
 .imagebase 0x00400000
 .file alignment 0x00000200
@@ -74,7 +73,7 @@
     IL_0007:  ret
   } // end of method My::set_MyProperty
 
-  .method private hidebysig static int32  Main() cil managed
+  .method public hidebysig static int32  Main() cil managed
   {
     .custom instance void [xunit.core]Xunit.FactAttribute::.ctor() = (
         01 00 00 00
@@ -132,7 +131,7 @@
     .maxstack  1
     IL_0000:  ldarg.1
     IL_0001:  castclass  My
-    IL_0006:  callvirt   instance valuetype [mscorlib]System.Nullable`1<bool> [FastPropertyAccessor]My::get_MyProperty()
+    IL_0006:  callvirt   instance valuetype [mscorlib]System.Nullable`1<bool> [b176032]My::get_MyProperty()
     IL_000b:  box        valuetype [mscorlib]System.Nullable`1<bool>
     IL_0010:  ret
   } // end of method MyProperty::GetProperty

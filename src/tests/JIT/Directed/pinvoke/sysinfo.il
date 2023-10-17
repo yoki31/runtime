@@ -1,7 +1,6 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
-.module extern kernel32
 .assembly extern mscorlib { }
 .assembly extern xunit.core {}
 .assembly extern System.Console
@@ -9,11 +8,11 @@
   .publickeytoken = (B0 3F 5F 7F 11 D5 0A 3A )
   .ver 4:0:0:0
 }
-.assembly sysinfo { }
+.assembly 'sysinfo_il' { }
 .module sysinfo.exe
 .namespace JitTest
 {
-  .class private sequential ansi sealed beforefieldinit SYSTEM_INFO
+  .class public sequential ansi sealed beforefieldinit SYSTEM_INFO
          extends [mscorlib]System.ValueType
   {
     .field private unsigned int32 dwOemId
@@ -30,8 +29,7 @@
             void  GetSystemInfo(valuetype JitTest.SYSTEM_INFO& si) cil managed preservesig
     {
     }
-    .method public hidebysig static int32 
-            Main() cil managed
+    .method public hidebysig static int32 Main() cil managed
     {
       .custom instance void [xunit.core]Xunit.FactAttribute::.ctor() = (
           01 00 00 00

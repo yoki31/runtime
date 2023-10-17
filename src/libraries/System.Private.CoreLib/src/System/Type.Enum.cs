@@ -19,8 +19,7 @@ namespace System
     {
         public virtual bool IsEnumDefined(object value)
         {
-            if (value == null)
-                throw new ArgumentNullException(nameof(value));
+            ArgumentNullException.ThrowIfNull(value);
 
             if (!IsEnum)
                 throw new ArgumentException(SR.Arg_MustBeEnum, nameof(value));
@@ -48,7 +47,7 @@ namespace System
             }
 
             // If an enum or integer value is passed in
-            if (Type.IsIntegerType(valueType))
+            if (IsIntegerType(valueType))
             {
                 Type underlyingType = GetEnumUnderlyingType();
                 // We cannot compare the types directly because valueType is always a runtime type but underlyingType might not be.
@@ -66,15 +65,14 @@ namespace System
 
         public virtual string? GetEnumName(object value)
         {
-            if (value == null)
-                throw new ArgumentNullException(nameof(value));
+            ArgumentNullException.ThrowIfNull(value);
 
             if (!IsEnum)
                 throw new ArgumentException(SR.Arg_MustBeEnum, nameof(value));
 
             Type valueType = value.GetType();
 
-            if (!(valueType.IsEnum || Type.IsIntegerType(valueType)))
+            if (!(valueType.IsEnum || IsIntegerType(valueType)))
                 throw new ArgumentException(SR.Arg_MustBeEnumBaseTypeOrEnum, nameof(value));
 
             Array values = GetEnumRawConstantValues();
@@ -94,7 +92,7 @@ namespace System
             if (!IsEnum)
                 throw new ArgumentException(SR.Arg_MustBeEnum, "enumType");
 
-            GetEnumData(out string[] names, out Array values);
+            GetEnumData(out string[] names, out _);
             return names;
         }
 
@@ -132,7 +130,7 @@ namespace System
                 object val = values[i];
                 bool exchanged = false;
 
-                // Since the elements are sorted we only need to do one comparision, we keep the check for j inside the loop.
+                // Since the elements are sorted we only need to do one comparison, we keep the check for j inside the loop.
                 while (comparer.Compare(values[j - 1], val) > 0)
                 {
                     names[j] = names[j - 1];
@@ -176,8 +174,7 @@ namespace System
                     t == typeof(uint) ||
                     t == typeof(long) ||
                     t == typeof(ulong) ||
-                    t == typeof(char) ||
-                    t == typeof(bool);
+                    t == typeof(char);
         }
     }
 }

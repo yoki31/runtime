@@ -15,7 +15,7 @@ namespace System.Net
     // Utf-8 characters.
     internal sealed class HttpListenerRequestUriBuilder
     {
-        private static readonly Encoding s_utf8Encoding = new UTF8Encoding(false, true);
+        private static readonly UTF8Encoding s_utf8Encoding = new UTF8Encoding(false, true);
         private static readonly Encoding s_ansiEncoding = Encoding.GetEncoding(0, new EncoderExceptionFallback(), new DecoderExceptionFallback());
 
         private readonly string _rawUri;
@@ -94,7 +94,7 @@ namespace System.Net
 
         private void BuildRequestUriUsingRawPath()
         {
-            bool isValid = false;
+            bool isValid;
 
             // Initialize 'rawPath' only if really needed; i.e. if we build the request Uri from the raw Uri.
             _rawPath = GetPath(_rawUri);
@@ -172,22 +172,28 @@ namespace System.Net
             Debug.Assert(encoding != null, "'encoding' must be assigned.");
 
             int index = 0;
-            char current = '\0';
+            char current;
             Debug.Assert(_rawPath != null);
             while (index < _rawPath.Length)
             {
                 current = _rawPath[index];
                 if (current == '%')
                 {
-                    // Assert is enough, since http.sys accepted the request string already. This should never happen.
-                    Debug.Assert(index + 2 < _rawPath.Length, "Expected >=2 characters after '%' (e.g. %2F)");
+                    if (index + 2 >= _rawPath.Length)
+                    {
+                        // Not enough data for a percent encoded byte.
+                        return ParsingResult.InvalidString;
+                    }
 
                     index++;
                     current = _rawPath[index];
                     if (current == 'u' || current == 'U')
                     {
-                        // We found "%u" which means, we have a Unicode code point of the form "%uXXXX".
-                        Debug.Assert(index + 4 < _rawPath.Length, "Expected >=4 characters after '%u' (e.g. %u0062)");
+                        if (index + 4 >= _rawPath.Length)
+                        {
+                            // Not enough data for "%uXXXX".
+                            return ParsingResult.InvalidString;
+                        }
 
                         // Decode the content of rawOctets into percent encoded UTF-8 characters and append them
                         // to requestUriString.
@@ -204,7 +210,7 @@ namespace System.Net
                     else
                     {
                         // We found '%', but not followed by 'u', i.e. we have a percent encoded octed: %XX
-                        if (!AddPercentEncodedOctetToRawOctetsList(encoding, _rawPath.Substring(index, 2)))
+                        if (!AddPercentEncodedOctetToRawOctetsList(_rawPath.Substring(index, 2)))
                         {
                             return ParsingResult.InvalidString;
                         }
@@ -270,7 +276,7 @@ namespace System.Net
             return false;
         }
 
-        private bool AddPercentEncodedOctetToRawOctetsList(Encoding encoding, string escapedCharacter)
+        private bool AddPercentEncodedOctetToRawOctetsList(string escapedCharacter)
         {
             byte encodedValue;
             if (!byte.TryParse(escapedCharacter, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out encodedValue))
@@ -333,9 +339,9 @@ namespace System.Net
             }
         }
 
-        private static string GetOctetsAsString(IEnumerable<byte> octets)
+        private static string GetOctetsAsString(List<byte> octets)
         {
-            StringBuilder octetString = new StringBuilder();
+            StringBuilder octetString = new StringBuilder(octets.Count * 3);
 
             bool first = true;
             foreach (byte octet in octets)
@@ -413,7 +419,7 @@ namespace System.Net
             // - the first '#' character: This is never the case here, since http.sys won't accept
             //   Uris containing fragments. Also, RFC2616 doesn't allow fragments in request Uris.
             // - end of Uri string
-            int queryIndex = uriString.IndexOf('?');
+            int queryIndex = uriString.IndexOf('?', pathStartIndex);
             if (queryIndex == -1)
             {
                 queryIndex = uriString.Length;

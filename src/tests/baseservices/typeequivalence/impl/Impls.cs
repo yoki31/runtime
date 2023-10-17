@@ -19,6 +19,12 @@ public class EmptyType : IEmptyType
     }
 }
 
+[TypeIdentifier("MyScope", "MyTypeId")]
+public struct EquivalentValueType
+{
+    public int A;
+}
+
 /// <summary>
 /// Implementation of interfaces that have no impact on inputs.
 /// </summary>
@@ -107,4 +113,20 @@ public class SparseTest : ISparseType
     public int MultiplyBy18(int a) { return a * 18; }
     public int MultiplyBy19(int a) { return a * 19; }
     public int MultiplyBy20(int a) { return a * 20; }
+}
+
+public class OnlyLoadOnceCaller
+{
+    public static int GetField_1(OnlyLoadOnce_1 s)
+    {
+        return s.Field;
+    }
+    public static int GetField_2(OnlyLoadOnce_2 s)
+    {
+        return s.Field;
+    }
+    public static int GetField_3(OnlyLoadOnce_3 s)
+    {
+        return s.Field;
+    }
 }

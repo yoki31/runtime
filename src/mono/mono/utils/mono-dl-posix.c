@@ -18,7 +18,6 @@
 #if defined(_POSIX_VERSION) && !defined (HOST_WASM)
 
 #include "mono/utils/mono-dl.h"
-#include "mono/utils/mono-embed.h"
 #include "mono/utils/mono-path.h"
 
 #include <stdlib.h>
@@ -65,16 +64,10 @@ mono_dl_get_so_suffixes (void)
 	return suffixes;
 }
 
-const char*
-mono_dl_get_system_dir (void)
-{
-	return NULL;
-}
-
 #endif
 
 void *
-mono_dl_open_file (const char *file, int flags)
+mono_dl_open_file (const char *file, int flags, MonoError *error)
 {
 #ifdef HOST_ANDROID
 	/* Bionic doesn't support NULL filenames */
@@ -108,7 +101,7 @@ mono_dl_open_file (const char *file, int flags)
 }
 
 void
-mono_dl_close_handle (MonoDl *module)
+mono_dl_close_handle (MonoDl *module, MonoError *error)
 {
 	dlclose (module->handle);
 }

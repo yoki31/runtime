@@ -6,6 +6,7 @@ using System.Collections.Specialized;
 
 namespace System.Net
 {
+    [Obsolete(Obsoletions.AuthenticationManagerMessage, DiagnosticId = Obsoletions.AuthenticationManagerDiagId, UrlFormat = Obsoletions.SharedUrlFormat)]
     public class AuthenticationManager
     {
         private AuthenticationManager() { }
@@ -14,36 +15,25 @@ namespace System.Net
 
         public static StringDictionary CustomTargetNameDictionary { get; } = new StringDictionary();
 
-        [Obsolete(Obsoletions.AuthenticationManagerMessage, DiagnosticId = Obsoletions.AuthenticationManagerDiagId, UrlFormat = Obsoletions.SharedUrlFormat)]
         public static Authorization? Authenticate(string challenge, WebRequest request, ICredentials credentials) =>
             throw new PlatformNotSupportedException();
 
-        [Obsolete(Obsoletions.AuthenticationManagerMessage, DiagnosticId = Obsoletions.AuthenticationManagerDiagId, UrlFormat = Obsoletions.SharedUrlFormat)]
         public static Authorization? PreAuthenticate(WebRequest request, ICredentials credentials) =>
             throw new PlatformNotSupportedException();
 
         public static void Register(IAuthenticationModule authenticationModule)
         {
-            if (authenticationModule is null)
-            {
-                throw new ArgumentNullException(nameof(authenticationModule));
-            }
+            ArgumentNullException.ThrowIfNull(authenticationModule);
         }
 
         public static void Unregister(IAuthenticationModule authenticationModule)
         {
-            if (authenticationModule is null)
-            {
-                throw new ArgumentNullException(nameof(authenticationModule));
-            }
+            ArgumentNullException.ThrowIfNull(authenticationModule);
         }
 
         public static void Unregister(string authenticationScheme)
         {
-            if (authenticationScheme is null)
-            {
-                throw new ArgumentNullException(nameof(authenticationScheme));
-            }
+            ArgumentNullException.ThrowIfNull(authenticationScheme);
         }
 
         public static IEnumerator RegisteredModules => Array.Empty<IAuthenticationModule>().GetEnumerator();

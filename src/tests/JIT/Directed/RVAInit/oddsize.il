@@ -8,16 +8,15 @@
   .publickeytoken = (B0 3F 5F 7F 11 D5 0A 3A )
   .ver 4:0:0:0
 }
-.assembly test
+.assembly 'oddsize'
 {
 }
-.module test.exe
 // MVID: {3DA3EDA0-F1A4-42F9-8E0B-F269420E91A5}
 
 .file alignment 512
 
 // Image base: 0x034f0000
-.class private sequential ansi sealed beforefieldinit Test_oddsize
+.class public sequential ansi sealed beforefieldinit Test_oddsize
        extends [mscorlib]System.ValueType
 {
   .field public static valuetype Test_oddsize test1 at bytearray2
@@ -33,7 +32,7 @@
     call void [System.Console]System.Console::WriteLine()
     ret
   }
-  .method private hidebysig static int32 Main() cil managed
+  .method public hidebysig static int32 Main() cil managed
   {
     .custom instance void [xunit.core]Xunit.FactAttribute::.ctor() = (
         01 00 00 00

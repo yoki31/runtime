@@ -9,7 +9,6 @@ using Xunit;
 
 namespace System.IO.Tests
 {
-    [ActiveIssue("https://github.com/dotnet/runtime/issues/34582", TestPlatforms.Windows, TargetFrameworkMonikers.Netcoreapp, TestRuntimes.Mono)]
     [SkipOnPlatform(TestPlatforms.Browser, "async file IO is not supported on browser")]
     public class RandomAccess_NoBuffering : FileSystemTest
     {
@@ -38,15 +37,6 @@ namespace System.IO.Tests
                 int current = 0;
                 int total = 0;
 
-                // From https://docs.microsoft.com/en-us/windows/win32/fileio/file-buffering:
-                // "File access sizes, including the optional file offset in the OVERLAPPED structure,
-                // if specified, must be for a number of bytes that is an integer multiple of the volume sector size."
-                // So if buffer and physical sector size is 4096 and the file size is 4097:
-                // the read from offset=0 reads 4096 bytes
-                // the read from offset=4096 reads 1 byte
-                // the read from offset=4097 THROWS (Invalid argument, offset is not a multiple of sector size!)
-                // That is why we stop at the first incomplete read (the next one would throw).
-                // It's possible to get 0 if we are lucky and file size is a multiple of physical sector size.
                 do
                 {
                     current = asyncOperation
@@ -57,7 +47,7 @@ namespace System.IO.Tests
 
                     total += current;
                 }
-                while (current == buffer.Memory.Length);
+                while (current != 0);
 
                 Assert.Equal(fileSize, total);
             }
@@ -220,6 +210,100 @@ namespace System.IO.Tests
             long nRead = await RandomAccess.ReadAsync(handle, Array.Empty<Memory<byte>>(), 0);
             Assert.Equal(0, nRead);
             await RandomAccess.WriteAsync(handle, Array.Empty<ReadOnlyMemory<byte>>(), 0);
+        }
+
+        [Theory]
+        [MemberData(nameof(AllAsyncSyncCombinations))]
+        public async Task ReadShouldReturnZeroForEndOfFile(bool asyncOperation, bool asyncHandle)
+        {
+            int fileSize = Environment.SystemPageSize + 1; // it MUST NOT be a multiple of it (https://github.com/dotnet/runtime/issues/62851)
+            string filePath = GetTestFilePath();
+            byte[] expected = RandomNumberGenerator.GetBytes(fileSize);
+            File.WriteAllBytes(filePath, expected);
+
+            using FileStream fileStream = new (filePath, FileMode.Open, FileAccess.Read, FileShare.None, 0, GetFileOptions(asyncHandle));
+            using SectorAlignedMemory<byte> buffer = SectorAlignedMemory<byte>.Allocate(Environment.SystemPageSize);
+
+            int current = 0;
+            int total = 0;
+
+            do
+            {
+                current = asyncOperation
+                    ? await fileStream.ReadAsync(buffer.Memory)
+                    : fileStream.Read(buffer.GetSpan());
+
+                Assert.True(expected.AsSpan(total, current).SequenceEqual(buffer.GetSpan().Slice(0, current)));
+
+                total += current;
+            }
+            while (current != 0);
+
+            Assert.Equal(fileSize, total);
+        }
+
+        [Theory]
+        [InlineData(1)] // 1 page.
+        [InlineData(2)] // 2 pages.
+        [InlineData(3)] // 3 pages.
+        public void ReadFromDiskAfterFlushToDisk(int pageSizeMultiple)
+        {
+            // Sanity check: page size multiple must be > 0 otherwise we will write an empty file while this test
+            // only makes sense when something is actually written to the file and flushed to disk.
+            Assert.True(pageSizeMultiple > 0);
+
+            string testFilePath = GetTestFilePath();
+
+            // Unbuffered I/O requires buffer sizes to be a multiple of the storage device's sector size. We could
+            // P/Invoke the DeviceIoControl() function to get the sector size by passing IOCTL_DISK_GET_DRIVE_GEOMETRY
+            // as a parameter, but for the sake of simplicity we will just use the system page size as a proxy. This
+            // works because both the system page size and the storage device's sector size are typically powers of 2
+            // meaning the system page size (which is typically 4,096 bytes) will be a multiple of the sector size
+            // (which is typically 512 bytes) hence meeting the requirements for unbuffered I/O.
+            byte[] randomBytes = RandomNumberGenerator.GetBytes(pageSizeMultiple * Environment.SystemPageSize);
+
+            using (SafeFileHandle handle = File.OpenHandle(testFilePath, FileMode.CreateNew, FileAccess.Write))
+            {
+                // Write random bytes to file. NOTE: this write does NOT use unbuffered I/O, i.e. the written bytes
+                // should end up in the file system cache so we can then flush them to disk below.
+                RandomAccess.Write(handle, randomBytes, fileOffset: 0);
+
+                // Flush the file to disk. Later on below we will use unbuffered I/O to read the file directly from disk.
+                RandomAccess.FlushToDisk(handle);
+            }
+
+            // At this point, FlushToDisk() should have ensured the file's contents are on disk. To confirm this, we will
+            // now read the file using unbuffered I/O which reads directly from disk, bypassing the file system cache. If
+            // FlushToDisk() worked correctly, the bytes we read should match the bytes we wrote above. NOTE: unbuffered
+            // I/O requires the buffer we read into to be aligned to the storage device's sector size which is why we use
+            // the SectorAlignedMemory<T> type here.
+            using (SafeFileHandle handle = File.OpenHandle(testFilePath, FileMode.Open, FileAccess.Read, options: NoBuffering))
+            using (SectorAlignedMemory<byte> buffer = SectorAlignedMemory<byte>.Allocate(randomBytes.Length))
+            {
+                int currentBytesRead = 0;
+                int nextFileReadOffset = 0;
+
+                do
+                {
+                    // Read bytes from disk. NOTE: this read uses unbuffered I/O, i.e. the bytes are read directly from
+                    // disk and into the buffer we provide. This is important for this test because we want to confirm
+                    // that the call to FlushToDisk() above worked correctly and the bytes we wrote to the file are now
+                    // on disk. If we used buffered I/O here, the bytes would be read from the file system cache instead
+                    // of from disk, which would defeat the purpose of this test.
+                    currentBytesRead = RandomAccess.Read(handle, buffer.GetSpan(), fileOffset: nextFileReadOffset);
+
+                    Span<byte> expectedBytes = randomBytes.AsSpan(nextFileReadOffset, currentBytesRead);
+                    Span<byte> actualBytes = buffer.GetSpan().Slice(0, currentBytesRead);
+
+                    Assert.True(expectedBytes.SequenceEqual(actualBytes));
+
+                    nextFileReadOffset += currentBytesRead;
+                }
+                while (currentBytesRead != 0);
+
+                // At this point, we should have read the entire file.
+                Assert.Equal(randomBytes.Length, nextFileReadOffset);
+            }
         }
 
         // when using FileOptions.Asynchronous we are testing Scatter&Gather APIs on Windows (FILE_FLAG_OVERLAPPED requirement)

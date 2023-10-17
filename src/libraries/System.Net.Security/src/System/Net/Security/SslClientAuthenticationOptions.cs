@@ -14,11 +14,21 @@ namespace System.Net.Security
         private X509RevocationMode _checkCertificateRevocation = X509RevocationMode.NoCheck;
         private SslProtocols _enabledSslProtocols = SecurityProtocol.SystemDefaultSecurityProtocols;
         private bool _allowRenegotiation = true;
+        private bool _allowTlsResume = true;
 
         public bool AllowRenegotiation
         {
             get => _allowRenegotiation;
             set => _allowRenegotiation = value;
+        }
+
+        /// <summary>
+        ///  Gets or sets a value that indicates whether the SslStream should allow TLS resumption.
+        /// </summary>
+        public bool AllowTlsResume
+        {
+            get => _allowTlsResume;
+            set => _allowTlsResume = value;
         }
 
         public LocalCertificateSelectionCallback? LocalCertificateSelectionCallback { get; set; }
@@ -30,6 +40,11 @@ namespace System.Net.Security
         public string? TargetHost { get; set; }
 
         public X509CertificateCollection? ClientCertificates { get; set; }
+
+        /// <summary>
+        /// Gets or sets the client certificate context.
+        /// </summary>
+        public SslStreamCertificateContext? ClientCertificateContext { get; set; }
 
         public X509RevocationMode CertificateRevocationCheckMode
         {
@@ -50,10 +65,12 @@ namespace System.Net.Security
             get => _encryptionPolicy;
             set
             {
+#pragma warning disable SYSLIB0040 // NoEncryption and AllowNoEncryption are obsolete
                 if (value != EncryptionPolicy.RequireEncryption && value != EncryptionPolicy.AllowNoEncryption && value != EncryptionPolicy.NoEncryption)
                 {
                     throw new ArgumentException(SR.Format(SR.net_invalid_enum, nameof(EncryptionPolicy)), nameof(value));
                 }
+#pragma warning restore SYSLIB0040
 
                 _encryptionPolicy = value;
             }
@@ -71,5 +88,13 @@ namespace System.Net.Security
         /// Use extreme caution when changing this setting.
         /// </summary>
         public CipherSuitesPolicy? CipherSuitesPolicy { get; set; }
+
+        /// <summary>
+        /// Gets or sets an optional customized policy for remote certificate
+        /// validation. If not <see langword="null"/>,
+        /// <see cref="CertificateRevocationCheckMode"/> and <see cref="SslCertificateTrust"/>
+        /// are ignored.
+        /// </summary>
+        public X509ChainPolicy? CertificateChainPolicy { get; set; }
     }
 }

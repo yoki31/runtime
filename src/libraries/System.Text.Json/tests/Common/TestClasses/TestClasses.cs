@@ -461,7 +461,11 @@ namespace System.Text.Json.Serialization.Tests
             {
                 if (data is JsonElement element)
                 {
-                    SimpleTestClass obj = JsonSerializer.Deserialize<SimpleTestClass>(element.GetRawText());
+#if BUILDING_SOURCE_GENERATOR_TESTS
+                    SimpleTestClass obj = JsonSerializer.Deserialize(element, System.Text.Json.SourceGeneration.Tests.CollectionTests_Default.CollectionTestsContext_Default.Default.SimpleTestClass);
+#else
+                    SimpleTestClass obj = JsonSerializer.Deserialize<SimpleTestClass>(element);
+#endif
                     obj.Verify();
                 }
                 else
@@ -510,7 +514,11 @@ namespace System.Text.Json.Serialization.Tests
             {
                 if (data is JsonElement element)
                 {
-                    SimpleTestClass obj = JsonSerializer.Deserialize<SimpleTestClass>(element.GetRawText());
+#if BUILDING_SOURCE_GENERATOR_TESTS
+                    SimpleTestClass obj = JsonSerializer.Deserialize(element, System.Text.Json.SourceGeneration.Tests.CollectionTests_Default.CollectionTestsContext_Default.Default.SimpleTestClass);
+#else
+                    SimpleTestClass obj = JsonSerializer.Deserialize<SimpleTestClass>(element);
+#endif
                     obj.Verify();
                 }
                 else
@@ -561,7 +569,11 @@ namespace System.Text.Json.Serialization.Tests
             {
                 if (data is JsonElement element)
                 {
-                    SimpleTestClass obj = JsonSerializer.Deserialize<SimpleTestClass>(element.GetRawText());
+#if BUILDING_SOURCE_GENERATOR_TESTS
+                    SimpleTestClass obj = JsonSerializer.Deserialize(element, System.Text.Json.SourceGeneration.Tests.CollectionTests_Default.CollectionTestsContext_Default.Default.SimpleTestClass);
+#else
+                    SimpleTestClass obj = JsonSerializer.Deserialize<SimpleTestClass>(element);
+#endif
                     obj.Verify();
                 }
                 else
@@ -1882,6 +1894,15 @@ namespace System.Text.Json.Serialization.Tests
         {
             throw new NotImplementedException("Converter was called");
         }
+
+        // In source-gen, internal converters are not used as fallbacks when custom converters don't provide an implementation.
+#if BUILDING_SOURCE_GENERATOR_TESTS
+        public override int ReadAsPropertyName(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+            => int.Parse(reader.GetString());
+
+        public override void WriteAsPropertyName(Utf8JsonWriter writer, int value, JsonSerializerOptions options)
+            => writer.WritePropertyName(value.ToString());
+#endif
     }
 
     public class SimpleSnakeCasePolicy : JsonNamingPolicy
@@ -1892,69 +1913,81 @@ namespace System.Text.Json.Serialization.Tests
         }
     }
 
+    public static class ReflectionExtensions
+    {
+#if NET6_0_OR_GREATER
+        [return: System.Diagnostics.CodeAnalysis.DynamicallyAccessedMembers(System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicConstructors)]
+        public static Type WithConstructors(
+            [System.Diagnostics.CodeAnalysis.DynamicallyAccessedMembers(System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicConstructors)]
+            this Type type) => type;
+#else
+        public static Type WithConstructors(this Type type) => type;
+#endif
+    }
+
     public static class CollectionTestTypes
     {
         public static IEnumerable<Type> EnumerableTypes<TElement>()
         {
-            yield return typeof(TElement[]); // ArrayConverter
-            yield return typeof(ConcurrentQueue<TElement>); // ConcurrentQueueOfTConverter
-            yield return typeof(GenericICollectionWrapper<TElement>); // ICollectionOfTConverter
-            yield return typeof(WrapperForIEnumerable); // IEnumerableConverter
-            yield return typeof(WrapperForIReadOnlyCollectionOfT<TElement>); // IEnumerableOfTConverter
-            yield return typeof(Queue); // IEnumerableWithAddMethodConverter
-            yield return typeof(WrapperForIList); // IListConverter
-            yield return typeof(Collection<TElement>); // IListOfTConverter
-            yield return typeof(ImmutableList<TElement>); // ImmutableEnumerableOfTConverter
-            yield return typeof(HashSet<TElement>); // ISetOfTConverter
-            yield return typeof(List<TElement>); // ListOfTConverter
-            yield return typeof(Queue<TElement>); // QueueOfTConverter
+            yield return typeof(TElement[]).WithConstructors(); // ArrayConverter
+            yield return typeof(ConcurrentQueue<TElement>).WithConstructors(); // ConcurrentQueueOfTConverter
+            yield return typeof(GenericICollectionWrapper<TElement>).WithConstructors(); // ICollectionOfTConverter
+            yield return typeof(WrapperForIEnumerable).WithConstructors(); // IEnumerableConverter
+            yield return typeof(WrapperForIReadOnlyCollectionOfT<TElement>).WithConstructors(); // IEnumerableOfTConverter
+            yield return typeof(Queue).WithConstructors(); // IEnumerableWithAddMethodConverter
+            yield return typeof(WrapperForIList).WithConstructors(); // IListConverter
+            yield return typeof(Collection<TElement>).WithConstructors(); // IListOfTConverter
+            yield return typeof(ImmutableList<TElement>).WithConstructors(); // ImmutableEnumerableOfTConverter
+            yield return typeof(HashSet<TElement>).WithConstructors(); // ISetOfTConverter
+            yield return typeof(List<TElement>).WithConstructors(); // ListOfTConverter
+            yield return typeof(Queue<TElement>).WithConstructors(); // QueueOfTConverter
         }
 
         public static IEnumerable<Type> DeserializableGenericEnumerableTypes<TElement>()
         {
-            yield return typeof(TElement[]); // ArrayConverter
-            yield return typeof(ConcurrentQueue<TElement>); // ConcurrentQueueOfTConverter
-            yield return typeof(GenericICollectionWrapper<TElement>); // ICollectionOfTConverter
-            yield return typeof(IEnumerable<TElement>); // IEnumerableConverter
-            yield return typeof(Collection<TElement>); // IListOfTConverter
-            yield return typeof(ImmutableList<TElement>); // ImmutableEnumerableOfTConverter
-            yield return typeof(HashSet<TElement>); // ISetOfTConverter
-            yield return typeof(List<TElement>); // ListOfTConverter
-            yield return typeof(Queue<TElement>); // QueueOfTConverter
+            yield return typeof(TElement[]).WithConstructors(); // ArrayConverter
+            yield return typeof(ConcurrentQueue<TElement>).WithConstructors(); // ConcurrentQueueOfTConverter
+            yield return typeof(GenericICollectionWrapper<TElement>).WithConstructors(); // ICollectionOfTConverter
+            yield return typeof(IEnumerable<TElement>).WithConstructors(); // IEnumerableConverter
+            yield return typeof(Collection<TElement>).WithConstructors(); // IListOfTConverter
+            yield return typeof(ImmutableList<TElement>).WithConstructors(); // ImmutableEnumerableOfTConverter
+            yield return typeof(HashSet<TElement>).WithConstructors(); // ISetOfTConverter
+            yield return typeof(List<TElement>).WithConstructors(); // ListOfTConverter
+            yield return typeof(Queue<TElement>).WithConstructors(); // QueueOfTConverter
         }
 
         public static IEnumerable<Type> DeserializableNonGenericEnumerableTypes()
         {
-            yield return typeof(Queue); // IEnumerableWithAddMethodConverter
-            yield return typeof(WrapperForIList); // IListConverter
+            yield return typeof(Queue).WithConstructors(); // IEnumerableWithAddMethodConverter
+            yield return typeof(WrapperForIList).WithConstructors(); // IListConverter
         }
 
         public static IEnumerable<Type> DictionaryTypes<TElement>()
         {
-            yield return typeof(Dictionary<string, TElement>); // DictionaryOfStringTValueConverter
-            yield return typeof(Hashtable); // IDictionaryConverter
-            yield return typeof(ConcurrentDictionary<string, TElement>); // IDictionaryOfStringTValueConverter
-            yield return typeof(GenericIDictionaryWrapper<string, TElement>); // IDictionaryOfStringTValueConverter
-            yield return typeof(ImmutableDictionary<string, TElement>); // ImmutableDictionaryOfStringTValueConverter
-            yield return typeof(GenericIReadOnlyDictionaryWrapper<string, TElement>); // IReadOnlyDictionaryOfStringTValueConverter
+            yield return typeof(Dictionary<string, TElement>).WithConstructors(); // DictionaryOfStringTValueConverter
+            yield return typeof(Hashtable).WithConstructors(); // IDictionaryConverter
+            yield return typeof(ConcurrentDictionary<string, TElement>).WithConstructors(); // IDictionaryOfStringTValueConverter
+            yield return typeof(GenericIDictionaryWrapper<string, TElement>).WithConstructors(); // IDictionaryOfStringTValueConverter
+            yield return typeof(ImmutableDictionary<string, TElement>).WithConstructors(); // ImmutableDictionaryOfStringTValueConverter
+            yield return typeof(GenericIReadOnlyDictionaryWrapper<string, TElement>).WithConstructors(); // IReadOnlyDictionaryOfStringTValueConverter
         }
 
         public static IEnumerable<Type> DeserializableDictionaryTypes<TKey, TValue>()
         {
-            yield return typeof(Dictionary<TKey, TValue>); // DictionaryOfStringTValueConverter
-            yield return typeof(Hashtable); // IDictionaryConverter
-            yield return typeof(IDictionary); // IDictionaryConverter
-            yield return typeof(ConcurrentDictionary<TKey, TValue>); // IDictionaryOfStringTValueConverter
-            yield return typeof(IDictionary<TKey, TValue>); // IDictionaryOfStringTValueConverter
-            yield return typeof(GenericIDictionaryWrapper<TKey, TValue>); // IDictionaryOfStringTValueConverter
-            yield return typeof(ImmutableDictionary<TKey, TValue>); // ImmutableDictionaryOfStringTValueConverter
-            yield return typeof(IReadOnlyDictionary<TKey, TValue>); // IReadOnlyDictionaryOfStringTValueConverter
+            yield return typeof(Dictionary<TKey, TValue>).WithConstructors(); // DictionaryOfStringTValueConverter
+            yield return typeof(Hashtable).WithConstructors(); // IDictionaryConverter
+            yield return typeof(IDictionary).WithConstructors(); // IDictionaryConverter
+            yield return typeof(ConcurrentDictionary<TKey, TValue>).WithConstructors(); // IDictionaryOfStringTValueConverter
+            yield return typeof(IDictionary<TKey, TValue>).WithConstructors(); // IDictionaryOfStringTValueConverter
+            yield return typeof(GenericIDictionaryWrapper<TKey, TValue>).WithConstructors(); // IDictionaryOfStringTValueConverter
+            yield return typeof(ImmutableDictionary<TKey, TValue>).WithConstructors(); // ImmutableDictionaryOfStringTValueConverter
+            yield return typeof(IReadOnlyDictionary<TKey, TValue>).WithConstructors(); // IReadOnlyDictionaryOfStringTValueConverter
         }
 
         public static IEnumerable<Type> DeserializableNonGenericDictionaryTypes()
         {
-            yield return typeof(Hashtable); // IDictionaryConverter
-            yield return typeof(SortedList); // IDictionaryConverter
+            yield return typeof(Hashtable).WithConstructors(); // IDictionaryConverter
+            yield return typeof(SortedList).WithConstructors(); // IDictionaryConverter
         }
     }
 
@@ -1982,5 +2015,304 @@ namespace System.Text.Json.Serialization.Tests
         {
             return null;
         }
+    }
+
+    public class PersonReference
+    {
+        internal Guid Id { get; set; }
+        public string Name { get; set; }
+        public PersonReference Spouse { get; set; }
+    }
+
+    public class JsonElementClass : ITestClass
+    {
+        public JsonElement Number { get; set; }
+        public JsonElement True { get; set; }
+        public JsonElement False { get; set; }
+        public JsonElement String { get; set; }
+        public JsonElement Array { get; set; }
+        public JsonElement Object { get; set; }
+        public JsonElement Null { get; set; }
+
+        public static readonly string s_json =
+            @"{" +
+                @"""Number"" : 1," +
+                @"""True"" : true," +
+                @"""False"" : false," +
+                @"""String"" : ""Hello""," +
+                @"""Array"" : [2, false, true, ""Goodbye""]," +
+                @"""Object"" : {}," +
+                @"""Null"" : null" +
+            @"}";
+
+        public static readonly byte[] s_data = Encoding.UTF8.GetBytes(s_json);
+
+        public void Initialize()
+        {
+            Number = JsonDocument.Parse(@"1").RootElement.Clone();
+            True = JsonDocument.Parse(@"true").RootElement.Clone();
+            False = JsonDocument.Parse(@"false").RootElement.Clone();
+            String = JsonDocument.Parse(@"""Hello""").RootElement.Clone();
+            Array = JsonDocument.Parse(@"[2, false, true, ""Goodbye""]").RootElement.Clone();
+            Object = JsonDocument.Parse(@"{}").RootElement.Clone();
+            Null = JsonDocument.Parse(@"null").RootElement.Clone();
+        }
+
+        public void Verify()
+        {
+            Assert.Equal(JsonValueKind.Number, Number.ValueKind);
+            Assert.Equal("1", Number.ToString());
+            Assert.Equal(JsonValueKind.True, True.ValueKind);
+            Assert.Equal("True", True.ToString());
+            Assert.Equal(JsonValueKind.False, False.ValueKind);
+            Assert.Equal("False", False.ToString());
+            Assert.Equal(JsonValueKind.String, String.ValueKind);
+            Assert.Equal("Hello", String.ToString());
+            Assert.Equal(JsonValueKind.Array, Array.ValueKind);
+            JsonElement[] elements = Array.EnumerateArray().ToArray();
+            Assert.Equal(JsonValueKind.Number, elements[0].ValueKind);
+            Assert.Equal("2", elements[0].ToString());
+            Assert.Equal(JsonValueKind.False, elements[1].ValueKind);
+            Assert.Equal("False", elements[1].ToString());
+            Assert.Equal(JsonValueKind.True, elements[2].ValueKind);
+            Assert.Equal("True", elements[2].ToString());
+            Assert.Equal(JsonValueKind.String, elements[3].ValueKind);
+            Assert.Equal("Goodbye", elements[3].ToString());
+            Assert.Equal(JsonValueKind.Object, Object.ValueKind);
+            Assert.Equal("{}", Object.ToString());
+            Assert.Equal(JsonValueKind.Null, Null.ValueKind);
+            Assert.Equal("", Null.ToString()); // JsonElement returns empty string for null.
+        }
+    }
+
+    public class JsonElementArrayClass : ITestClass
+    {
+        public JsonElement[] Array { get; set; }
+
+        public static readonly string s_json =
+            @"{" +
+                @"""Array"" : [" +
+                    @"1, " +
+                    @"true, " +
+                    @"false, " +
+                    @"""Hello""," +
+                    @"[2, false, true, ""Goodbye""]," +
+                    @"{}" +
+                @"]" +
+            @"}";
+
+        public static readonly byte[] s_data = Encoding.UTF8.GetBytes(s_json);
+
+        public void Initialize()
+        {
+            Array = new JsonElement[]
+            {
+                JsonDocument.Parse(@"1").RootElement.Clone(),
+                JsonDocument.Parse(@"true").RootElement.Clone(),
+                JsonDocument.Parse(@"false").RootElement.Clone(),
+                JsonDocument.Parse(@"""Hello""").RootElement.Clone()
+            };
+        }
+
+        public void Verify()
+        {
+            Assert.Equal(JsonValueKind.Number, Array[0].ValueKind);
+            Assert.Equal("1", Array[0].ToString());
+            Assert.Equal(JsonValueKind.True, Array[1].ValueKind);
+            Assert.Equal("True", Array[1].ToString());
+            Assert.Equal(JsonValueKind.False, Array[2].ValueKind);
+            Assert.Equal("False", Array[2].ToString());
+            Assert.Equal(JsonValueKind.String, Array[3].ValueKind);
+            Assert.Equal("Hello", Array[3].ToString());
+        }
+    }
+
+    public class ClassWithComplexObjects : ITestClass
+    {
+        public object Array { get; set; }
+        public object Object { get; set; }
+
+        public static readonly string s_array =
+            @"[" +
+                @"1," +
+                @"""Hello""," +
+                @"true," +
+                @"false," +
+                @"{}," +
+                @"[2, ""Goodbye"", false, true, {}, [3]]" +
+            @"]";
+
+        public static readonly string s_object =
+            @"{" +
+                @"""NestedArray"" : " +
+                s_array +
+            @"}";
+
+        public static readonly string s_json =
+            @"{" +
+                @"""Array"" : " +
+                s_array + "," +
+                @"""Object"" : " +
+                s_object +
+            @"}";
+
+        public static readonly byte[] s_data = Encoding.UTF8.GetBytes(s_json);
+
+        public void Initialize()
+        {
+            Array = JsonDocument.Parse(s_array).RootElement.Clone();
+            Object = JsonDocument.Parse(s_object).RootElement.Clone();
+        }
+
+        public void Verify()
+        {
+            Assert.IsType<JsonElement>(Array);
+            ValidateArray((JsonElement)Array);
+            Assert.IsType<JsonElement>(Object);
+            JsonElement jsonObject = (JsonElement)Object;
+            Assert.Equal(JsonValueKind.Object, jsonObject.ValueKind);
+            JsonElement.ObjectEnumerator enumerator = jsonObject.EnumerateObject();
+            JsonProperty property = enumerator.First();
+            Assert.Equal("NestedArray", property.Name);
+            Assert.True(property.NameEquals("NestedArray"));
+            ValidateArray(property.Value);
+
+            void ValidateArray(JsonElement element)
+            {
+                Assert.Equal(JsonValueKind.Array, element.ValueKind);
+                JsonElement[] elements = element.EnumerateArray().ToArray();
+
+                Assert.Equal(JsonValueKind.Number, elements[0].ValueKind);
+                Assert.Equal("1", elements[0].ToString());
+                Assert.Equal(JsonValueKind.String, elements[1].ValueKind);
+                Assert.Equal("Hello", elements[1].ToString());
+                Assert.Equal(JsonValueKind.True, elements[2].ValueKind);
+                Assert.True(elements[2].GetBoolean());
+                Assert.Equal(JsonValueKind.False, elements[3].ValueKind);
+                Assert.False(elements[3].GetBoolean());
+            }
+        }
+    }
+
+    public class JsonDocumentClass : ITestClass, IDisposable
+    {
+        public JsonDocument Document { get; set; }
+
+        public static readonly string s_json =
+            @"{" +
+                @"""Number"" : 1," +
+                @"""True"" : true," +
+                @"""False"" : false," +
+                @"""String"" : ""Hello""," +
+                @"""Array"" : [2, false, true, ""Goodbye""]," +
+                @"""Object"" : {}," +
+                @"""Null"" : null" +
+            @"}";
+
+        public readonly byte[] s_data = Encoding.UTF8.GetBytes(s_json);
+
+        public void Initialize()
+        {
+            Document = JsonDocument.Parse(s_json);
+        }
+
+        public void Verify()
+        {
+            JsonElement number = Document.RootElement.GetProperty("Number");
+            JsonElement trueBool = Document.RootElement.GetProperty("True");
+            JsonElement falseBool = Document.RootElement.GetProperty("False");
+            JsonElement stringType = Document.RootElement.GetProperty("String");
+            JsonElement arrayType = Document.RootElement.GetProperty("Array");
+            JsonElement objectType = Document.RootElement.GetProperty("Object");
+            JsonElement nullType = Document.RootElement.GetProperty("Null");
+
+            Assert.Equal(JsonValueKind.Number, number.ValueKind);
+            Assert.Equal("1", number.ToString());
+            Assert.Equal(JsonValueKind.True, trueBool.ValueKind);
+            Assert.Equal("True", true.ToString());
+            Assert.Equal(JsonValueKind.False, falseBool.ValueKind);
+            Assert.Equal("False", false.ToString());
+            Assert.Equal(JsonValueKind.String, stringType.ValueKind);
+            Assert.Equal("Hello", stringType.ToString());
+            Assert.Equal(JsonValueKind.Array, arrayType.ValueKind);
+            JsonElement[] elements = arrayType.EnumerateArray().ToArray();
+            Assert.Equal(JsonValueKind.Number, elements[0].ValueKind);
+            Assert.Equal("2", elements[0].ToString());
+            Assert.Equal(JsonValueKind.False, elements[1].ValueKind);
+            Assert.Equal("False", elements[1].ToString());
+            Assert.Equal(JsonValueKind.True, elements[2].ValueKind);
+            Assert.Equal("True", elements[2].ToString());
+            Assert.Equal(JsonValueKind.String, elements[3].ValueKind);
+            Assert.Equal("Goodbye", elements[3].ToString());
+            Assert.Equal(JsonValueKind.Object, objectType.ValueKind);
+            Assert.Equal("{}", objectType.ToString());
+            Assert.Equal(JsonValueKind.Null, nullType.ValueKind);
+            Assert.Equal("", nullType.ToString()); // JsonElement returns empty string for null.
+        }
+
+        public void Dispose()
+        {
+            Document.Dispose();
+        }
+    }
+
+    public class JsonDocumentArrayClass : ITestClass, IDisposable
+    {
+        public JsonDocument Document { get; set; }
+
+        public static readonly string s_json =
+            @"{" +
+                @"""Array"" : [" +
+                    @"1, " +
+                    @"true, " +
+                    @"false, " +
+                    @"""Hello""," +
+                    @"[2, false, true, ""Goodbye""]," +
+                    @"{}" +
+                @"]" +
+            @"}";
+
+        public static readonly byte[] s_data = Encoding.UTF8.GetBytes(s_json);
+
+        public void Initialize()
+        {
+            Document = JsonDocument.Parse(s_json);
+        }
+
+        public void Verify()
+        {
+            JsonElement[] array = Document.RootElement.GetProperty("Array").EnumerateArray().ToArray();
+
+            Assert.Equal(JsonValueKind.Number, array[0].ValueKind);
+            Assert.Equal("1", array[0].ToString());
+            Assert.Equal(JsonValueKind.True, array[1].ValueKind);
+            Assert.Equal("True", array[1].ToString());
+            Assert.Equal(JsonValueKind.False, array[2].ValueKind);
+            Assert.Equal("False", array[2].ToString());
+            Assert.Equal(JsonValueKind.String, array[3].ValueKind);
+            Assert.Equal("Hello", array[3].ToString());
+        }
+
+        public void Dispose()
+        {
+            Document.Dispose();
+        }
+    }
+
+    public class ClassWithRecursiveCollectionTypes
+    {
+        public ClassWithRecursiveCollectionTypes? Nested { get; set; }
+        public List<ClassWithRecursiveCollectionTypes> List { get; set; }
+        public IReadOnlyDictionary<string, ClassWithRecursiveCollectionTypes>? Dictionary { get; set; }
+    }
+
+    internal class MemoryOfTClass<T>
+    {
+        public Memory<T> Memory { get; set; }
+    }
+
+    internal class ReadOnlyMemoryOfTClass<T>
+    {
+        public ReadOnlyMemory<T> ReadOnlyMemory { get; set; }
     }
 }

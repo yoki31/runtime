@@ -32,7 +32,7 @@
 #include <sys/stat.h>
 
 #ifdef G_OS_WIN32
-#include <direct.h> 
+#include <direct.h>
 #endif
 
 #ifdef HAVE_UNISTD_H
@@ -47,50 +47,50 @@ g_build_path (const gchar *separator, const gchar *first_element, ...)
 	GString *path;
 	va_list args;
 	size_t slen;
-	
+
 	g_return_val_if_fail (separator != NULL, NULL);
-	
+
 	path = g_string_sized_new (48);
 	slen = strlen (separator);
-	
+
 	va_start (args, first_element);
 	for (elem = first_element; elem != NULL; elem = next) {
 		/* trim any trailing separators from @elem */
 		endptr = elem + strlen (elem);
 		trimmed = FALSE;
-		
+
 		while (endptr >= elem + slen) {
 			if (strncmp (endptr - slen, separator, slen) != 0)
 				break;
-			
+
 			endptr -= slen;
 			trimmed = TRUE;
 		}
-		
+
 		/* append elem, not including any trailing separators */
 		if (endptr > elem)
 			g_string_append_len (path, elem, endptr - elem);
-		
+
 		/* get the next element */
 		do {
 			if (!(next = va_arg (args, char *)))
 				break;
-			
+
 			/* remove leading separators */
 			while (!strncmp (next, separator, slen))
 				next += slen;
 		} while (*next == '\0');
-		
+
 		if (next || trimmed)
 			g_string_append_len (path, separator, slen);
 	}
 	va_end (args);
-	
+
 	return g_string_free (path, FALSE);
 }
 
 static gchar*
-strrchr_seperator (const gchar* filename)
+strrchr_separator (const gchar* filename)
 {
 #ifdef G_OS_WIN32
 	char *p2;
@@ -114,7 +114,7 @@ g_path_get_dirname (const gchar *filename)
 	size_t count;
 	g_return_val_if_fail (filename != NULL, NULL);
 
-	p = strrchr_seperator (filename);
+	p = strrchr_separator (filename);
 	if (p == NULL)
 		return g_strdup (".");
 	if (p == filename)
@@ -138,7 +138,7 @@ g_path_get_basename (const char *filename)
 		return g_strdup (".");
 
 	/* No separator -> filename */
-	r = strrchr_seperator (filename);
+	r = strrchr_separator (filename);
 	if (r == NULL)
 		return g_strdup (filename);
 
@@ -146,10 +146,10 @@ g_path_get_basename (const char *filename)
 	if (r [1] == 0){
 		char *copy = g_strdup (filename);
 		copy [r-filename] = 0;
-		r = strrchr_seperator (copy);
+		r = strrchr_separator (copy);
 
 		if (r == NULL){
-			g_free (copy);			
+			g_free (copy);
 			return g_strdup ("/");
 		}
 		r = g_strdup (&r[1]);
@@ -160,8 +160,7 @@ g_path_get_basename (const char *filename)
 	return g_strdup (&r[1]);
 }
 
-//wasm does have strtok_r even though autoconf fails to find
-#if !defined (HAVE_STRTOK_R) && !defined (HOST_WASM)
+#if !defined (HAVE_STRTOK_R)
 // This is from BSD's strtok_r
 
 char *
@@ -170,10 +169,10 @@ strtok_r(char *s, const char *delim, char **last)
 	char *spanp;
 	int c, sc;
 	char *tok;
-	
+
 	if (s == NULL && (s = *last) == NULL)
 		return NULL;
-	
+
 	/*
 	 * Skip (span) leading delimiters (s += strspn(s, delim), sort of).
 	 */
@@ -194,7 +193,7 @@ cont:
 	 * Scan token (scan for delimiters: s += strcspn(s, delim), sort of).
 	 * Note that delim must have one NUL; we stop if we see that, too.
 	 */
-	for (;;){
+	while (true) {
 		c = *s++;
 		spanp = (char *)delim;
 		do {
@@ -215,92 +214,6 @@ cont:
 }
 #endif
 
-gchar *
-g_find_program_in_path (const gchar *program)
-{
-	char *p;
-	char *x, *l;
-	gchar *curdir = NULL;
-	char *save = NULL;
-#ifdef G_OS_WIN32
-	char *program_exe;
-	static char const * const suffix_list[5] = {".exe",".cmd",".bat",".com",NULL};
-	int listx;
-	gboolean hasSuffix;
-#endif
-
-	g_return_val_if_fail (program != NULL, NULL);
-	x = p = g_getenv ("PATH");
-
-	if (x == NULL || *x == '\0') {
-		curdir = g_get_current_dir ();
-		x = curdir;
-	}
-
-#ifdef G_OS_WIN32
-	/* see if program already has a suffix */
-	listx = 0;
-	hasSuffix = FALSE;
-	while (!hasSuffix && suffix_list[listx]) {
-		hasSuffix = g_str_has_suffix(program,suffix_list[listx++]);
-	}
-#endif
-
-	while ((l = strtok_r (x, G_SEARCHPATH_SEPARATOR_S, &save)) != NULL){
-		char *probe_path; 
-		
-		x = NULL;
-		probe_path = g_build_path (G_DIR_SEPARATOR_S, l, program, NULL);
-#ifdef HAVE_ACCESS
-		if (g_access (probe_path, X_OK) == 0){ /* FIXME: on windows this is just a read permissions test */
-			g_free (curdir);
-			g_free (p);
-			return probe_path;
-		}
-#endif
-		g_free (probe_path);
-
-#ifdef G_OS_WIN32
-		/* check for program with a suffix attached */
-		if (!hasSuffix) {
-			listx = 0;
-			while (suffix_list[listx]) {
-				program_exe = g_strjoin (NULL, program, suffix_list [listx], (const char*)NULL);
-				probe_path = g_build_path (G_DIR_SEPARATOR_S, l, program_exe, (const char*)NULL);
-#ifdef HAVE_ACCESS
-				if (g_access (probe_path, X_OK) == 0){ /* FIXME: on windows this is just a read permissions test */
-					g_free (curdir);
-					g_free (p);
-					g_free (program_exe);
-					return probe_path;
-				}
-#endif
-				listx++;
-				g_free (probe_path);
-				g_free (program_exe);
-			}
-		}
-#endif
-	}
-	g_free (curdir);
-	g_free (p);
-	return NULL;
-}
-
-static char *name;
-
-void
-g_set_prgname (const gchar *prgname)
-{
-	name = g_strdup (prgname);
-}
-
-gchar *
-g_get_prgname (void)
-{
-	return name;
-}
-
 gboolean
 g_ensure_directory_exists (const gchar *filename)
 {
@@ -309,11 +222,11 @@ g_ensure_directory_exists (const gchar *filename)
 	gunichar2 *p;
 	gunichar2 *dir_utf16 = NULL;
 	int retval;
-	
+
 	if (!dir_utf8 || !dir_utf8 [0])
 		return FALSE;
 
-	dir_utf16 = g_utf8_to_utf16 (dir_utf8, strlen (dir_utf8), NULL, NULL, NULL);
+	dir_utf16 = g_utf8_to_utf16 (dir_utf8, (glong)strlen (dir_utf8), NULL, NULL, NULL);
 	g_free (dir_utf8);
 
 	if (!dir_utf16)
@@ -321,7 +234,7 @@ g_ensure_directory_exists (const gchar *filename)
 
 	p = dir_utf16;
 
-	/* make life easy and only use one directory seperator */
+	/* make life easy and only use one directory separator */
 	while (*p != '\0')
 	{
 		if (*p == '/')
@@ -332,7 +245,7 @@ g_ensure_directory_exists (const gchar *filename)
 	p = dir_utf16;
 
 	/* get past C:\ )*/
-	while (*p++ != '\\')	
+	while (*p++ != '\\')
 	{
 	}
 
@@ -349,7 +262,7 @@ g_ensure_directory_exists (const gchar *filename)
 			break;
 		*p++ = '\\';
 	}
-	
+
 	g_free (dir_utf16);
 	return TRUE;
 #else
@@ -357,17 +270,17 @@ g_ensure_directory_exists (const gchar *filename)
 	gchar *dir = g_path_get_dirname (filename);
 	int retval;
 	struct stat sbuf;
-	
+
 	if (!dir || !dir [0]) {
 		g_free (dir);
 		return FALSE;
 	}
-	
+
 	if (stat (dir, &sbuf) == 0 && S_ISDIR (sbuf.st_mode)) {
 		g_free (dir);
 		return TRUE;
 	}
-	
+
 	p = dir;
 	while (*p == '/')
 		p++;
@@ -385,7 +298,7 @@ g_ensure_directory_exists (const gchar *filename)
 			break;
 		*p++ = '/';
 	}
-	
+
 	g_free (dir);
 	return TRUE;
 #endif

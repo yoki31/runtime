@@ -6,15 +6,14 @@
 
 namespace System.Net
 {
+    [System.ObsoleteAttribute("AuthenticationManager is not supported. Methods will no-op or throw PlatformNotSupportedException.", DiagnosticId="SYSLIB0009", UrlFormat="https://aka.ms/dotnet-warnings/{0}")]
     public partial class AuthenticationManager
     {
         internal AuthenticationManager() { }
         public static System.Net.ICredentialPolicy? CredentialPolicy { get { throw null; } set { } }
         public static System.Collections.Specialized.StringDictionary CustomTargetNameDictionary { get { throw null; } }
         public static System.Collections.IEnumerator RegisteredModules { get { throw null; } }
-        [System.ObsoleteAttribute("The AuthenticationManager Authenticate and PreAuthenticate methods are not supported and throw PlatformNotSupportedException.", DiagnosticId = "SYSLIB0009", UrlFormat = "https://aka.ms/dotnet-warnings/{0}")]
         public static System.Net.Authorization? Authenticate(string challenge, System.Net.WebRequest request, System.Net.ICredentials credentials) { throw null; }
-        [System.ObsoleteAttribute("The AuthenticationManager Authenticate and PreAuthenticate methods are not supported and throw PlatformNotSupportedException.", DiagnosticId = "SYSLIB0009", UrlFormat = "https://aka.ms/dotnet-warnings/{0}")]
         public static System.Net.Authorization? PreAuthenticate(System.Net.WebRequest request, System.Net.ICredentials credentials) { throw null; }
         public static void Register(System.Net.IAuthenticationModule authenticationModule) { }
         public static void Unregister(System.Net.IAuthenticationModule authenticationModule) { }
@@ -34,6 +33,7 @@ namespace System.Net
     public partial class FileWebRequest : System.Net.WebRequest, System.Runtime.Serialization.ISerializable
     {
         [System.ObsoleteAttribute("Serialization has been deprecated for FileWebRequest.")]
+        [System.ComponentModel.EditorBrowsableAttribute(System.ComponentModel.EditorBrowsableState.Never)]
         protected FileWebRequest(System.Runtime.Serialization.SerializationInfo serializationInfo, System.Runtime.Serialization.StreamingContext streamingContext) { }
         public override string? ConnectionGroupName { get { throw null; } set { } }
         public override long ContentLength { get { throw null; } set { } }
@@ -51,16 +51,19 @@ namespace System.Net
         public override System.IAsyncResult BeginGetResponse(System.AsyncCallback? callback, object? state) { throw null; }
         public override System.IO.Stream EndGetRequestStream(System.IAsyncResult asyncResult) { throw null; }
         public override System.Net.WebResponse EndGetResponse(System.IAsyncResult asyncResult) { throw null; }
+        [System.ObsoleteAttribute("Serialization has been deprecated for FileWebRequest.")]
         protected override void GetObjectData(System.Runtime.Serialization.SerializationInfo serializationInfo, System.Runtime.Serialization.StreamingContext streamingContext) { }
         public override System.IO.Stream GetRequestStream() { throw null; }
         public override System.Threading.Tasks.Task<System.IO.Stream> GetRequestStreamAsync() { throw null; }
         public override System.Net.WebResponse GetResponse() { throw null; }
         public override System.Threading.Tasks.Task<System.Net.WebResponse> GetResponseAsync() { throw null; }
+        [System.ObsoleteAttribute("Serialization has been deprecated for FileWebRequest.")]
         void System.Runtime.Serialization.ISerializable.GetObjectData(System.Runtime.Serialization.SerializationInfo serializationInfo, System.Runtime.Serialization.StreamingContext streamingContext) { }
     }
     public partial class FileWebResponse : System.Net.WebResponse, System.Runtime.Serialization.ISerializable
     {
         [System.ObsoleteAttribute("Serialization has been deprecated for FileWebResponse.")]
+        [System.ComponentModel.EditorBrowsableAttribute(System.ComponentModel.EditorBrowsableState.Never)]
         protected FileWebResponse(System.Runtime.Serialization.SerializationInfo serializationInfo, System.Runtime.Serialization.StreamingContext streamingContext) { }
         public override long ContentLength { get { throw null; } }
         public override string ContentType { get { throw null; } }
@@ -68,8 +71,10 @@ namespace System.Net
         public override System.Uri ResponseUri { get { throw null; } }
         public override bool SupportsHeaders { get { throw null; } }
         public override void Close() { }
+        [System.ObsoleteAttribute("Serialization has been deprecated for FileWebResponse.")]
         protected override void GetObjectData(System.Runtime.Serialization.SerializationInfo serializationInfo, System.Runtime.Serialization.StreamingContext streamingContext) { }
         public override System.IO.Stream GetResponseStream() { throw null; }
+        [System.ObsoleteAttribute("Serialization has been deprecated for FileWebResponse.")]
         void System.Runtime.Serialization.ISerializable.GetObjectData(System.Runtime.Serialization.SerializationInfo serializationInfo, System.Runtime.Serialization.StreamingContext streamingContext) { }
     }
     public enum FtpStatusCode
@@ -173,7 +178,8 @@ namespace System.Net
     public delegate void HttpContinueDelegate(int StatusCode, System.Net.WebHeaderCollection httpHeaders);
     public partial class HttpWebRequest : System.Net.WebRequest, System.Runtime.Serialization.ISerializable
     {
-        [System.ObsoleteAttribute("WebRequest, HttpWebRequest, ServicePoint, and WebClient are obsolete. Use HttpClient instead", DiagnosticId = "SYSLIB0014", UrlFormat = "https://aka.ms/dotnet-warnings/{0}")]
+        [System.ObsoleteAttribute("WebRequest, HttpWebRequest, ServicePoint, and WebClient are obsolete. Use HttpClient instead.", DiagnosticId = "SYSLIB0014", UrlFormat = "https://aka.ms/dotnet-warnings/{0}")]
+        [System.ComponentModel.EditorBrowsableAttribute(System.ComponentModel.EditorBrowsableState.Never)]
         protected HttpWebRequest(System.Runtime.Serialization.SerializationInfo serializationInfo, System.Runtime.Serialization.StreamingContext streamingContext) { }
         public string? Accept { get { throw null; } set { } }
         public System.Uri Address { get { throw null; } }
@@ -248,6 +254,7 @@ namespace System.Net
         [System.ComponentModel.EditorBrowsableAttribute(System.ComponentModel.EditorBrowsableState.Never)]
         public HttpWebResponse() { }
         [System.ObsoleteAttribute("Serialization has been deprecated for HttpWebResponse.")]
+        [System.ComponentModel.EditorBrowsableAttribute(System.ComponentModel.EditorBrowsableState.Never)]
         protected HttpWebResponse(System.Runtime.Serialization.SerializationInfo serializationInfo, System.Runtime.Serialization.StreamingContext streamingContext) { }
         public string? CharacterSet { get { throw null; } }
         public string ContentEncoding { get { throw null; } }
@@ -291,14 +298,20 @@ namespace System.Net
     public partial class ProtocolViolationException : System.InvalidOperationException, System.Runtime.Serialization.ISerializable
     {
         public ProtocolViolationException() { }
+        [System.ObsoleteAttribute("This API supports obsolete formatter-based serialization. It should not be called or extended by application code.", DiagnosticId = "SYSLIB0051", UrlFormat = "https://aka.ms/dotnet-warnings/{0}")]
+        [System.ComponentModel.EditorBrowsableAttribute(System.ComponentModel.EditorBrowsableState.Never)]
         protected ProtocolViolationException(System.Runtime.Serialization.SerializationInfo serializationInfo, System.Runtime.Serialization.StreamingContext streamingContext) { }
         public ProtocolViolationException(string? message) { }
+        [System.ObsoleteAttribute("This API supports obsolete formatter-based serialization. It should not be called or extended by application code.", DiagnosticId = "SYSLIB0051", UrlFormat = "https://aka.ms/dotnet-warnings/{0}")]
+        [System.ComponentModel.EditorBrowsableAttribute(System.ComponentModel.EditorBrowsableState.Never)]
         public override void GetObjectData(System.Runtime.Serialization.SerializationInfo serializationInfo, System.Runtime.Serialization.StreamingContext streamingContext) { }
         void System.Runtime.Serialization.ISerializable.GetObjectData(System.Runtime.Serialization.SerializationInfo serializationInfo, System.Runtime.Serialization.StreamingContext streamingContext) { }
     }
     public partial class WebException : System.InvalidOperationException, System.Runtime.Serialization.ISerializable
     {
         public WebException() { }
+        [System.ObsoleteAttribute("This API supports obsolete formatter-based serialization. It should not be called or extended by application code.", DiagnosticId = "SYSLIB0051", UrlFormat = "https://aka.ms/dotnet-warnings/{0}")]
+        [System.ComponentModel.EditorBrowsableAttribute(System.ComponentModel.EditorBrowsableState.Never)]
         protected WebException(System.Runtime.Serialization.SerializationInfo serializationInfo, System.Runtime.Serialization.StreamingContext streamingContext) { }
         public WebException(string? message) { }
         public WebException(string? message, System.Exception? innerException) { }
@@ -306,6 +319,8 @@ namespace System.Net
         public WebException(string? message, System.Net.WebExceptionStatus status) { }
         public System.Net.WebResponse? Response { get { throw null; } }
         public System.Net.WebExceptionStatus Status { get { throw null; } }
+        [System.ObsoleteAttribute("This API supports obsolete formatter-based serialization. It should not be called or extended by application code.", DiagnosticId = "SYSLIB0051", UrlFormat = "https://aka.ms/dotnet-warnings/{0}")]
+        [System.ComponentModel.EditorBrowsableAttribute(System.ComponentModel.EditorBrowsableState.Never)]
         public override void GetObjectData(System.Runtime.Serialization.SerializationInfo serializationInfo, System.Runtime.Serialization.StreamingContext streamingContext) { }
         void System.Runtime.Serialization.ISerializable.GetObjectData(System.Runtime.Serialization.SerializationInfo serializationInfo, System.Runtime.Serialization.StreamingContext streamingContext) { }
     }
@@ -338,6 +353,7 @@ namespace System.Net
         [System.ObsoleteAttribute("WebRequest, HttpWebRequest, ServicePoint, and WebClient are obsolete. Use HttpClient instead.", DiagnosticId = "SYSLIB0014", UrlFormat = "https://aka.ms/dotnet-warnings/{0}")]
         protected WebRequest() { }
         [System.ObsoleteAttribute("WebRequest, HttpWebRequest, ServicePoint, and WebClient are obsolete. Use HttpClient instead.", DiagnosticId = "SYSLIB0014", UrlFormat = "https://aka.ms/dotnet-warnings/{0}")]
+        [System.ComponentModel.EditorBrowsableAttribute(System.ComponentModel.EditorBrowsableState.Never)]
         protected WebRequest(System.Runtime.Serialization.SerializationInfo serializationInfo, System.Runtime.Serialization.StreamingContext streamingContext) { }
         public System.Net.Security.AuthenticationLevel AuthenticationLevel { get { throw null; } set { } }
         public virtual System.Net.Cache.RequestCachePolicy? CachePolicy { get { throw null; } set { } }
@@ -371,6 +387,7 @@ namespace System.Net
         public static System.Net.HttpWebRequest CreateHttp(System.Uri requestUri) { throw null; }
         public virtual System.IO.Stream EndGetRequestStream(System.IAsyncResult asyncResult) { throw null; }
         public virtual System.Net.WebResponse EndGetResponse(System.IAsyncResult asyncResult) { throw null; }
+        [System.ObsoleteAttribute("Serialization has been deprecated for WebRequest.")]
         protected virtual void GetObjectData(System.Runtime.Serialization.SerializationInfo serializationInfo, System.Runtime.Serialization.StreamingContext streamingContext) { }
         public virtual System.IO.Stream GetRequestStream() { throw null; }
         public virtual System.Threading.Tasks.Task<System.IO.Stream> GetRequestStreamAsync() { throw null; }
@@ -378,6 +395,7 @@ namespace System.Net
         public virtual System.Threading.Tasks.Task<System.Net.WebResponse> GetResponseAsync() { throw null; }
         public static System.Net.IWebProxy GetSystemWebProxy() { throw null; }
         public static bool RegisterPrefix(string prefix, System.Net.IWebRequestCreate creator) { throw null; }
+        [System.ObsoleteAttribute("Serialization has been deprecated for WebRequest.")]
         void System.Runtime.Serialization.ISerializable.GetObjectData(System.Runtime.Serialization.SerializationInfo serializationInfo, System.Runtime.Serialization.StreamingContext streamingContext) { }
     }
     public static partial class WebRequestMethods
@@ -416,6 +434,8 @@ namespace System.Net
     public abstract partial class WebResponse : System.MarshalByRefObject, System.IDisposable, System.Runtime.Serialization.ISerializable
     {
         protected WebResponse() { }
+        [System.ObsoleteAttribute("Serialization has been deprecated for WebResponse.")]
+        [System.ComponentModel.EditorBrowsableAttribute(System.ComponentModel.EditorBrowsableState.Never)]
         protected WebResponse(System.Runtime.Serialization.SerializationInfo serializationInfo, System.Runtime.Serialization.StreamingContext streamingContext) { }
         public virtual long ContentLength { get { throw null; } set { } }
         public virtual string ContentType { get { throw null; } set { } }
@@ -427,8 +447,10 @@ namespace System.Net
         public virtual void Close() { }
         public void Dispose() { }
         protected virtual void Dispose(bool disposing) { }
+        [System.ObsoleteAttribute("Serialization has been deprecated for WebResponse.")]
         protected virtual void GetObjectData(System.Runtime.Serialization.SerializationInfo serializationInfo, System.Runtime.Serialization.StreamingContext streamingContext) { }
         public virtual System.IO.Stream GetResponseStream() { throw null; }
+        [System.ObsoleteAttribute("Serialization has been deprecated for WebResponse.")]
         void System.Runtime.Serialization.ISerializable.GetObjectData(System.Runtime.Serialization.SerializationInfo serializationInfo, System.Runtime.Serialization.StreamingContext streamingContext) { }
     }
 }

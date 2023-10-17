@@ -173,7 +173,7 @@ namespace System.Xml
             _write = _write.ParentNode;
         }
 
-        internal override void WriteEndElement(string prefix, string localName, string ns)
+        internal override void WriteEndElement(string? prefix, string localName, string? ns)
         {
             WriteEndElement();
         }
@@ -335,8 +335,7 @@ namespace System.Xml
 
         public override void WriteSurrogateCharEntity(char lowCh, char highCh)
         {
-            ReadOnlySpan<char> entity = stackalloc char[] { highCh, lowCh };
-            WriteString(new string(entity));
+            WriteString(new string([highCh, lowCh]));
         }
 
         public override void WriteChars(char[] buffer, int index, int count)

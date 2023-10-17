@@ -96,8 +96,8 @@ namespace Microsoft.Extensions.FileSystemGlobbing
     /// </remarks>
     public class Matcher
     {
-        private readonly IList<IPattern> _includePatterns = new List<IPattern>();
-        private readonly IList<IPattern> _excludePatterns = new List<IPattern>();
+        private readonly List<IPattern> _includePatterns = new List<IPattern>();
+        private readonly List<IPattern> _excludePatterns = new List<IPattern>();
         private readonly PatternBuilder _builder;
         private readonly StringComparison _comparison;
 
@@ -162,10 +162,7 @@ namespace Microsoft.Extensions.FileSystemGlobbing
         /// <returns>Always returns instance of <see cref="PatternMatchingResult" />, even if no files were matched</returns>
         public virtual PatternMatchingResult Execute(DirectoryInfoBase directoryInfo)
         {
-            if (directoryInfo is null)
-            {
-                throw new ArgumentNullException(nameof(directoryInfo));
-            }
+            ThrowHelper.ThrowIfNull(directoryInfo);
 
             var context = new MatcherContext(_includePatterns, _excludePatterns, directoryInfo, _comparison);
             return context.Execute();

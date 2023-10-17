@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <OutputType>Exe</OutputType>
+    <!-- Needed for CMakeProjectReference, GC.WaitForPendingFinalizers -->
+    <RequiresProcessIsolation>true</RequiresProcessIsolation>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <ItemGroup>
@@ -8,6 +9,6 @@
     <Compile Include="../Common.cs" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="../MockReferenceTrackerRuntime/CMakeLists.txt" />
+    <CMakeProjectReference Include="../MockReferenceTrackerRuntime/CMakeLists.txt" />
   </ItemGroup>
 </Project>

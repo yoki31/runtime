@@ -4,7 +4,7 @@
  * Licensed under the MIT license. See LICENSE file in the project root for full license information.
  */
 #include "config.h"
-#include "loader.h"
+#include <mono/metadata/loader.h>
 #include "mono/metadata/abi-details.h"
 #include "mono/metadata/method-builder.h"
 #include "mono/metadata/method-builder-ilgen.h"
@@ -29,7 +29,7 @@ enum {
 #undef OPDEF
 
 static MonoMethodBuilder *
-new_base_ilgen (MonoClass *klass, MonoWrapperType type)
+new_base_ilgen (MonoClass *klass, MonoWrapperType type, gboolean dynamic)
 {
 	MonoMethodBuilder *mb;
 	MonoMethod *m;
@@ -38,7 +38,10 @@ new_base_ilgen (MonoClass *klass, MonoWrapperType type)
 
 	mb = g_new0 (MonoMethodBuilder, 1);
 
-	mb->method = m = (MonoMethod *)g_new0 (MonoMethodWrapper, 1);
+	if (dynamic)
+		mb->method = m = (MonoMethod *)g_new0 (MonoDynamicMethod, 1);
+	else
+		mb->method = m = (MonoMethod *)g_new0 (MonoMethodWrapper, 1);
 
 	m->klass = klass;
 	m->inline_info = 1;
@@ -47,6 +50,7 @@ new_base_ilgen (MonoClass *klass, MonoWrapperType type)
 	mb->code_size = 40;
 	mb->code = (unsigned char *)g_malloc (mb->code_size);
 	mb->init_locals = TRUE;
+	mb->dynamic = dynamic;
 
 	/* placeholder for the wrapper always at index 1 */
 	mono_mb_add_data (mb, NULL);
@@ -109,7 +113,7 @@ create_method_ilgen (MonoMethodBuilder *mb, MonoMethodSignature *signature, int 
 	image = m_class_get_image (mb->method->klass);
 
 	if (mb->dynamic) {
-		/* Allocated in reflection_methodbuilder_to_mono_method () */
+		/* Allocated in reflection_methodbuilder_to_mono_method ()/mb_new () */
 		method = mb->method;
 	} else {
 		method = (MonoMethod *)mb_alloc0 (mb, sizeof (MonoMethodWrapper));
@@ -131,8 +135,8 @@ create_method_ilgen (MonoMethodBuilder *mb, MonoMethodSignature *signature, int 
 		MonoType *type = (MonoType*)l->data;
 		if (mb->mem_manager) {
 			/* Allocated in mono_mb_add_local () */
-			int size = mono_sizeof_type (type);
-			header->locals [i] = mono_mem_manager_alloc0 (mb->mem_manager, size);
+			size_t size = mono_sizeof_type (type);
+			header->locals [i] = mono_mem_manager_alloc0 (mb->mem_manager, (guint)size);
 			memcpy (header->locals [i], type, size);
 			g_free (type);
 		} else {
@@ -151,10 +155,10 @@ create_method_ilgen (MonoMethodBuilder *mb, MonoMethodSignature *signature, int 
 	if (max_stack < 8)
 		max_stack = 8;
 
-	header->max_stack = max_stack;
+	header->max_stack = GINT_TO_UINT16 (max_stack);
 
 	header->code_size = mb->pos;
-	header->num_locals = mb->locals;
+	header->num_locals = GINT_TO_UINT16 (mb->locals);
 	header->init_locals = mb->init_locals;
 	header->volatile_args = mb->volatile_args;
 	header->volatile_locals = mb->volatile_locals;
@@ -322,7 +326,7 @@ mono_mb_emit_i8 (MonoMethodBuilder *mb, gint64 data)
 		mb->code = (unsigned char *)g_realloc (mb->code, mb->code_size);
 	}
 
-	mono_mb_patch_addr (mb, mb->pos, data);
+	mono_mb_patch_addr (mb, mb->pos, GINT64_TO_INT (data));
 	mono_mb_patch_addr (mb, mb->pos + 4, data >> 32);
 	mb->pos += 8;
 }
@@ -366,14 +370,14 @@ void
 mono_mb_emit_ldarg (MonoMethodBuilder *mb, guint argnum)
 {
 	if (argnum < 4) {
- 		mono_mb_emit_byte (mb, CEE_LDARG_0 + argnum);
+		mono_mb_emit_byte (mb, GUINT_TO_UINT8 (CEE_LDARG_0 + argnum));
 	} else if (argnum < 256) {
 		mono_mb_emit_byte (mb, CEE_LDARG_S);
-		mono_mb_emit_byte (mb, argnum);
+		mono_mb_emit_byte (mb, GUINT_TO_UINT8 (argnum));
 	} else {
 		mono_mb_emit_byte (mb, CEE_PREFIX1);
 		mono_mb_emit_byte (mb, CEE_LDARG);
-		mono_mb_emit_i2 (mb, argnum);
+		mono_mb_emit_i2 (mb, GUINT_TO_INT16 (argnum));
 	}
 }
 
@@ -385,11 +389,11 @@ mono_mb_emit_ldarg_addr (MonoMethodBuilder *mb, guint argnum)
 {
 	if (argnum < 256) {
 		mono_mb_emit_byte (mb, CEE_LDARGA_S);
-		mono_mb_emit_byte (mb, argnum);
+		mono_mb_emit_byte (mb, GUINT_TO_UINT8 (argnum));
 	} else {
 		mono_mb_emit_byte (mb, CEE_PREFIX1);
 		mono_mb_emit_byte (mb, CEE_LDARGA);
-		mono_mb_emit_i2 (mb, argnum);
+		mono_mb_emit_i2 (mb, GUINT_TO_INT16 (argnum));
 	}
 }
 
@@ -401,11 +405,11 @@ mono_mb_emit_ldloc_addr (MonoMethodBuilder *mb, guint locnum)
 {
 	if (locnum < 256) {
 		mono_mb_emit_byte (mb, CEE_LDLOCA_S);
-		mono_mb_emit_byte (mb, locnum);
+		mono_mb_emit_byte (mb, GUINT_TO_UINT8 (locnum));
 	} else {
 		mono_mb_emit_byte (mb, CEE_PREFIX1);
 		mono_mb_emit_byte (mb, CEE_LDLOCA);
-		mono_mb_emit_i2 (mb, locnum);
+		mono_mb_emit_i2 (mb, GUINT_TO_INT16 (locnum));
 	}
 }
 
@@ -416,14 +420,14 @@ void
 mono_mb_emit_ldloc (MonoMethodBuilder *mb, guint num)
 {
 	if (num < 4) {
- 		mono_mb_emit_byte (mb, CEE_LDLOC_0 + num);
+		mono_mb_emit_byte (mb, GUINT_TO_UINT8 (CEE_LDLOC_0 + num));
 	} else if (num < 256) {
 		mono_mb_emit_byte (mb, CEE_LDLOC_S);
-		mono_mb_emit_byte (mb, num);
+		mono_mb_emit_byte (mb, GUINT_TO_UINT8 (num));
 	} else {
 		mono_mb_emit_byte (mb, CEE_PREFIX1);
 		mono_mb_emit_byte (mb, CEE_LDLOC);
-		mono_mb_emit_i2 (mb, num);
+		mono_mb_emit_i2 (mb, GUINT_TO_INT16 (num));
 	}
 }
 
@@ -434,14 +438,14 @@ void
 mono_mb_emit_stloc (MonoMethodBuilder *mb, guint num)
 {
 	if (num < 4) {
- 		mono_mb_emit_byte (mb, CEE_STLOC_0 + num);
+		mono_mb_emit_byte (mb, GUINT_TO_UINT8 (CEE_STLOC_0 + num));
 	} else if (num < 256) {
 		mono_mb_emit_byte (mb, CEE_STLOC_S);
-		mono_mb_emit_byte (mb, num);
+		mono_mb_emit_byte (mb, GUINT_TO_UINT8 (num));
 	} else {
 		mono_mb_emit_byte (mb, CEE_PREFIX1);
 		mono_mb_emit_byte (mb, CEE_STLOC);
-		mono_mb_emit_i2 (mb, num);
+		mono_mb_emit_i2 (mb, GUINT_TO_INT16 (num));
 	}
 }
 
@@ -452,10 +456,10 @@ void
 mono_mb_emit_icon (MonoMethodBuilder *mb, gint32 value)
 {
 	if (value >= -1 && value < 8) {
-		mono_mb_emit_byte (mb, CEE_LDC_I4_0 + value);
+		mono_mb_emit_byte (mb, GINT32_TO_UINT8 (CEE_LDC_I4_0 + value));
 	} else if (value >= -128 && value <= 127) {
 		mono_mb_emit_byte (mb, CEE_LDC_I4_S);
-		mono_mb_emit_byte (mb, value);
+		mono_mb_emit_byte (mb, GINT32_TO_UINT8 (value));
 	} else {
 		mono_mb_emit_byte (mb, CEE_LDC_I4);
 		mono_mb_emit_i4 (mb, value);
@@ -521,7 +525,7 @@ mono_mb_patch_branch (MonoMethodBuilder *mb, guint32 pos)
 void
 mono_mb_patch_short_branch (MonoMethodBuilder *mb, guint32 pos)
 {
-	mono_mb_patch_addr_s (mb, pos, mb->pos - (pos + 1));
+	mono_mb_patch_addr_s (mb, pos, GUINT32_TO_INT8 (mb->pos - (pos + 1)));
 }
 
 void
@@ -607,7 +611,7 @@ mono_mb_emit_exception_for_error (MonoMethodBuilder *mb, MonoError *error)
 	g_assert (mono_error_get_error_code (error) == MONO_ERROR_GENERIC && "Unsupported error code.");
 	/* Have to copy the message because it will be referenced from JITed code while the MonoError may be freed. */
 	char *msg = mono_mb_strdup (mb, mono_error_get_message (error));
-	mono_mb_emit_exception_full (mb, "System", mono_error_get_exception_name (error), msg);
+	mono_mb_emit_exception_full (mb, mono_error_get_exception_name_space (error), mono_error_get_exception_name (error), msg);
 }
 
 /**
@@ -616,10 +620,10 @@ mono_mb_emit_exception_for_error (MonoMethodBuilder *mb, MonoError *error)
 void
 mono_mb_emit_add_to_local (MonoMethodBuilder *mb, guint16 local, gint32 incr)
 {
-	mono_mb_emit_ldloc (mb, local); 
+	mono_mb_emit_ldloc (mb, local);
 	mono_mb_emit_icon (mb, incr);
 	mono_mb_emit_byte (mb, CEE_ADD);
-	mono_mb_emit_stloc (mb, local); 
+	mono_mb_emit_stloc (mb, local);
 }
 
 void

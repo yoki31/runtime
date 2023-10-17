@@ -2,7 +2,11 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
+using System.Linq;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
@@ -11,16 +15,18 @@ namespace Microsoft.Extensions.Logging
     /// <summary>
     /// Produces instances of <see cref="ILogger"/> classes based on the given providers.
     /// </summary>
+    [DebuggerDisplay("{DebuggerToString(),nq}")]
+    [DebuggerTypeProxy(typeof(LoggerFactoryDebugView))]
     public class LoggerFactory : ILoggerFactory
     {
-        private readonly Dictionary<string, Logger> _loggers = new Dictionary<string, Logger>(StringComparer.Ordinal);
+        private readonly ConcurrentDictionary<string, Logger> _loggers = new ConcurrentDictionary<string, Logger>(StringComparer.Ordinal);
         private readonly List<ProviderRegistration> _providerRegistrations = new List<ProviderRegistration>();
         private readonly object _sync = new object();
         private volatile bool _disposed;
-        private IDisposable _changeTokenRegistration;
+        private readonly IDisposable? _changeTokenRegistration;
         private LoggerFilterOptions _filterOptions;
-        private LoggerFactoryScopeProvider _scopeProvider;
-        private LoggerFactoryOptions _factoryOptions;
+        private IExternalScopeProvider? _scopeProvider;
+        private readonly LoggerFactoryOptions _factoryOptions;
 
         /// <summary>
         /// Creates a new <see cref="LoggerFactory"/> instance.
@@ -61,8 +67,21 @@ namespace Microsoft.Extensions.Logging
         /// <param name="providers">The providers to use in producing <see cref="ILogger"/> instances.</param>
         /// <param name="filterOption">The filter option to use.</param>
         /// <param name="options">The <see cref="LoggerFactoryOptions"/>.</param>
-        public LoggerFactory(IEnumerable<ILoggerProvider> providers, IOptionsMonitor<LoggerFilterOptions> filterOption, IOptions<LoggerFactoryOptions> options = null)
+        public LoggerFactory(IEnumerable<ILoggerProvider> providers, IOptionsMonitor<LoggerFilterOptions> filterOption, IOptions<LoggerFactoryOptions>? options) : this(providers, filterOption, options, null)
         {
+        }
+
+        /// <summary>
+        /// Creates a new <see cref="LoggerFactory"/> instance.
+        /// </summary>
+        /// <param name="providers">The providers to use in producing <see cref="ILogger"/> instances.</param>
+        /// <param name="filterOption">The filter option to use.</param>
+        /// <param name="options">The <see cref="LoggerFactoryOptions"/>.</param>
+        /// <param name="scopeProvider">The <see cref="IExternalScopeProvider"/>.</param>
+        public LoggerFactory(IEnumerable<ILoggerProvider> providers, IOptionsMonitor<LoggerFilterOptions> filterOption, IOptions<LoggerFactoryOptions>? options = null, IExternalScopeProvider? scopeProvider = null)
+        {
+            _scopeProvider = scopeProvider;
+
             _factoryOptions = options == null || options.Value == null ? new LoggerFactoryOptions() : options.Value;
 
             const ActivityTrackingOptions ActivityTrackingOptionsMask = ~(ActivityTrackingOptions.SpanId | ActivityTrackingOptions.TraceId | ActivityTrackingOptions.ParentId |
@@ -94,10 +113,11 @@ namespace Microsoft.Extensions.Logging
             var serviceCollection = new ServiceCollection();
             serviceCollection.AddLogging(configure);
             ServiceProvider serviceProvider = serviceCollection.BuildServiceProvider();
-            ILoggerFactory loggerFactory = serviceProvider.GetService<ILoggerFactory>();
+            ILoggerFactory loggerFactory = serviceProvider.GetRequiredService<ILoggerFactory>();
             return new DisposingLoggerFactory(loggerFactory, serviceProvider);
         }
 
+        [MemberNotNull(nameof(_filterOptions))]
         private void RefreshFilters(LoggerFilterOptions filterOptions)
         {
             lock (_sync)
@@ -123,22 +143,22 @@ namespace Microsoft.Extensions.Logging
                 throw new ObjectDisposedException(nameof(LoggerFactory));
             }
 
-            lock (_sync)
+            if (!_loggers.TryGetValue(categoryName, out Logger? logger))
             {
-                if (!_loggers.TryGetValue(categoryName, out Logger logger))
+                lock (_sync)
                 {
-                    logger = new Logger
+                    if (!_loggers.TryGetValue(categoryName, out logger))
                     {
-                        Loggers = CreateLoggers(categoryName),
-                    };
+                        logger = new Logger(categoryName, CreateLoggers(categoryName));
 
-                    (logger.MessageLoggers, logger.ScopeLoggers) = ApplyFilters(logger.Loggers);
+                        (logger.MessageLoggers, logger.ScopeLoggers) = ApplyFilters(logger.Loggers);
 
-                    _loggers[categoryName] = logger;
+                        _loggers[categoryName] = logger;
+                    }
                 }
-
-                return logger;
             }
+
+            return logger;
         }
 
         /// <summary>
@@ -152,10 +172,7 @@ namespace Microsoft.Extensions.Logging
                 throw new ObjectDisposedException(nameof(LoggerFactory));
             }
 
-            if (provider == null)
-            {
-                throw new ArgumentNullException(nameof(provider));
-            }
+            ThrowHelper.ThrowIfNull(provider);
 
             lock (_sync)
             {
@@ -186,10 +203,7 @@ namespace Microsoft.Extensions.Logging
 
             if (provider is ISupportExternalScope supportsExternalScope)
             {
-                if (_scopeProvider == null)
-                {
-                    _scopeProvider = new LoggerFactoryScopeProvider(_factoryOptions.ActivityTrackingOptions);
-                }
+                _scopeProvider ??= new LoggerFactoryScopeProvider(_factoryOptions.ActivityTrackingOptions);
 
                 supportsExternalScope.SetScopeProvider(_scopeProvider);
             }
@@ -205,10 +219,10 @@ namespace Microsoft.Extensions.Logging
             return loggers;
         }
 
-        private (MessageLogger[] MessageLoggers, ScopeLogger[] ScopeLoggers) ApplyFilters(LoggerInformation[] loggers)
+        private (MessageLogger[] MessageLoggers, ScopeLogger[]? ScopeLoggers) ApplyFilters(LoggerInformation[] loggers)
         {
             var messageLoggers = new List<MessageLogger>();
-            List<ScopeLogger> scopeLoggers = _filterOptions.CaptureScopes ? new List<ScopeLogger>() : null;
+            List<ScopeLogger>? scopeLoggers = _filterOptions.CaptureScopes ? new List<ScopeLogger>() : null;
 
             foreach (LoggerInformation loggerInformation in loggers)
             {
@@ -216,9 +230,9 @@ namespace Microsoft.Extensions.Logging
                     loggerInformation.ProviderType,
                     loggerInformation.Category,
                     out LogLevel? minLevel,
-                    out Func<string, string, LogLevel, bool> filter);
+                    out Func<string?, string?, LogLevel, bool>? filter);
 
-                if (minLevel != null && minLevel > LogLevel.Critical)
+                if (minLevel is not null and > LogLevel.Critical)
                 {
                     continue;
                 }
@@ -303,6 +317,18 @@ namespace Microsoft.Extensions.Logging
             {
                 _loggerFactory.AddProvider(provider);
             }
+        }
+
+        private string DebuggerToString()
+        {
+            return $"Providers = {_providerRegistrations.Count}, {_filterOptions.DebuggerToString()}";
+        }
+
+        private sealed class LoggerFactoryDebugView(LoggerFactory loggerFactory)
+        {
+            public List<ILoggerProvider> Providers => loggerFactory._providerRegistrations.Select(r => r.Provider).ToList();
+            public bool Disposed => loggerFactory._disposed;
+            public LoggerFilterOptions FilterOptions => loggerFactory._filterOptions;
         }
     }
 }

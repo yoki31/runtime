@@ -7,13 +7,13 @@
   .publickeytoken = (B0 3F 5F 7F 11 D5 0A 3A )
   .ver 4:0:0:0
 }
-.assembly 'typedref'// as "typedref"
+.assembly 'b35784'// as "typedref"
 {
 }
 .assembly extern xunit.core {}
 .namespace BoxTest
 {
-  .class auto ansi Test extends [mscorlib]System.Object 
+  .class public auto ansi Test extends [mscorlib]System.Object 
 {
     .method family hidebysig instance vararg class [mscorlib]System.Object Fibonacci(typedref num, typedref flag) il managed 
 {
@@ -140,7 +140,7 @@
       IL_00cd:  ret
     } // end of method 'Test::Fibonacci2'
 
-    .method private hidebysig static int32 Main() il managed 
+    .method public hidebysig static int32 Main() il managed 
 {
       .custom instance void [xunit.core]Xunit.FactAttribute::.ctor() = (
           01 00 00 00

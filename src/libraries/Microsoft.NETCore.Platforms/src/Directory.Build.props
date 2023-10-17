@@ -1,6 +1,9 @@
-﻿<Project>
+<Project>
+
   <PropertyGroup>
-    <UseTargetFrameworkSDK>false</UseTargetFrameworkSDK>
+    <IsSourceProject>false</IsSourceProject>
   </PropertyGroup>
+
   <Import Project="..\..\Directory.Build.props" />
+
 </Project>

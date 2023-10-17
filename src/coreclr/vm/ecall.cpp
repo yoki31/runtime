@@ -137,27 +137,12 @@ void ECall::PopulateManagedCastHelpers()
     pDest = pMD->GetMultiCallableAddrOfCode();
     SetJitHelperFunction(CORINFO_HELP_UNBOX, pDest);
 
-    // Array element accessors are more perf sensitive than other managed helpers and indirection
-    // costs introduced by PreStub could be noticeable (7% to 30% depending on platform).
-    // Other helpers are either more complex, less common, or have their trivial case inlined by the JIT,
-    // so indirection is not as big concern.
-    // We JIT-compile the following helpers eagerly here to avoid indirection costs.
-
-    //TODO: revise if this specialcasing is still needed when crossgen supports tailcall optimizations
-    //      see: https://github.com/dotnet/runtime/issues/5857
-
     pMD = CoreLibBinder::GetMethod((BinderMethodID)(METHOD__CASTHELPERS__STELEMREF));
-    pMD->DoPrestub(NULL);
-    // This helper is marked AggressiveOptimization and its native code is in its final form.
-    // Get the code directly to avoid PreStub indirection.
-    pDest = pMD->GetNativeCode();
+    pDest = pMD->GetMultiCallableAddrOfCode();
     SetJitHelperFunction(CORINFO_HELP_ARRADDR_ST, pDest);
 
     pMD = CoreLibBinder::GetMethod((BinderMethodID)(METHOD__CASTHELPERS__LDELEMAREF));
-    pMD->DoPrestub(NULL);
-    // This helper is marked AggressiveOptimization and its native code is in its final form.
-    // Get the code directly to avoid PreStub indirection.
-    pDest = pMD->GetNativeCode();
+    pDest = pMD->GetMultiCallableAddrOfCode();
     SetJitHelperFunction(CORINFO_HELP_LDELEMA_REF, pDest);
 }
 
@@ -641,56 +626,6 @@ MethodDesc* ECall::MapTargetBackToMethod(PCODE pTarg, PCODE * ppAdjustedEntryPoi
 
 #ifndef DACCESS_COMPILE
 
-/* static */
-CorInfoIntrinsics ECall::GetIntrinsicID(MethodDesc* pMD)
-{
-    CONTRACTL
-    {
-        THROWS;
-        GC_TRIGGERS;
-        MODE_ANY;
-        PRECONDITION(pMD->IsFCall());
-    }
-    CONTRACTL_END;
-
-    MethodTable * pMT = pMD->GetMethodTable();
-
-#ifdef FEATURE_COMINTEROP
-    // COM imported classes have special constructors
-    if (pMT->IsComObjectType())
-    {
-        // This has to be tlbimp constructor
-        return(CORINFO_INTRINSIC_Illegal);
-    }
-#endif // FEATURE_COMINTEROP
-
-    //
-    // Delegate constructors are FCalls for which the entrypoint points to the target of the delegate
-    // We have to intercept these and set the call target to the helper COMDelegate::DelegateConstruct
-    //
-    if (pMT->IsDelegate())
-    {
-        // COMDelegate::DelegateConstruct is the only fcall used by user delegates.
-        // All the other gDelegateFuncs are only used by System.Delegate
-        _ASSERTE(pMD->IsCtor());
-
-        return(CORINFO_INTRINSIC_Illegal);
-    }
-
-    // All intrinsic live in CoreLib (FindECFuncForMethod does not work for non-CoreLib intrinsics)
-    if (!pMD->GetModule()->IsSystem())
-    {
-        return(CORINFO_INTRINSIC_Illegal);
-    }
-
-    ECFunc* info = FindECFuncForMethod(pMD);
-
-    if (info == NULL)
-        return(CORINFO_INTRINSIC_Illegal);
-
-    return info->IntrinsicID();
-}
-
 #ifdef _DEBUG
 
 void FCallAssert(void*& cache, void* target)
@@ -745,7 +680,7 @@ void FCallAssert(void*& cache, void* target)
         }
     }
 
-    _ASSERTE(!"Could not find FCall implemenation in ECall.cpp");
+    _ASSERTE(!"Could not find FCall implementation in ECall.cpp");
 }
 
 void HCallAssert(void*& cache, void* target)

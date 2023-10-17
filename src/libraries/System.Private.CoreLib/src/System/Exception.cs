@@ -2,14 +2,17 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 using System.Collections;
+using System.ComponentModel;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
+using System.Runtime.CompilerServices;
 using System.Runtime.Serialization;
 using System.Text;
 
 namespace System
 {
     [Serializable]
-    [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
+    [TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     public partial class Exception : ISerializable
     {
         private protected const string InnerExceptionPrefix = " ---> ";
@@ -37,10 +40,11 @@ namespace System
             _innerException = innerException;
         }
 
+        [Obsolete(Obsoletions.LegacyFormatterImplMessage, DiagnosticId = Obsoletions.LegacyFormatterImplDiagId, UrlFormat = Obsoletions.SharedUrlFormat)]
+        [EditorBrowsable(EditorBrowsableState.Never)]
         protected Exception(SerializationInfo info, StreamingContext context)
         {
-            if (info == null)
-                throw new ArgumentNullException(nameof(info));
+            ArgumentNullException.ThrowIfNull(info);
 
             _message = info.GetString("Message"); // Do not rename (binary serialization)
             _data = (IDictionary?)(info.GetValueNoThrow("Data", typeof(IDictionary))); // Do not rename (binary serialization)
@@ -89,21 +93,19 @@ namespace System
 
         public virtual string? Source
         {
-            get => _source ??= CreateSourceName();
+            [UnconditionalSuppressMessage("ReflectionAnalysis", "IL2026:RequiresUnreferencedCode",
+                Justification = "The API will return <unknown> if the metadata for current method cannot be established.")]
+            get => _source ??= HasBeenThrown ? (TargetSite?.Module.Assembly.GetName().Name ?? "<unknown>") : null;
             set => _source = value;
         }
 
+        [Obsolete(Obsoletions.LegacyFormatterImplMessage, DiagnosticId = Obsoletions.LegacyFormatterImplDiagId, UrlFormat = Obsoletions.SharedUrlFormat)]
+        [EditorBrowsable(EditorBrowsableState.Never)]
         public virtual void GetObjectData(SerializationInfo info, StreamingContext context)
         {
-            if (info == null)
-            {
-                throw new ArgumentNullException(nameof(info));
-            }
+            ArgumentNullException.ThrowIfNull(info);
 
-            if (_source == null)
-            {
-                _source = Source; // Set the Source information correctly before serialization
-            }
+            _source ??= Source; // Set the Source information correctly before serialization
 
             info.AddValue("ClassName", GetClassName(), typeof(string)); // Do not rename (binary serialization)
             info.AddValue("Message", _message, typeof(string)); // Do not rename (binary serialization)
@@ -227,7 +229,7 @@ namespace System
         private string GetStackTrace()
         {
             // Do not include a trailing newline for backwards compatibility
-            return new StackTrace(this, fNeedFileInfo: true).ToString(System.Diagnostics.StackTrace.TraceFormat.Normal);
+            return new StackTrace(this, fNeedFileInfo: true).ToString(Diagnostics.StackTrace.TraceFormat.Normal);
         }
 
         [StackTraceHidden]
@@ -242,7 +244,7 @@ namespace System
             // remoting of exceptions cross app-domain boundaries, and is thus concatenated into Exception.StackTrace
             // when it's retrieved.
             var sb = new StringBuilder(256);
-            new StackTrace(fNeedFileInfo: true).ToString(System.Diagnostics.StackTrace.TraceFormat.TrailingNewLine, sb);
+            new StackTrace(fNeedFileInfo: true).ToString(Diagnostics.StackTrace.TraceFormat.TrailingNewLine, sb);
             sb.AppendLine(SR.Exception_EndStackTraceFromPreviousThrow);
             _remoteStackTraceString = sb.ToString();
         }

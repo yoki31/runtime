@@ -4,11 +4,7 @@
 
 
 // Metadata version: v4.0.30319
-.assembly extern System.Runtime
-{
-  .publickeytoken = (B0 3F 5F 7F 11 D5 0A 3A )                         // .?_....:
-  .ver 5:0:0:0
-}
+.assembly extern System.Runtime { .publickeytoken = (B0 3F 5F 7F 11 D5 0A 3A ) }
 .assembly extern xunit.core {}
 .assembly extern System.Collections
 {
@@ -45,7 +41,6 @@
   .hash algorithm 0x00008004
   .ver 1:0:0:0
 }
-.module GenericArrayOverride.dll
 // MVID: {36F29C33-E2D3-47BA-B888-D30052D5C374}
 .imagebase 0x00400000
 .file alignment 0x00000200
@@ -204,10 +199,10 @@
 
 } // end of class GenericArrayOverride.Derived
 
-.class private auto ansi beforefieldinit GenericArrayOverride.Program
+.class public auto ansi beforefieldinit GenericArrayOverride.Program
        extends [System.Runtime]System.Object
 {
-  .method private hidebysig static int32 
+  .method public hidebysig static int32 
           Main() cil managed
   {
     .custom instance void [xunit.core]Xunit.FactAttribute::.ctor() = (

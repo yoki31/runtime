@@ -90,7 +90,7 @@ namespace System.Net.WebSockets
                     NetEventSource.Info(null, $"{HttpKnownHeaderNames.SecWebSocketProtocol} = {outgoingSecWebSocketProtocolString}");
                 }
 
-                await response.OutputStream.FlushAsync().SuppressContextFlow();
+                await response.OutputStream.FlushAsync().ConfigureAwait(false);
 
                 HttpResponseStream responseStream = (response.OutputStream as HttpResponseStream)!;
                 Debug.Assert(responseStream != null, "'responseStream' MUST be castable to System.Net.HttpResponseStream.");
@@ -137,22 +137,6 @@ namespace System.Net.WebSockets
             return webSocketContext;
         }
 
-        internal static ConfiguredTaskAwaitable SuppressContextFlow(this Task task)
-        {
-            // We don't flow the synchronization context within WebSocket.xxxAsync - but the calling application
-            // can decide whether the completion callback for the task returned from WebSocket.xxxAsync runs
-            // under the caller's synchronization context.
-            return task.ConfigureAwait(false);
-        }
-
-        internal static ConfiguredTaskAwaitable<T> SuppressContextFlow<T>(this Task<T> task)
-        {
-            // We don't flow the synchronization context within WebSocket.xxxAsync - but the calling application
-            // can decide whether the completion callback for the task returned from WebSocket.xxxAsync runs
-            // under the caller's synchronization context.
-            return task.ConfigureAwait(false);
-        }
-
         private static unsafe ulong SendWebSocketHeaders(HttpListenerResponse response)
         {
             return response.SendHeaders(null, null,
@@ -164,10 +148,7 @@ namespace System.Net.WebSockets
 
         internal static void ValidateInnerStream(Stream innerStream)
         {
-            if (innerStream == null)
-            {
-                throw new ArgumentNullException(nameof(innerStream));
-            }
+            ArgumentNullException.ThrowIfNull(innerStream);
 
             if (!innerStream.CanRead)
             {
